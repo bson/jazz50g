@@ -1,2 +1,5 @@
 # jazz50g
-ML Debugger and Disassembler for the HP-50G calculator (source copy)
+ML Debugger and Disassembler for the HP-50G calculator.
+
+This is a copy of:
+https://www.hpcalc.org/details/7212
