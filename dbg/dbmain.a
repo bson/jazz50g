@@ -1,0 +1,1408 @@
+**********************************************************************
+*		JAZZ	- Main loop for xDB
+**********************************************************************
+
+**
+** In:
+**	Proper set-up of relevant registers
+**
+** Out:
+**	None. Never returns.
+
+** Enter a loop where we redisplay the screen according to the current
+** display format. Then wait for a key, look up the key in the scan
+** code switch, and dispatch the driver routine. When we come back we
+** wait for the key to be released, then iterate the loop. If we're
+** in server mode, we also print a ``hello'' message.
+
+** It is assumed, that by the time we enter here, R4 already points
+** to the data area.
+
+f_dbg1	IF fDBGSERVER
+db_hello
+	NIBASC	'\n'
+	NIBASC	'DB 2.0 (Server Mode)\n'
+	NIBASC	'Copyright (c) 1994 Jan Brittenson\n'
+	NIBASC	'\n'
+	CON(2)	0
+f_dbg1	ENDIF
+
+DbgMainEntry
+	GOSUB	GetFlags		ST[B] = flags
+
+f_dbg2	IF fDBGSERVER
+	?ST=0	gSERVER?
+	GOYES	+			Not in server mode - skip
+	ADDR	db_hello,A
+	ST=1	4			LF --> CR-LF
+	GOSUBL	WriteAsciz		Hello world
++
+f_dbg2	ENDIF
+
+	GOSUB	SaveSwap		Save initial registers in the swap
+	GOSUBL	InitTmpWatch		Init temp watchpoints
+
+	DADDR	g4SBSCREEN,D0		Init screen 4 table format
+	LC(5)	#00550
+	DAT0=C	A
+
+* Main loop - disassemble
+	
+DbgNew
+	GOSUB	NewInstr		Disassemble & span current instr
+
+* Main loop - do not disassemble
+
+DbgMain
+	GOSUB	InitWatch		Update RPL watchpoints
+	GOSUB	db_ctotext		Switch to text display
+	GOSUB	GetFlags		ST[B] = gFLAGS
+
+f_dbg3	IF fDBGSERVER
+	?ST=0	gSERVER?		Local operation
+	GOYES	+
+
+* Remote mode
+
+-	GOSUBL	ArgReset		Reset ARG
+	GOSUBL	ServRead		Read line to gOUTBUF
+	GONC	-			No command - loop
+	GOLONG	ServExec		Dispatch command
++
+f_dbg3	ENDIF
+
+* Local (display) mode
+
+	GOSUBL	DbgRedraw		Redraw the screen
+	GOSUBL	ArgReset		Reset ARG
+
+* Get key and continue
+
+DbgNextKey
+	GOSUB	DbgWaitKey		A[B] = key
+	GOTO	SwitchKey		Switch key in A[B]
+
+* Span the current instruction. We disassemble the instruction in
+* gINSTR, put its size in gISIZE, the address of the next
+* instruction in gINEXT, and the status bits in gIST.
+
+* C,D1 = address of gINSTR, modifies A[A]
+
+GetInstr
+	DADDR	gINSTR,C
+	D1=C
+	RTNCC
+
+* C,D1 = address of gISIZE, modifies A[A]
+
+GetISize
+	DADDR	gISIZE,C
+	D1=C
+	RTNCC
+
+** Modified NewInstr to save cycles too
+
+NewInstr
+	GOSUB	GetInstr		D1 = ->gINSTR
+	GOSUBL	BlankIt			First blank the instruction buffer
+
+	GOSUB	GetPC			A[A] = DB PC
+	D0=A				D0 = DB PC
+	GOSUB	GetInstr		D1 = ->gINSTR
+	ST=0	8			No PC prefix
+	GOSUBL	DbgDis			Disassemble, R0[B] = cycles
+
+	GOSUB	GetISize		C,D1 = ->gISIZE
+	D1=D1-	(gISIZE)-(gICYCLES)
+	C=R0.F	X
+	DAT1=C	X			gICYCLES = cycles
+	D1=D1+	(gINEXT)-(gICYCLES)
+	CD0EX				C[A] = next DB PC
+	DAT1=C	A			gINEXT = next PC
+	D1=D1-	(gINEXT)-(gISIZE)
+	GOSUB	GetPC			A[A] = DB PC
+	C=C-A	A
+	GONC	+
+	C=0	B
++	DAT1=C	B			gISIZE = size
+	D1=D1+	(gIST)-(gISIZE)
+	C=ST
+	DAT1=C	B			gIST = IB_xxx
+	RTN
+
+** Switch using key table. Each table entry is a byte for the scan
+** code, paired with a 4-nybble forward offset, from the first nybble
+** of the offset, to the routine. The table is terminated with a
+** unpaired zero byte. The scan code is passed in A[B]. D0, A[A], B[B]
+** and C[A] are trashed. The scan code to switch is assumed to be in A[B].
+** The key driver is called with the carry flag cleared.
+
+SwitchKey
+	B=A	X
+	ADDR	DbgKeyTable,C
+	D0=C
+
+** Alternative entry.
+** In:
+**	D0  = ->keyboard table
+**	B[X] = Code, ASCII or Scan code
+
+SwitchKeyD0
+--	A=DAT0	X			A[X] = table scan code
+	D0=D0+	3			Advance to offset
+	?A=0	X			End of table?
+	GOYES	++
+	?A=B	X			Match?
+	GOYES	+
+	D0=D0+	4			Advance to next scan code
+	GONC	--			Continue
++	A=0	A
+	A=DAT0	4			A[A] = offset
+	CD0EX
+	C=C+A	A			C[A] = destination address
+	ST=0	1			Return by jumping to main loop
+	PC=C				Dispatch
+++
+*	LC(2)	#FB
+*	GOSBVL	=RCKBp			( might alter interrupt state )
+	GOTO	DbgMain			End of table, redisplay
+
+KBENT	MACRO	$key,$label
+	CON(3)	$1
+	CON(4)	($2)-(*)
+KBENT	ENDM
+
+DbgKeyTable
+	KBENT	=Sfkey1,DbgDisp1	* [A]	 General screen
+	KBENT	=Sfkey2,DbgDisp2	* [B]	 Screen 2 (regs A-D)
+	KBENT	=Sfkey3,DbgDisp3	* [C]	 Screen 3 (regs R0-R4)
+	KBENT	=Sfkey4,DbgDisp4n	* [D]	 Screen 4 (RSTK)
+	KBENT	=Sfkey5,DbgDisp5	* [E]	 Screen 5 (dump)
+	KBENT	=Sfkey6,DbgDisp6	* [F]	 Screen 6 (ML)
+*	KBENT	=MATHCODE,DbgDisp7	* [MTH]	 Screen 7 (BPT table)
+	KBENT	=APPSCODE,DbgDisp7	* [APPS] Screen 7 (BPT table)	
+*	KBENT	=NEXTCODE,DbgNext	* [NXT]	 Next instruction. No step
+	KBENT	=NXTCODE,DbgNext	* [NXT]	 Next instruction. No step
+	KBENT	=LEFTCODE,DbgPC-	* [left] Dec PC
+	KBENT	=RIGHTCODE,DbgPC+	* [right] Inc PC
+	KBENT	=UPCODE,DbgPC-16	* [up]	 Dec PC by 16
+	KBENT	=DOWNCODE,DbgPC+16	* [down] Inc PC by 16
+*	KBENT	=DPCODE,DbgUpdate	* [.]	 Update display
+*	KBENT	=SPCCODE,DbgUpdate	* [ ]	 Update display
+	KBENT	=SPCCODE,DbgTogFont	* [ ]	 Toggle font size
+*	KBENT	=DPCODE,DbgSetMark	* [.]	 Set mark
+	KBENT	=PCODE,DbgSetMark	* [.]	 Set mark
+	KBENT	=PLUSCODE,DbgSingle	* [+]	 Single-step
+	KBENT	=MINUSCODE,DbgShallow	* [-]	 Single-step shallow
+	KBENT	=TIMESCODE,DbgSingle+	* [*]	 Single-step +
+	KBENT	=DIVCODE,DbgShallow+	* [/]	 Single-step shallow +
+	KBENT	=EVALCODE,DbgContinue	* [EVAL] Continue
+*	KBENT	=TIMESCODE,DbgSetMark	* [x]	 Set mark
+	KBENT	=CHSCODE,DbgSwapMark	* [+/-]	 Swap mark & DB PC
+*	KBENT	=DELCODE,DbgRRExit	* [DEL]	 Exit & restore_regs
+	KBENT	=TANCODE,DbgRRExit	* [TAN]  Exit & restore_regs
+	KBENT	=BACKCODE,DbgExit	* [BS]	 Exit
+	KBENT	=0CODE,ArgInput		* [0]	 Argument
+	KBENT	=INVCODE,DbgReset	* [1/x]	 Reset
+	KBENT	=ENTERCODE,DbgNewPC	* [ENTER] Set PC=ARG
+*	KBENT	=PRGCODE,DbgSetBpt	* [PRG]	 Set BPT
+	KBENT	=MODECODE,DbgSetBpt	* [MODE] Set BPT
+	KBENT	=STOCODE,DbgSetBptCtr	* [STO]	 Set BPT counter
+*	KBENT	=CUSTCODE,DbgOptions	* [CST]	 Toggle options
+	KBENT	=TOOLCODE,DbgOptions	* [TOOL] Toggle options
+*	KBENT	=USERCODE,DbgWatch	* [VAR]	 Watchpoint set/display
+	KBENT	=VARCODE,DbgWatch	* [VAR]	 Watchpoint set/display
+	KBENT	=EEXCODE,DbgViewPict	* [EEX]	 View PICT
+	KBENT	=SINCODE,DbgSaveSwap	* [SIN]	 Save registers
+	KBENT	=COSCODE,DbgSwap	* [COS]  Swap registers
+	KBENT	=tickCODE,DbgEditReg	* [']    Edit registers
+	KBENT	=SQRTCODE,DbgTogD0D1	* [SQRT]    Toggle D0/D1/D0&D1 Screen4
+	KBENT	=POWERCODE,DbgTogD0Stk	* [yX]      Toggle D0/ STKn Screen4
+	KBENT	=ALPHACODE,ScreenH	* [Alpha]   Help screens
+	CON(3)	0
+
+* D0 = ->gFLAGS, C[A] = ST[B] = gFLAGS
+
+GetFlags
+	GOSUB	GetData
+	C=0	A
+	C=DAT0	B
+	ST=C
+	RTNCC
+
+* C[A] = D0 = ->DBBUF
+
+GetData
+	C=R4.F	A
+	D0=C
+	RTN
+
+* D1 = ->gOUTBUF, C[A] modified
+
+GetOutBuf
+	C=A	A
+	RSTK=C
+	DADDR	gOUTBUF,C
+	D1=C
+	C=RSTK
+	A=C	A
+	RTN
+
+* Switch to text display if gLOCKS? is clear
+
+db_ctotext
+	GOSUB	GetFlags
+	?ST=0	gLOCKS?		Ignore if disabled
+	RTNYES
+
+* Switch to text display. Return CS if already in text
+
+db_totext
+	GOSUB	db_nullpictp	Is PICT null?
+	RTNC			Yes - no switching
+	GOSUB	GetFlags	D0 = ->gFLAGS, C[A] = ST[B] = gFLAGS
+	?ST=1	gTEXT?		Already in text mode?
+	RTNYES
+	ST=1	gTEXT?		Flag in text
+	GOSUB	db_wrflag	Write back flags
+	GOVLNG	=SwapDisp	Toggle into text and CC
+
+* Switch to PICT display if gLOCKS? is clear
+
+db_ctopict
+	GOSUB	GetFlags
+	?ST=0	gLOCKS?		Ignore if disabled
+	RTNYES
+* Switch to pict display. Return CS if already in screen
+db_topict
+	GOSUB	db_nullpictp	Is PICT null?
+	RTNC			Yes - no switching
+	GOSUB	GetFlags	D0 = ->gFLAGS, C[A] = ST[B] = gFLAGS
+	?ST=0	gTEXT?		Already out?
+	RTNYES
+	ST=0	gTEXT?		Flag not in text
+	GOSUB	db_wrflag	Write back flags
+	GOVLNG	=SwapDisp	Toggle out of text and CC
+
+* Write back flags in ST
+
+db_wrflag
+	C=ST
+	DAT0=C	B
+	RTNCC
+
+** Check if PICT is null. Return CS if so.
+
+db_nullpictp
+*	D0=(5)	=aGDISP
+*	C=DAT0	A
+*	D0=C
+	D0=(5)	=GDISP
+	C=DAT0	A
+	D0=C			D0 = ->pict
+	D0=D0+	10		Skip prolog & size
+	C=DAT0	A		C[A] = width
+	D0=D0+	5
+	A=DAT0	A		A[A] = width
+	A=A!C	A
+	?A=0	A
+	RTNYES			Both zero
+	RTN			Not null
+
+** View PICT while db_viewpict_key_mask is set at location
+** db_viewpict_key_loc. (While a specific key is being held down.)
+
+DbgViewPict
+	GOSUBL	Argument?	D0 we have RG?
+	GOC	AddPC		Yes - Add Arg to PC
+	GOSUB	db_nullpictp	Is PICT null?
+	GOC	++		Yes - ignore erequest
+
+	GOSUB	db_topict	Switch to pict
+
+*	D0=(5)	(=IRAM@)-4	Hook KEYSTATE
+*	A=DAT0	A
+*	D0=(5)	=aKEYSTATE
+*	A=DAT0	4
+*	D0=A
+	D0=(5)	=KSTATEVGER
+
+	D0=D0+	5		Go to EEX nibble
+*	LC(2)	#40		Mask for EEX
+	LC(2)	#80		HP50G keyboard
+	P=	1
+-	A=DAT0	WP
+	A=A&C	WP
+	?A#0	WP
+	GOYES	-		Wait as long as EEX is down
+	P=	0
+
+	GOSUB	db_totext	Switch back to text
+++	GOTO	DbgNextKey	Get next key and loop (no redisplay)
+
+AddPC	D=C     A
+	DADDR   REG_PC,D0               D0 = ->REG_PC
+	C=DAT0	A
+	C=C+D     A			Add arg to old PC
+	DAT0=C  A                       Update PC
+	GOTO	DbgNew
+
+
+**********************************************************************
+** Save current registers
+**********************************************************************
+DbgSaveSwap
+	GOSUBL	Argument?
+	GOC	db_setcurcyc	ARG - clear current cycles
+	GOSUB	SaveSwap	Save registers
+	GOTO	DbgNextKey	Get next key and loop (no redisplay)
+
+SaveSwap
+	DADDR	REG_CRY,D0
+	DADDR	gSWAPMEM,D1
+	LC(5)	REGSWAPSIZE
+	GOVLNG	=MOVEDOWN
+
+** ZZZ - added cycle setting code
+
+db_setcurcyc
+	DADDR	gCUR_CYCLES,D0
+	A=0	W
+	A=C	A		A[W] = ARG
+	DAT0=A	cyc_size
+	GOTO	DbgMain
+
+**********************************************************************
+** Toggle display font size
+**********************************************************************
+DbgTogFont
+	DADDR	gFONTSIZE,C
+	D0=C
+	A=DAT0	B
+	A=-A-1	P
+	DAT0=A	B
+	GOTO	DbgMain
+**********************************************************************
+** Swap current registers with saved ones
+**********************************************************************
+DbgSwap
+	GOSUBL	Argument?
+	GOC	db_settotcyc
+	DADDR	REG_CRY,D0
+	DADDR	gSWAPMEM,D1
+	LC(5)	REGSWAPSIZE
+	D=C	A
+	D=D-1	A
+	RTNC			Nothing to swap
+db_swaplp
+	A=DAT0	1
+	C=DAT1	1
+	DAT0=C	1
+	DAT1=A	1
+	D0=D0+	1
+	D1=D1+	1
+	D=D-1	A
+	GONC	db_swaplp
+	GOTO	DbgNew		Redisassemble and loop
+
+** ZZZ - Added setting cycle counters
+
+db_settotcyc
+	DADDR	gTOT_CYCLES,D0
+	A=0	W
+	A=C	A		A[W] = ARG
+	DAT0=A	cyc_size
+	GOTO	DbgMain
+
+**********************************************************************
+* Advance to next instruction. We update the DB PC to the address of
+* the next instruction. NewInstr must have been called prior to this
+* function. If we have a nonzero ARG, we decrement the ARG, call on
+* NewInstr and repeat.
+**********************************************************************
+db_advance
+	GOSUB	GetISize	D1 = ->gISIZE
+	D1=D1+	(gINEXT)-(gISIZE)
+	C=DAT1	A		C[A] = next DB PC
+	GOLONG	SetPC		DB PC = next DB PC
+
+DbgNext
+	GOSUB	db_advance	PC = next instruction
+	GOSUBL	Argument?	Did we have ARG?
+	GONC	+		No - continue
+	C=C-1	A
+	GOC	+		ARG was zero - continue
+	?C=0	A
+	GOYES	+		Was 1 - continue
+	DAT0=C	A
+	GOSUB	NewInstr	Span current instruction
+	GOTO	DbgNext		Loop until ARG is 1
++	GOTO	DbgNew
+
+* Return stored PC in A[A], address of stored PC in D0
+
+GetPC
+	RSTK=C
+	GOSUB	GetData		Get address of variables
+	D0=D0+	(REG_PC)-(DBBUF)
+	A=DAT0	A		A[A] = stored PC
+	C=RSTK
+	RTN
+
+**********************************************************************
+* Increment stored PC
+**********************************************************************
+DbgPC+
+	GOSUBL	Argument?
+	GOC	+		Have arg, use it
+	C=0	A
+	C=C+1	A		No arg - use 1
++	GOSUB	GetPC		D0 = ->DB PC, A[A] = PC
+	A=A+C	A		Advance PC
+	DAT0=A	A		Store back
+	GOTO	DbgNew
+
+**********************************************************************
+* Decrement stored PC
+**********************************************************************
+DbgPC-
+	GOSUBL	Argument?
+	GOC	+		Have arg, use it
+	C=0	A
+	C=C+1	A		No arg - use 1
++	GOSUB	GetPC		D0 = ->DB PC, A[A] = PC
+	A=A-C	A		Adjust PC backwards
+	DAT0=A	A		Store back
+	GOTO	DbgNew
+
+**********************************************************************
+* Increment stored PC by 16 (or ARG*16)
+**********************************************************************
+DbgPC+16
+	GOSUBL	Argument?
+	GOC	+		Have arg, use it
+	C=0	A
+	C=C+1	A		No arg- use 1*16
++	GOSUB	GetPC		D0 = ->DB PC, A[A] = PC
+	CSL	A
+	A=A+C	A		Advance PC	
+	DAT0=A	A		Store back
+	GOTO	DbgNew
+
+**********************************************************************
+* Decrement stored PC by 16
+**********************************************************************
+DbgPC-16
+	GOSUBL	Argument?
+	GOC	+		Have arg, use it
+	C=0	A
+	C=C+1	A		No arg - use 1*16
++	GOSUB	GetPC		D0 = ->DB PC, A[A] = PC
+	CSL	A
+	A=A-C	A		Store back
+	DAT0=A	A
+
+**********************************************************************
+* Update display
+**********************************************************************
+DbgUpdate
+	GOTO	DbgNew
+
+**********************************************************************
+** Set mark. If ARG, then set MARK=ARG, otherwise set MARK=PC
+**********************************************************************
+DbgSetMark
+	GOSUBL	Argument?	C[A] = ARG
+	GONC	+		No ARG, use DB PC
+	A=C	A		Arg, use ARG
+	GOC	++
++	GOSUB	GetPC		A[A] = DB PC
+++	GOSUB	db_getmark	D0 = ->gMARK
+	DAT0=A	A		Mark = DB PC
+	GOTO	DbgMain		No redisassembly needed
+
+**********************************************************************
+** Swap mark and PC, or negate ARG if any
+**********************************************************************
+DbgSwapMark
+	GOSUBL	Argument?	C[A] = ARG
+	GONC	+		No ARG
+	C=-C	A		ARG = -ARG
+	DAT0=C	A		Write back
+	GOLONG	ArgInputCont	Continue reading ARG
+
++	GOSUB	GetPC		A[A] = DB PC
+	GOSUB	db_getmark	D0 = ->gMARK
+	C=DAT0	A		C[A] = mark
+	DAT0=A	A		Mark = DB PC
+	GOSUBL	SetPC		DB PC = C[A]
+	GOTO	DbgNew		Redisassemble
+
+** Get mark.
+** Out:
+**	D0=C[A]	= ->gMARK
+**	R0.W	= Used
+**	Carry	= Cleared
+
+db_getmark
+	R0=A
+	DADDR	gMARK,C
+	D0=C			D0 = ->gMARK
+	A=R0
+	RTNCC
+
+**********************************************************************
+** Program has terminated during free run.
+**
+** We remove BPTs and exit. This is a code object that is pushed on
+** the RPL return stack upon entry. When the debugged program exits
+** after a free run - given that it doesn't fuzz with the return
+** stack* God save us if it does - this is what it will return to.
+**********************************************************************
+
+GetTerminator
+	GOSUB	+
+Terminator
+	CON(5)	=DOCODE
+	REL(5)	trmend
+	GOSUB	SavPtr		Save RPL registers
+	GOSUB	removebreaks	Remove BPTs from program
+	GOSUB	db_restore_regs	Restore RPL registers
+	GOVLNG	(=SEMI)+5	Issue RPL return
+
++	C=RSTK			C[A] = ->Terminator
+	RTNCC
+
+**********************************************************************
+** Quit, but restore system RPL registers.
+** If ARG, then shift right
+**********************************************************************
+DbgExit
+	GOSUBL	Argument?	C[A] = ARG
+	GONC	db_done		No ARG
+	GOLONG	ArgDel		Shift right, continue
+
+**********************************************************************
+** Quit, but restore system RPL registers.
+** If ARG, then do nothing.
+**********************************************************************
+DbgRRExit
+	GOSUBL	Argument?	C[A] = ARG
+	GONC	+		No ARG
+	GOTO	DbgMain		ARG - ignore key
++	GOSUB	db_restore_regs	Restore saved system registers
+	GOVLNG	=Loop		Continue
+
+* Execution is over. Exit.
+
+db_done
+	GOSUBL	GetFlags	ST = flags
+
+f_dbg5	IF fDBGSERVER
+	?ST=0	gSERVER?
+	GOYES	++
+	GOSUB	+
+	CSTRING	'Exit\n'
++	C=RSTK
+	A=C	A
+	ST=1	4		Auto LF to CR-LF conversion
+	GOSUBL	WriteAsciz
+++
+f_dbg5	ENDIF
+
+	LA(5)	(=SEMI)+5	Transfer address
+	GOLONG	Trigger		Load regs and transfer
+trmend	CON(5)	=SEMI		Just in case..
+
+**********************************************************************
+** Set PC=ARG
+**********************************************************************
+DbgNewPC
+	GOSUBL	Argument?	C[A] = ARG
+	GOC	+
+	GOTO	DbgMain		No ARG - ignore key
++	GOSUBL	SetPC		DB PC = C[A] = ARG
+	GOTO	DbgNew		Continue with this instruction
+
+**********************************************************************
+* Reset. Confirm with second [1/x]
+**********************************************************************
+DbgReset
+	GOSUB	DbgWaitKey	A[A] = key
+	LC(2)	=INVCODE
+	?A=C	B
+	GOYES	+
+	GOTO	DbgMain		Nt confirmed - continue
++	GOVLNG	#0
+*	RESET			This is not correct (original MLDL)
+
+
+**********************************************************************
+* Toggle options
+**********************************************************************
+DbgOptions
+	GOSUBL	Argument?	C[A] = ARG
+	GONC	+
+	GOLONG	DbgArg2Bin
++	GOSUB	db_bptnum	C[A] = option # (1-8)
+	GONC	sop666		Not 1-8; ignore
+	A=C	A
+	A=A-1	A		A[A] = 0-7
+	C=0	B
+	C=C+1	B		Option 1 = mask 0000,0001
+-	A=A-1	A
+	GOC	+		Mask shifting done
+	C=C+C	B		Shift mask 1 bit left
+	GOTO	-
++	A=C	B		A[B] = flag mask
+	LC(2)	gOPTMASK	C[B] = valid options mask
+	A=A&C	B		Make sure option is valid
+	?A=0	B
+	GOYES	sop666		Invalid option
+	GOSUB	GetFlags
+	B=C	B		B[B] = flag byte
+	C=C&A	B		Mask out current flag bit value
+	?C#0	B
+	GOYES	+		Flag was set - go clear
+	B=B!A	B		Was clear - set bit
+	GOTO	++
++	A=-A-1	B		Complemet flag mask
+	B=B&A	B		Clear flag bit (was set)
+++	C=B	B		C[B] = new flag byte
+	DAT0=C	B		Write back
+sop666	GOTO	DbgNew		Back to main loop, span & redisplay
+
+**********************************************************************
+** Set breakpoint
+**********************************************************************
+
+DbgSetBpt
+	GOSUB	db_bptnum	C[A] = breakpoint #
+	GOC	SetBptC		1-8
+	GOTO	DbgMain		Bad breakpoint - ignore
+
+SetBptC	R0=C			R0[A] = breakpoint # 1-8
+SetBptR0
+	GOSUB	GetBpt		D0 = ->db_bpt
+	A=R0.F	A
+	A=A-1	A		A[A] = breakpoint # 0-7
+	GOSUB	mul_a_bpt_size	A[A] = breakpoint offset
+	CD0EX
+	C=C+A	A
+	D1=C			D1 = ->bpt data
+	GOSUBL	Argument?	D0 = ->gARG C[A] = ARG
+	GOC	+		ARG
+	C=0	W		No ARG - clear
+	DAT1=C	14		Clear BPT data
+-	GOTO	DbgMain
++	?C#0	A
+	GOYES	+		Nonzero ARG - set address
+	GOSUB	GetPC		Zero ARG - use DB PC instead
+	C=A	A		C[A] = DB PC
++	DAT1=C	A		Set address
+	D1=D1+	5		D1 = ->BPT opcode
+	A=PC
+	LC(5)	(db_trap)-(*)
+	A=A+C	A		A[A] = ->db_trap
+	LC(2)	#F8		C[B] = GOSBVL opcode
+	DAT1=C	2		Set GOSBVL
+	D1=D1+	2
+	DAT1=A	A		Set GOSBVL destination
+	D1=D1+	5
+	C=0	B
+	DAT1=C	B		Initialize counter
+	P=	0
+	GONC	-		Continue
+
+db_bptnum
+	GOSUB	DbgWaitKey	A[A] = key
+	C=A	A
+	GOSUB	ArgKey>#	C[A] = 0-F
+	RTNNC
+	?C=0	A
+	GOYES	+
+	LA(1)	#8		Assure #BPT < 8
+	?C<=A	P
+	RTNYES
++	RTNCC
+
+GetBpt	DADDR	db_bpt,C
+	D0=C
+	RTNCC
+
+  IFNE	(BPTSIZE)-14
+	MESSAGE Forgot to adjust ml_a_bpt_size to new bpt size!
+  ENDIF
+
+mul_a_bpt_size
+	C=A	A
+	A=A+A	A	2*
+	A=A+C	A	3*
+	A=A+A	A	6*
+	A=A+C	A	7*
+	A=A+A	A	14*
+	RTN
+
+**********************************************************************
+** Set breakpoint counter.
+** If ARG, we set it to (ARG & 0xff). If no ARG, we clear it.
+**********************************************************************
+DbgSetBptCtr
+	GOSUB	db_bptnum	C[A] = BPT #, 1-8
+	GOC	SetBptCtrC
+	GOTO	DbgMain		Bad BPT - ignore key
+
+SetBptCtrC
+	C=C-1	A
+	R0=C			R0[A] = bpt #, 0-7
+
+SetBptCtrR0
+	GOSUB	Argument?	C[A] = ARG
+	GOC	+		ARG present
+	C=0	A		No ARG - set counter to 00
++	R1=C			R1[B] = ARG
+	GOSUB	GetBpt		D0 = ->db_bot
+	A=R0			A[A] = BPT #, 0-7
+	GOSUB	mul_a_bpt_size	A[A] *= size of BPT slot
+	CD0EX
+	C=C+A	A
+	D0=C			D0 = ->BPT# slot
+	D0=D0+	(BPTSIZE)-2	Advance to counter
+	C=R1			C[B] = ARG
+	DAT0=C	B		Rewrite counter
+	GOTO	DbgMain		Continue
+
+** Copy program code at the breakpoint addresses to the breakpoint
+** slots and put `GOSBVL GIEXEC'' instructions in the program.
+
+putbreaks
+	GOSUB	GetBpt		D0 = ->db_bpt
+	LC(1)	7		# of breakpoints less 1
+	B=C	P		B[P] = loop counter
+	DADDR	gIEXEC,C	C.7 = 'GOSBVL GIEXEC'
+	P=	6
+	CSL	WP
+	CSL	WP
+	P=	0
+	LC(2)	#F8
+-	A=DAT0	A		A[A] = BPT address
+	D0=D0+	5		Advance D0 to opcode
+	D1=A			D1 = BPT address
+	A=DAT1	7		A.7 = program opcode
+	DAT0=A	7		Program opcode --> BPT table
+	DAT1=C	7		BPT opcode --> program
+	D0=D0+	(BPTSIZE)-5	Advance D0 to next entry
+	B=B-1	P		One less BPT slot to go
+	GONC	-		Loop slots
+	RTNCC
+
+** Copy the program code saved in the breakpoint slots and put it back
+** in the program.
+
+removebreaks
+	GOSUB	GetBpt		D0 = ->db_bpt
+	LC(1)	7		# of breakpoints less 1
+	B=C	P		B[P] = loop counter
+-	A=DAT0	A		A[A] = BPT address
+	D0=D0+	5		Advance D0 to opcode
+	D1=A			D1 = BPT address
+	A=DAT0	7		A.7 = saved program opcode
+	DAT1=A	7		Restore original program
+	D0=D0+	(BPTSIZE)-5	Advance D0 to next entry
+	B=B-1	P		One less BPT slot to go
+	GONC	-		Loop slots
+	RTNCC
+
+**********************************************************************
+** Set/display watchpoint.
+**
+** If ARG, then also get point #1-8, and set watchpoint to ARG.
+** If no ARG, then switch to watchpoint screen (screen 8).
+**********************************************************************
+DbgWatch	GOSUB	Argument?	A[A] = ARG
+		GOC	+
+		GOLONG	DbgDisp8	No ARG - switch to screen 8
++		R0=C			R0[A] = ARG
+		GOSUB	db_bptnum	C[A] = Watch #
+		GOC	+		OK
+-		GOTO	DbgMain		Bad watch # - ignore
++		C=C-1	A		Adjust watch # to 0-7
+		GOSUB	db_getwatch	Map to table addres in D0
+		C=R0			C[A] = ARG
+		DAT0=C	A		Set watch point
+		GONC	-		Continue main loop
+
+* Set C[A], D0 = ->watch entry # C[A]
+* Uses B[A] A[A]
+
+db_getwatch	B=C	A		B[A] = watch #
+		DADDR	gWATCHTABLE,C	C[A] = ->watch table
+		A=B	A		A[A] = watch #
+		A=A+A	A
+		A=A+A	A
+		A=A+B	A		A[A] = watch # * 5
+		C=C+A	A		C[A] = watch entry address
+		D0=C
+		RTNCC
+
+**********************************************************************
+** Initialize watchpoints to reasonable values
+**********************************************************************
+* Han:	although unlikely, these variables may not reside at the
+*	default memory addresses; use of =aSYMBOL preferred here in
+*	place of =SYMBOL
+
+InitWatch	A=R4.F	A
+		LC(5)	(gWATCHTABLE)+6*5
+		A=A+C	A
+		D1=A			->watch 7
+*		D0=(5)	=aTEMPOB
+*		A=DAT0	A
+*		D0=A
+		D0=(5)	=TEMPOB
+		A=DAT0	A
+		DAT1=A	A
+		D1=D1+	5
+		D0=(5)	=aTEMPTOP
+		A=DAT0	A
+		D0=A
+		A=DAT0	A
+		DAT1=A	A
+		D1=D1+	5
+*		D0=(5)	=aRSKTOP
+*		A=DAT0	A
+*		D0=A
+		D0=(5)	=RSKTOP
+		A=DAT0	A
+		DAT1=A	A
+		D1=D1+	5
+		GOSBVL	=D0=DSKTOP
+		DAT1=A	A
+		RTN
+
+**********************************************************************
+** Initialize changeable watchpoints to reasonable values
+**********************************************************************
+InitTmpWatch	A=R4.F	A
+		D1=A
+		LC(5)	(gWATCHTABLE)
+		A=A+C	A
+		AD1EX			D1 ->watch 1
+		LC(5)	REG_D1
+		A=A+C	A
+		D0=A
+		A=DAT0	A		A=->1st stk lvl
+*		D0=(5)	=aEDITLINE
+*		C=DAT0	A
+*		D0=C
+		D0=(5)	=EDITLINE
+		C=DAT0	A		C=->lstsklvl+5
+		C=C-CON	A,5		C=->lststklvl
+		D0=A
+		D0=D0+	15
+		P=	16-4		4 stk lvls
+-		AD0EX
+		D0=A
+		?A>=C	A
+		GOYES	+
+		A=DAT0	A
+		DAT1=A	A		watch1>4=objs at stk 4>1 (0 if none)
++		D1=D1+	5	
+		D0=D0-	5
+		P=P+1
+		GONC	-
+*		D0=(5)	(=IRAM@)-4
+*		C=DAT0	A
+*		LC(4)	#100		
+		LC(5)	(=IRAMBUFF)+11	#80100
+		DAT1=C	A		watch5 = iram even page
+		D1=D1+	5
+*		D0=(5)	=aUARTBUF
+*		C=DAT0	4	
+		LC(3)	=uart_buffer
+		DAT1=C	A		watch6 = UART Buffer
+		RTN
+
+**********************************************************************
+* Toggle D0/D1/D0&D1 for Screen4 , with arg set CON/REL
+**********************************************************************
+DbgTogD0D1
+	GOSUBL	Argument?
+	GONC	+
+	CSL	A		Arg: C[A]= xxNM0
+	LC(1)	2
+	B=C	A		B[A]=xxNM2
+	DADDR	g4SBSCREEN,C
+	D0=C
+	C=B	A
+	DAT0=C	X		save ConRel ans set screen 4.2
+	GOTO	++		jump to screen 4 (4.2)
+
++	DADDR	g4D0D1,C	No arg:
+	D0=C
+	A=DAT0	A
+	LC(1)	4-1		increment D0D1 value modulo 3	
+	A=A+1	A
+	?A<C	P
+	GOYES	+
+	A=0	A
++	DAT0=A	P		save new D0D1 value
+	GOTO	++		and jump to screen 4
+
+**********************************************************************
+* Toggle D0 or STKn for Screen4 
+**********************************************************************
+DbgTogD0Stk
+	GOSUBL	db_bptnum	Get next key
+	GOC	+
+	C=0	A		Not 1-8: clear value (i.e. set display to D0)
++	DADDR	g4D0orSTK,D0
+	DAT0=C	P		Save value
+++	GOLONG	DbgDisp4	and jump to Screen4
+
+**********************************************************************
+** Breakpoint Trap.
+**
+** We enter here from when a BPT instruction (GOSBVL DB_TRAP), which
+** only occurs during free program run. The PC+7 is on RSTK - we pop
+** it off and update DB PC after we have saved the CPU state.
+**
+** The breakpoints themselves are GOSUBs to a buffer where code
+** that saves away the state has been placed. The buffer code
+** saves D, C, A, D0, P, HEX/DEC, Carry, and makes a JUMP to db_trap.
+** We call db_revive to copy the data from the save buffer to the
+** saved state buffer. The D0 register points to the last saved
+** register in the buffer. It is passed to db_revive as returned.
+**
+** When we enter DBBUF we are in HEX mode, and free to use C, A, D0,
+** D, P, HEX/DEC, R4[A], and the carry bit.
+**
+**********************************************************************
+POP_STC	MACRO
+	C=RSTK		Write back RSTJK
+	DAT1=C	A
+	D1=D1+	5
+POP_STC	ENDM
+
+db_pop_stc
+	C=RSTK
+	A=C	A	A[A] = return address
+	POP_STC
+	PC=A
+
+db_trap
+	GOSUBL	Recollect
+	C=RSTK			C[A] = DB PC + 7
+	C=C-CON	A,7
+	R0=C			R0[A] = DB PC
+	GOSUBL	SetPC		Db PC = C[A]
+
+	DADDR	REG_RSTK,C
+	D1=C			D1 = ->REG_RSTK
+	POP_STC			Save RSTK 1
+	GOSUB	db_pop_stc	Save RSTK 2
+	GOSUB	db_pop_stc	Save RSTK 3
+	GOSUB	db_pop_stc	Save RSTK 4
+	GOSUB	db_pop_stc	Save RSTK 5
+	GOSUB	db_pop_stc	Save RSTK 6
+	GOSUB	db_pop_stc	Save RSTK 7
+	GOSUB	db_pop_stc	Save RSTK 8
+	GOSUB	removebreaks	Remove BPTs from program
+	C=R0			C[A] = DB PC
+	GOSUB	db_bpt_p	D0 = ->bpt data
+	GONC	+		Ehh? None? Stop!
+	D0=D0+	(BPTSIZE)-2	D0 = ->bpt counter
+	C=DAT0	B		C[B] = counter
+	C=C+1	B
+	DAT0=C	B		Bpt counter++
+	?CBIT=1	7		Negative?
+	GOYES	db_run
++	GOSUBL	MsgDelay	View message (switches to text)
+	CSTRING	'Breakpoint Trap'
+	GOLONG	DbgNew		Positive - stop
+
+** Continue execution. No ARG expected.
+
+DbgContinue
+	GOSUB	Argument?	Check if ARG
+	GONC	db_run		No - continue
+	GOLONG	DbgMain		Yes - ignore key
+
+** Release program - let it run free.
+**
+** Copy state catch code to IEXEC and follow it by a JUMP DB_TRAP.
+** Then transfer to the point in the user program where the DB PC
+** points to. When a breakpoint is encountered, a GOSBVL is made to
+** IEXEC, which saves basic processor state info and transfers (via
+** the appended GOVLNG DB_TRAP) to db_trap. The code at db_trap saves
+** the entire state via a call to Recollect as well as
+** takes care of all further breakpoint processing.
+**
+** We also switch to the PICT display.
+
+db_run
+	GOSUB	db_ctopict		Switch to PICT display during run
+	GOSUB	GetPC			A[A] = DB PC
+	R3=A
+	DADDR	gIEXEC,D1
+	GOSUB	CatchThis		Add instr pad to IEXEC
+	ADDR	db_trap,C
+	GOSUB	CatchMe			Add GOVLNG Catcher to IEXEC
+
+	GOSUB	putbreaks		Put BPTs in program
+	GOSUBL	loadrstk		Load RSTK
+	A=R3
+	GOLONG	Trigger			Load CPU state and go to DB PC
+
+** This is the code that is used to pad instructions to save a
+** minimal state. We need to save A.8 and C.8 since FindDBPAR needs
+** 8 nybbles. For definitions, see the SREG definitions in
+** dbdefs.a. The routine continues with D0 pointing to the last
+** element.
+
+db_instr_pad
+	RSTK=C				Save C[A] on RSTK
+	C=PC
+	CD0EX
+	NOP3
+	DAT0=C	A			Save D0
+	C=0	B
+	GONC	+
+	C=C+1	B
++	D0=D0+	(SREG_CRY)-(SREG_D0)
+	DAT0=C	1			Save CRY
+	D0=D0+	(SREG_C)-(SREG_CRY)
+	C=RSTK				C[A] = saved C[A]
+	DAT0=C	8			Save C.8
+	D0=D0+	(SREG_A)-(SREG_C)
+	DAT0=A	8			Save A.8
+	D0=D0+	(SREG_D)-(SREG_A)
+	C=D	A
+	DAT0=C	A			Save D[A]
+	D0=D0+	(SREG_R4)-(SREG_D)
+	C=R4.F	A
+	DAT0=C	A			Save R4[A]
+	D0=D0+	(SREG_P)-(SREG_R4)
+
+	C=P	0			C[0]=P
+	P=	0
+	DAT0=C	1			Save P
+	D0=D0+	(SREG_MODE)-(SREG_P)
+	LC(1)	9
+	C=C+1	P			Set CRY if 9 wraps
+	C=0	P
+	GONC	+
+	C=C+1	P
++	DAT0=C	1			Save DEC/HEX state
+	C=0	P
+	?SB=0
+	GOYES	+
+	C=C+1	P
+	C=C+1	P			HST: SB set --> make C[1]=2
++	D0=D0+	(SREG_HST)-(SREG_MODE)
+	DAT0=C	1			Save HST
+	SETHEX
+
+db_pad_size = (*)-(db_instr_pad)
+*	IFGT	(db_pad_size)-(db_instr_pad)+32
+*	MESSAGE	IEXEC buffer too small!!
+*	ENDIF
+
+** Add instruction pad code to buffer.
+** In:
+**	D1 = address of next nybble in buffer
+**
+** Out:
+**	D1 = next consequtive buffer nybble
+**
+
+CatchThis
+	ADDR	db_instr_pad,D0
+	LC(5)	db_pad_size		Code pad size
+	GOVLNG	=MOVEDOWN		Copy it to buffer
+
+** Add GOVLNG to instruction to buffer. The GOVLNG instruction
+** is used to transfer control to the proper MLDB entry after
+** the processor state is saved (which is done by the db_instr_pad
+** code added above).
+**
+** In:
+**	C[A] = GOVLNG destination
+**	D1   = address of next nybble in buffer
+**
+** Out:
+**	D1  = D1 in plus 7
+**
+
+CatchMe
+	P=	0
+	A=C	A		A[A] = jump destination
+	LC(2)	#D8		Add GOVLNG opcode
+	DAT1=C	2
+	D1=D1+	2
+	DAT1=A	A		Add destination
+	D1=D1+	5		Advance buffer pointer
+	RTNCC
+
+** Check to see if breakpoint is set on address.
+** In:
+**	C[A]= address to check
+** Out:
+**	D0 = ->breakpoint data
+**	Carry = set if match
+**
+
+db_bpt_p
+	R0=C			R0[A] = address
+	GOSUBL	GetBpt		D0 = ->db_bpt
+	LC(1)	7
+	B=C	P		B[0] = breakpoint counter
+	C=R0			C[A] = address
+-	A=DAT0	A		A[A] = breakpoint address
+	?A=C	A		Match?
+	RTNYES			Yes - CS
+	D0=D0+	BPTSIZE
+	B=B-1	P
+	GONC	-		Loop breakpoints
+	RTNCC			End of table, CC
+
+** Save system registers. We avoid using the ROM routines since they
+** will conflict with or be altered by the program being debugged.
+**
+** Get address of save area. Precaution is taken not to modify A.
+** The address is returned in C.
+
+db_getsr
+	C=A	A
+	RSTK=C
+	DADDR	gSYSREGS,C	C[A] = address of system registers
+	ACEX	A
+	C=RSTK
+	ACEX	A
+	RTN
+
+SavPtr
+	GOSUB	db_getsr	C[A] = address of system registers
+	CD0EX
+	DAT0=C	A		Save current location
+	D0=D0+	5
+	CD1EX
+	D1=C
+	DAT0=C	A		Save stack pointer
+	D0=D0+	5
+	C=B	A
+	DAT0=C	A		Save return address
+	D0=D0+	5
+	C=D	A
+	DAT0=C	A		Save free memory count
+	RTN
+
+db_restore_regs
+	GOSUB	db_getsr
+	D0=C			D0 = address of system registers
+	D0=D0+	15		Advance to free memory count
+	C=DAT0	A
+	D=C	A		D = free memory count
+	D0=D0-	5
+	C=DAT0	A
+	B=C	A		B = return address
+	D0=D0-	5
+	C=DAT0	A
+	D1=C			D1 = stack pointer
+	D0=D0-	5
+	C=DAT0	A		D0 = current location
+	D0=C
+	RTN
+
+* Save 6 levels of our stack. Uses D1 C[A] A[A]
+
+db_get_our_rstk
+	DADDR	gOWN_RSTK,C
+	D1=C
+	RTN
+
+db_save_our_rstk
+	GOSUB	db_get_our_rstk	C=D1 = ->db_our_rtsk
+	C=RSTK			Pop our return address
+	A=C	A		Store in A
+	C=RSTK			Save RSTK1
+	GOSUB	db_stc_indd1
+	C=RSTK			Save RSTK2
+	GOSUB	db_stc_indd1
+	C=RSTK			Save RSTK3
+	GOSUB	db_stc_indd1
+	C=RSTK			Save RSTK4
+	GOSUB	db_stc_indd1
+	C=RSTK			Save RSTK5
+	GOSUB	db_stc_indd1
+	C=RSTK			Save RSTK6
+	GOSUB	db_stc_indd1
+	PC=A			Return
+
+db_stc_indd1
+	DAT1=C	A
+	D1=D1+	5
+	RTN
+
+db_ldc_indd1
+	D1=D1-	5
+	C=DAT1	A
+	RTN
+
+db_restore_our_rstk
+	GOSUB	db_get_our_rstk	D1 = ->gOWN_RSTK
+	LADD	6*5,D1
+	C=RSTK
+	A=C	A		A[A] = our return address
+	GOSUB	db_ldc_indd1	Restore RSTK6
+	RSTK=C
+	GOSUB	db_ldc_indd1	Restore RSTK5
+	RSTK=C
+	GOSUB	db_ldc_indd1	Restore RSTK4
+	RSTK=C
+	GOSUB	db_ldc_indd1	Restore RSTK3
+	RSTK=C
+	GOSUB	db_ldc_indd1	Restore RSTK2
+	RSTK=C
+	GOSUB	db_ldc_indd1	Restore RSTK1
+	RSTK=C
+	PC=A			Return
+
+** Erase data area. Called at start-up to initialize the DBpar
+** contents.
+
+EraseDBPAR
+	C=R4.F	A
+	D0=C			D0 = ->DBBUF
+	LC(5)	DBBUFSIZE	C[A] = size of data area
+
+** Clear memory block.
+** In:
+**	 D0	 Address of block
+**	 C[A]	 Size of block
+** Out:	 P	 0
+** Used: A[W]
+
+db_clear
+	A=0	W
+	CSRC			C[B] = size in words
+	P=	3
+-	DAT0=A	W		Clear 1 word
+	D0=D0+	16
+	C=C-1	WP
+	?C#0	WP
+	GOYES	-
+	P=C	15		P = size mod 16
+	P=P-1
+	GOC	+		Even number of words
+	DAT0=A	WP		Clear final nibbles
++	P=	0
+	RTN
+
+**********************************************************************
+** Locate data area.
+** Out:
+**	C[A] = previous R4[A] contents
+**	D0   = &data area
+**	A.8  = magic preamble
+**	R4[A]= &data area
+**	P    = 0
+**	CRY  = clear
+**
+**********************************************************************
+FindDBPAR
+	P=	0
+	LC(8)	0-(DBMAGIC)
+	P=	7		Use WP so we don't trash upper half
+	C=-C-1	WP		Complement
+	P=	0
+
+*	D0=(5)	=aGraphPrtHook	Try old save location first
+*	A=DAT0	A
+*	D0=A
+	D0=(5)	=GraphPrtHook
+	A=DAT0	A
+	D0=A
+	D0=D0-	8		Back to magic preamble
+	P=	7
+	A=DAT0	WP
+	?A=C	WP
+	GOYES	hookdat		Still there..
+
+*	D0=(5)	=aEDITLINE	Now try above stack
+*	A=DAT0	A
+*	D0=A
+	D0=(5)	=EDITLINE	Han:	why not start at USEROB?
+	A=DAT0	A
+	?A=0	A		Null ptr? Eh?
+	GOYES	+
+	D0=A
+	P=	7
+	A=0	WP
+-	ASR	WP		Shift current pattern right
+	A=DAT0	P		Get new high nibble
+	?A=C	WP
+	GOYES	++		Found it by scanning
+	D0=D0+	1		Advance to next nibble
+	GONC	-
++	RESET			Can't find data
+
+hookdat	D0=D0+	7		Skip preamble
+++	P=	0
+	D0=D0+	1		Return pointer to first data nibble
+	CD0EX
+*	D0=(5)	=aGraphPrtHook	Save the location
+*	A=DAT0	A
+*	D0=A
+	D0=(5)	=GraphPrtHook
+	DAT0=C	A
+	D0=C
+	CR4EX.F	A
+	RTNCC
+
+**********************************************************************
+
+** Push C.A on DB stack
+
+* Get stack and pointer
+* D0 = ->gSTACK+gSTACKPTR, C[A] = gSTACKPTR, A[A] = ->gSTACKPTR
+
+db_getstack
+	DADDR	gSTACKPTR,C
+	D0=C			D0 = ->gSTACKPTR
+	C=0	A
+	C=DAT0	SPSIZE		C[A] = gSTACKPTR
+	AD0EX			A[A] = ->gSTACKPTR
+	D0=A
+	D0=D0+	(gSTACK)-(gSTACKPTR)
+	AD0EX
+	A=A+C	A
+	AD0EX			D0 = ->gSTACK+gSTACKPTR
+	RTNCC
+
+db_pushc
+	R0=C.F	A		R0[A] = data
+	GOSUB	db_getstack	D0 = ->gSTACK+gSTACKPTR
+	AR0EX.F	A
+	DAT0=A	A		Write data on stack
+	C=C+CON	A,5		Advance gSTACKPTR
+	AR0EX.F	A
+	D0=A			D0 = ->gSTACKPTR
+	DAT0=C	SPSIZE		gSTACKPTR = gSTACKPTR+5
+	RTN
+
+** Pop C.A from DB stack
+** Returns with carry set if stack is empty.
+
+db_popc
+	GOSUB	db_getstack	D0=->gSTACK+gSTACKPTR C[A]=gSTACKPTR
+	C=C-CON	A,5		gSTACKPTR -= 5
+	RTNC			Stack empty
+	AD0EX
+	DAT0=C	SPSIZE		Update gSTACKPTR
+	AD0EX
+	D0=D0-	5
+	C=DAT0	A		C[A] = data
+	RTNCC
+
+**********************************************************************

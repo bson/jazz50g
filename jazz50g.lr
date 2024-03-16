@@ -1,0 +1,1489 @@
+Saturn Loader, Ver. version 3.0.9, 08/03/10
+
+
+Output Module:
+Module=jazz50g.o
+  Start=00000 End=22E88 Length=22E89   Symbols= 989 References=4805
+  Date=Mon Sep 06 10:33:08 2010   Title=
+
+
+Source modules:
+Module=_head.o
+  Start=00000 End=0004C Length=0004D
+  Date=Mon Sep 06 10:33:08 2010   Title=                                        Mon Sep 06 10:33:08 2010
+
+Module=_table.o
+  Start=0004D End=00434 Length=003E8
+  Date=Mon Sep 06 10:33:08 2010   Title=                                        Mon Sep 06 10:33:08 2010
+
+Module=jazz.o
+  Start=00435 End=22E84 Length=22A50
+  Date=Mon Sep 06 10:33:07 2010   Title=                                        Mon Sep 06 10:33:07 2010
+
+Module=_end.o
+  Start=22E85 End=22E88 Length=00004
+  Date=Mon Sep 06 10:33:08 2010   Title=                                        Mon Sep 06 10:33:08 2010
+
+Saturn Cross Reference Listing
+
+!*triand                         *       - 228DC
+!DcompWidth                      *       - 1B0A7
+!append$                         *       - 16C89 16F3E 16F51 17423 174CE 17506
+                                 + 1756D 175A5
+!insert$                         *       - 15D76 16CC1 16F56 16FC9 173CA 1741E
+                                 + 2138F
+
+#+                               *       - 1723E 1731E 173A2 2140C
+#+-1                             *       - 17215
+#-                               *       - 16F0C 16F9C 173D4 1B0F3 20C04 20D81
+                                 + 212C1 21330
+#0=ITE                           *       - 21087
+#0=case                          *       - 16D3C 172E7
+#1+                              *       - 16CD0 16D73 16E19 17342 17644 17DC2
+#1+'                             *       - 17A9B
+#1-                              *       - 16A2F 16A85 16D4B 16DCD 16E51 16ED0
+                                 + 172F6 1B0F8 2105A
+#1=?SKIP                         *       - 159DA
+#1=case                          *       - 16DB4
+#2*                              *       - 16D78 16ECB 16F6F
+#2+                              *       - 16CEA 176D2 212C6
+#2-                              *       - 17243
+#2/                              *       - 16D8C
+#3+                              *       - 16D04
+#4+                              *       - 16F11 16FA1
+#:>$                             *       - 16A8A
+#<                               *       - 15CA1 15DB2 15F39 166A7 20849 22CA1
+#<>case                          *       - 15E66
+#=ITE                            *       - 16083 160EC 16187
+#=case                           *       - 20F2B 22B64
+#=casedrop                       *       - 167C0 167D5 167EA 167FF 16814 16829
+                                 + 16838 1684D 16862 1689B 1693C 16951 16966
+                                 + 1697B 16990 169A5 169BA 169CF 16D2D 16D5F
+                                 + 16DA5 16E00 172D8 1730A 1AD56 1AEC1 20572
+                                 + 20587 2059C 205B1 205C6 20ECC 20EDB 20F08
+                                 + 22B0F 22B1E 22B41
+#>                               *       - 15CBA
+#>$                              *       - 16C84 16C98 16F39 17248 17262 1727C
+                                 + 17296
+#>Entr                           * 22380 - 003E5
+#>HXS                            *       - 0AE69 0FE28 1AE78 1AF0C 22326 22371
+#AND                             *       - 21041 21407
+#CAlarmErr                       *       - 20F26 22B5F
+#MIN                             *       - 16A39
+
+$5x7                             *       - 1A166 22881
+
+%-MAXREAL                        *       - 18995
+%0                               *       - 187A2 18956
+%1                               *       - 222A5
+%MAXREAL                         *       - 18989
+
+'                                *       - 03B69 0FC8C 0FD6D 1584B 15879 158A4
+                                 + 1590E 15AA1 15BAC 15BEE 15C40 15C63 15CEB
+                                 + 15DFA 15E24 15E33 15E85 15EA5 15EF7 16333
+                                 + 163AE 163B8 16534 1658E 165C2 16623 16646
+                                 + 166D3 166F8 1671A 1691C 16B15 16C29 1718F
+                                 + 17615 1765D 1767F 176B3 176BD 17764 17957
+                                 + 17A28 17C6E 17C92 17C9C 18F1B 18F3B 18F8B
+                                 + 192AC 1AB3B 2087D 20DEF 2275F 22930 22950
+                                 + 22978 229EB 22ADB 22BE2 22C64 22E1B
+'EvalNoCK:                       *       - 18411 21353
+'R                               *       - 15BC0 174C4 17B7C 17BBD 17BEC 17C69
+                                 + 17C78 17F31 1841B 18A25 18A34 18EFD
+'R'R                             *       - 17BD2 17BE7 17C01 17C06 17D94 17DA3
+                                 + 18A53 18A62
+'R'Rpsh2&rev                     = 297CC - 17AC8
+'REVAL                           *       - 17F22 18ECF
+'RRDROP                          *       - 17D75 17D84 17FCC 18009 18A81 18A90
+                                 + 18EC5
+'RSAVEWORD                       *       - 180E4
+'Rswapop                         = 29808 - 17A64
+'xDEREQ                          *       - 181A5
+
+0CODE                            = 00030 - 105D2 11191 1513D 19507 19A8B 1B6FB
+                                 + 20230
+0LASTOWDOB!                      *       - 22550
+0LastRomWrd!                     *       - 0FDD7 0FDFF
+
+1CODE                            = 0002B - 11193 15144 1950E 19A8D 1B702 1B709
+1GETABND                         *       - 01D41 16EA2 1736F 1AF73 1B1A3 20BFF
+                                 + 20E2C 2131C 213F8 229CD 22C50
+1GETCOLAEVAL                     = 79C78 - 17F7A
+1GETLAM                          *       - 02822 16641 17F84 1AD15 212B7
+1LAMBIND                         *       - 01D14 03B5A 15E10 192A2 1B14D 206B3
+                                 + 20E22
+1PUTLAM                          *       - 02816 1AD47
+
+2@REVAL                          *       - 17FB3
+2CODE                            = 0002C - 11195 1514B 19515 19A8F 1B710 1B717
+2DROP                            *       - 0B03E 0B353 173BB 18181 20D72 20E95
+                                 + 20FEA 213B2 2228C 22390 223BF
+2DUP                             *       - 0AD91 0AE83
+2DUP#<                           *       - 0AD77 0B029 0B2D9 0B2F7 0B33E 16F74
+2DUP#>                           *       - 0B325 16D7D 16ED5 173AC 21321
+2GETEVAL                         *       - 17F60 17F75
+2GETLAM                          *       - 16E89 17360 1AD10 212DA 21312
+2PUTLAM                          *       - 16E7F 17356 1AD4C
+2RDROP                           *       - 1815D 18162 18186 1818B
+2SWAP                            *       - 0AD8C 0AE7E 0AF62 0B00F 0B2D4
+2skipcola                        *       - 183DC 18433
+
+3@REVAL                          *       - 17FF0
+3CODE                            = 0002D - 11197 15152 1951C 19A91 1B71E 1B725
+3DROP                            *       - 01650 0ACD9 0ADCB 0AEBD 0AFA1 1717B
+                                 + 17338 20568 2100E 22CCA
+3GETLAM                          *       - 16C7F 16DAF 16DC8 16E14 16E4C 1720B
+                                 + 17234 172E2 172F1 17314 1733D 1AD0B 212D5
+                                 + 2130D
+3PICK                            *       - 0ACBF 0B014 16EC1 16EC6 16F65 16F6A
+                                 + 17398 2081B 20868 2090A 20A97 20AEA 20B9D
+                                 + 20BCC 22CB0
+3PUTLAM                          *       - 16DD7 16E23 16E5B 172FB 17347
+
+4CODE                            = 00026 - 11199 15159 19523 19A93 1B72C 1B733
+4DROP                            *       - 01D64 0AD2E 22D19
+4GETLAM                          *       - 16CCB 16CE5 16CFF 16D37 16D46 16D6E
+                                 + 1AD06 212D0 21308
+4PICK                            *       - 0B2A0 0B2F2 16F34 20709 207C9
+4PUTLAM                          *       - 16D50 16D91 16DF1 16E42
+4ROLL                            *       - 1725D 1ACAA 1B1D5 20CB4 20FE5 213DA
+4ROLLDROP                        *       - 16FC4
+4ROLLSWAP                        *       - 0B29B 173A7
+4UNROLL                          *       - 0164B 0ADC6 0AF9C 0B310 1B1EE 20C9B
+                                 + 20CCD 20D68 213E4
+
+5CODE                            = 00027 - 1119B 1952A 19A95 1B73A 1B741
+5GETLAM                          *       - 1AD2E
+5ROLL                            *       - 01631 1AC27 20CD7
+5ROLLDROP                        *       - 21032
+5UNROLL                          *       - 0AD29 0AEB8 0B2E8 0B2ED 2069F 20FDB
+                                 + 213C1 22D14
+
+6CODE                            = 00028 - 1119D 19531 19A97 1B748 1B74F
+6ROLL                            *       - 2133F 213EE 213F3
+6UNROLL                          *       - 01D5A 01D5F 2102D 21046 2104B
+
+7CODE                            = 00021 - 1119F 19538 19A99 1B756 1B75D
+
+8CODE                            = 00022 - 111A1 1953F 19A9B 1B764 1B76B
+
+9CODE                            = 00023 - 111A3 19546 19A9D 1B772 1B779
+
+::N                              *       - 17649 176D7 17CB1 18E96
+::NEVAL                          *       - 17F46 17F5B
+
+>H$                              *       - 2138A
+>R                               *       - 15C3B 15C4A 15C5E 15E2E 15E3D 1764E
+                                 + 17854 17CB6 17DDC 17DE6 17FA3 183FC 18453
+                                 + 18ECA
+>TOPTEMP                         = 06DDE - 1B1E4 20CC3 213DF
+
+?ATTNQUIT                        *       - 18139
+?CaseKeyDef                      *       - 17BA4
+?CaseRomptr@                     *       - 17BA9
+?DispCommandLine                 *       - 22A95
+?DispMenu                        *       - 22AA4
+?DispStack                       *       - 15F43 22A9F
+?DispStatus                      *       - 22A9A
+?GOTO                            *       - 1807B
+?SEMI                            *       - 015EC 0FDD2 0FDFA 18A11 20B74 22E3E
+?SKIP                            *       - 15CC4 1654F 1687C 168B5 1ADAB 1AF02
+                                 + 1B10C 206FF 2137B
+
+@                                *       - 0FDCD 1585F 165D6
+@LAM                             *       - 158B8 15924 15C04 15D01 15E9B 15EBB
+                                 + 1654A 166E9 16B2B 1762B 1AB4F 22946 22964
+                                 + 22BF6
+
+ABND                             *       - 15C1D 1666B 1667A 1AF64 20C57 20F8A
+                                 + 20FAD 212DF 212E4 229A0 229E1 22C0F
+ABUFF                            *       - 20FEF
+ADISP                            *       - 1A0F6 1A760
+AEQ1stcase                       *       - 17B90
+AEQopscase                       *       - 17B95
+AINRTN                           *       - 216C6 21CA2
+ALPHACODE                        = 00080 - 1062D 1FDFF
+ALTCODE                          = 000C0 -
+ANNCTRL                          *       - 103FD 19B45 19C4C 1A703 1B8EA 1B90A
+ANNUNCIATORS                     *       - 1A5F2 1B8D2 1FE13
+APPEND_SPACE                     *       - 173C5
+APPSCODE                         = 00007 - 10562 15191 21643
+ASLW5                            *       - 01FBC 020D8 0222D 02964 03AC6 08E17
+                                 + 0C4ED 0C546 0FF52 0FF5F 0FF85 0FFAA 112DE
+                                 + 112EB 12ADE 138D6 138E3 15551 15558 19B5D
+                                 + 1A03C 1D253 21728
+ASRW5                            *       - 01C70 03AAF 03B46 06CE2 07EB7 08E55
+                                 + 100B0 100BD 100D0 100DD 12B49 157E3 157EA
+                                 + 19B1F 19C6C 1D28C 21742
+ATTNCODE                         = 0002F -
+AddLabsRPL                       * 0B102 - 00278
+AddLabsXY                        * 0B3BE - 0027D
+AllowIntr                        *       - 01A88 02396 0A5D2 103E0 1A78B 1A8BD
+                                 + 1A944 1F9FC 1FB3A 1FBBF 1FC38 216E4 21CBB
+Assemble                         * 0165A - 00250
+AtUserStack                      *       - 01D4B 20DB8 20E31 22A86
+
+BACKCODE                         = 00015 - 105CB 156C0 1E129
+BEGIN                            *       - 15BE9 1663C 16C56 171F7 1ACE6 1B030
+                                 + 1B0CF 206F5 20DB3 22A6D 22BDD
+BIND                             *       - 15B5D 15DF5 1ACE1 2107D 22A54
+BINT79                           *       - 1592E 15A7E 22A04 22A72 22B97
+BINT85                           *       - 15947 15A88 22A0E 22A7C 22BBA
+BITMAP                           *       - 103C6 1A7D7 1FA5C 1FBFB
+BLINKMASK                        *       - 1A895 1A928 1FB12 1FBA3
+BlankDA1                         *       - 16A4D
+BlankDA12                        *       - 16A52
+BounceTiming                     *       - 19395 195AD 1BCB8 204B9
+Box/StdLbl:                      *       - 17AE6
+
+CACHE                            *       - 20D8B
+CAR$                             *       - 20B04
+CARCOMP                          *       - 189E9
+CARDCTL                          = 0010E - 103EF 1A8C4 1FB41
+CHECKME                          * 0A2EE - 0025F
+CHR_Newline                      *       - 21385
+CHSCODE                          = 0001C - 105BD 1516E 156F8
+CINRTN                           *       - 14704 1FBEF 21709
+CK&DISPATCH0                     *       - 15A55 176EB 18468 206C2
+CK&DISPATCH1                     *       - 0FE37 15A17 184DF 2255A
+CK&DISPATCH2                     *       - 184A7
+CK0                              *       - 0FC34 15904 1927E
+CK0ATTNABORT                     *       - 1811C
+CK0NOLASTWD                      *       - 1589F 18134 22920
+CK1                              *       - 015CD 0AC99 0FDA3
+CK1&Dispatch                     *       - 0ADE6 15986 181E3 18376 1AF98 1B074
+                                 + 21584 2230C 22D93
+CK1NOLASTWD                      *       - 162D9 16329
+CK1NoBlame                       *       - 2260C
+CK1nolastwd                      = 204D9 - 181FD
+CK2&Dispatch                     *       - 0AD44 0AF0A 18246
+CK2NOLASTWD                      *       - 1AFA7 22555
+CK2nolastwd                      = 204BE - 18260
+CK3&Dispatch                     *       - 18289
+CK3nolastwd                      = 204A3 - 182A3
+CK4&Dispatch                     *       - 182CC
+CK4nolastwd                      = 205AC - 182E6
+CK5&Dispatch                     *       - 1830F 18382
+CK5nolastwd                      = 20591 - 18329
+CLEARVDISP                       *       - 1AD29 1B13E 222DC
+COERCE                           *       - 0AF29 1AFB7
+COLA                             *       - 0B06C 0B0FD 0B2BA 0B630 0EE62 0EEB8
+                                 + 0FEE1 158E3 15F10 15F5C 16693 16737 176B8
+                                 + 17740 17799 177DD 1780B 1792F 183E1 18438
+                                 + 18EF3 18F02 18F11 1A9AB 1FC7F 2067B 20C42
+                                 + 20FC1 21013 212F3
+COLARPITE                        *       - 17EAA
+COLA_EVAL                        *       - 176DC 17C2A 17F08
+COMPEVAL                         *       - 17F99
+CONTEXT                          *       - 0A8AA
+COSCODE                          = 00019 - 10611 15175
+CRC                              *       - 095A4 095CA 09853
+CREATETEMP                       *       - 188F0
+CSLW5                            *       - 01C2D 01E7F 03A2D 05458 056F6 05723
+                                 + 05882 0842D 084C0 08647 0892B 0895B 0925D
+                                 + 0A7B0 19AD7
+CSRW5                            *       - 016E7 01B0B 0254A 029DB 03578 03D1F
+                                 + 04D97 04E36 057A6 07398 08488 089C1 090EA
+                                 + 09C90 09E14 0C6F7 0C6FE 0C718 0CC02 0CC22
+                                 + 0D115 0EC79 0EC80 0EC96 19ACC 1A0AC
+CTAB_STAT1                       = 80528 -
+CUSTCODE                         = 0000A -
+CacheStack                       *       - 22C32 22C4B 22C5A
+CkSysError                       = 2F039 - 20F1C 22B32 22B55
+ClrDA1IsStat                     *       - 16C42 171A8
+ClrDAsOK                         *       - 16908 22AA9
+ClrISysFlag                      = 0BCF3 -
+ClrSysFlag                       *       - 15942 15967 1AF82 1B1B2 22BB5 22BD8
+CnLn?RHS                         = 79520 - 17AFF
+CnLnSetRHS                       = 794D0 - 17B18
+CompareACbBytes                  *       - 21274
+CurROMBank2                      *       - 22749
+
+D0->Row1                         *       - 215C3 21928
+D0=DSKTOP                        *       - 01E5B 01F5D 0202F 022C7 0349A 03EB3
+                                 + 04516 0467C 047DF 04A13 05C07 05C57 07E75
+                                 + 10C50 1C950 20427
+D1=DSKTOP                        *       - 0170A 01BCE 01F87 01F9A 02002 020BD
+                                 + 0210A 0237D 03440 0395E 03C31 03CEC 03F3B
+                                 + 04055 0419A 041F7 05A67 091DF 0B6A6 0C32C
+                                 + 0C3C7 0C406 0C468 0D564 0D5E2 1CA99 2049D
+                                 + 21DAC 21E2A 21E52
+DBBUFSIZE                        = 005E6 - 0FD3B
+DBHOOK                           * 0FC2F - 002A5
+DBHook                           * 0FC39 - 002AA
+DEPTH                            *       - 206AE 20BFA 20D77 21055 212BC 21317
+DEPTHSAVE                        *       - 1C97B 1C9A3 1CABD
+DFLT_TIMEOUT                     = 258000 - 1A877 1FAF4
+DISABLE_KBD                      *       - 1A7C9 1A82D 1FA4E 1FAAA 1FBD9 1FC08
+DISPN                            *       - 16A99 16EF3 16F02 16F60 16F92 16FD3
+                                 + 172BA
+DISPROW1                         *       - 16C8E 171F2 174D3 17572 175E4 20EA4
+                                 + 20F5D
+DISPROW2                         *       - 15EED 16CC6 1750B 175AA 175F3 20EA9
+                                 + 20F62
+DISPROW2*                        *       - 15D2B 15D7B
+DISPSTATUS2                      *       - 16903
+DIV5                             *       - 17105
+DIVCODE                          = 0001F - 105AF 156DC 1E112
+DO                               *       - 17206
+DO#EXIT                          *       - 0FD15
+DOACPTR                          *       - 0A836
+DOARRY                           *       - 0044E 0331F 03878 0C9D8 185FD 1A1D4
+DOBAK                            *       - 03377 0C9F6 15339 1A254
+DOBIND                           *       - 03B98 16C3D 171A3 229FA 22C73
+DOBINT                           *       - 0043A 02F39 0AA43 0AD49 0AF0F 0C7DA
+                                 + 0C96A 0FD0B 0FD36 0FE46 18531 1A198 1AC18
+                                 + 1B157 1B1C6 2083F 20CA5 2109B 210A5 213CB
+                                 + 213FD 2255F 22C97 22D98
+DOCHAR                           *       - 037D7 0C9B0 1A1C8 20B09
+DOCLLCD                          *       - 16C51 171B7
+DOCMP                            *       - 0325B 0C99C 1A1B2
+DOCODE                           *       - 0165A 033D1 0385C 0A256 0A27C 0A2EE
+                                 + 0A32B 0AED1 0AFB5 0B08B 0B107 0B138 0B362
+                                 + 0B3BE 0B624 0B635 0B7E2 0B9EF 0BC57 0C956
+                                 + 0EE67 0EE79 0EEC6 0F9E2 0FAEC 0FB8A 0FBF1
+                                 + 0FC3E 0FCB1 0FD45 0FE64 0FEE6 10021 10967
+                                 + 15B62 16A09 16AB3 16FDD 17051 1742D 1788C
+                                 + 178AF 17986 179CF 17CC0 18041 18085 180CC
+                                 + 180EE 18126 181ED 18250 18293 182D6 18319
+                                 + 1835C 18420 18472 184B1 184E9 18F68 18FA8
+                                 + 1903D 192B1 1A2B0 1A9B0 1AB68 1AC2C 1AD65
+                                 + 1AECB 1B166 1B1F8 1FC84 20627 2088D 20929
+                                 + 2096B 209DF 20A2C 20C13 20CDC 20E5E 210E4
+                                 + 21411 2159D 21B95 22359 223DE 224E3 22528
+                                 + 22569 22621 22774 227C4 22824 22D2D 22DB7
+                                 + 22E43
+DOCOL                            *       - 00435 015C8 015DD 01B39 01B9E 01D0F
+                                 + 01D19 01D55 01D8D 02F0D 0AC94 0ACD4 0AD3F
+                                 + 0AD53 0ADE1 0ADF0 0AE0F 0AE34 0AECC 0AF05
+                                 + 0AF19 0AFB0 0B00A 0B081 0B102 0B264 0B32F
+                                 + 0B605 0C938 0EE41 0EE97 0FC2F 0FC39 0FCAC
+                                 + 0FD1F 0FD9E 0FDC8 0FDF0 0FE18 0FE32 0FE5A
+                                 + 0FE9B 0FECD 1583B 1589A 158FF 15909 15981
+                                 + 159D0 15A03 15A41 15A6F 15BB1 15BBB 15BD9
+                                 + 15C0E 15C13 15C83 15CC9 15CE6 15D49 15D99
+                                 + 15DC1 15ECA 15F71 15F9C 15FCB 16014 1605A
+                                 + 160C3 16110 1615E 161AB 161F2 16248 16277
+                                 + 162C4 16314 16399 16433 16462 164B2 164E1
+                                 + 1651A 16563 165BD 16619 16666 16698 166B1
+                                 + 166CE 16867 168A0 168DF 16912 169EF 16AF3
+                                 + 16B10 16BB3 16BCD 16D23 16D32 16D64 16DAA
+                                 + 16E05 16E38 16EBC 16EDF 16F7E 1711B 17135
+                                 + 1722A 172CE 172DD 1730F 17389 173B6 174A5
+                                 + 17520 175BF 17610 176E6 17715 1775A 177C3
+                                 + 177F2 17801 17864 17873 178DC 1791B 17934
+                                 + 1796C 17C1B 17C73 17E86 181AF 185B6 189DF
+                                 + 189FD 18A2A 18A58 18A86 18AB4 18AB9 18ABE
+                                 + 18AC3 18AC8 18AD2 18AE7 18AFC 18B11 18B26
+                                 + 18B3B 18B50 18B65 18B84 18B99 18BAE 18BC3
+                                 + 18BD8 18BED 18C02 18C17 18C36 18C4B 18C60
+                                 + 18C75 18C8A 18C9F 18CB4 18CC9 18CE8 18CFD
+                                 + 18D12 18D27 18D3C 18D51 18D66 18D7B 18D9A
+                                 + 18DAF 18DC4 18DD9 18DEE 18E03 18E18 18E2D
+                                 + 18E5C 18E8C 18EC0 18EE9 18EF8 18F07 18F16
+                                 + 18F63 18F81 1924F 19279 192A7 1A2A6 1A9A1
+                                 + 1AB5E 1AD42 1AD5B 1ADB0 1ADD5 1AE0A 1AEC6
+                                 + 1AF07 1AF93 1AFA2 1AFD1 1AFFB 1B03F 1B06F
+                                 + 1B07E 1B09D 1B0DF 1B12A 1B1BC 1FC75 205DB
+                                 + 20609 2069A 206BD 206CC 20723 2072D 20751
+                                 + 207A1 207F2 20835 20853 20924 2095B 20A11
+                                 + 20ACB 20B6A 20BB7 20BEB 20D63 20D90 20DA9
+                                 + 20DDB 20E09 20E18 20E9A 20EE0 20F0D 20F35
+                                 + 20FD6 21028 2108C 210C4 212A8 2132B 2134E
+                                 + 213AD 2157F 2158E 21B77 2229B 22307 22316
+                                 + 22335 22354 22380 223AF 224DE 2254B 22607
+                                 + 2261C 2291B 2296E 229B4 22A68 22A90 22AC7
+                                 + 22B23 22B46 22C05 22C7D 22C8D 22CC5 22D28
+                                 + 22D8E 22DA2 22E20
+DOCSTR                           *       - 00458 036FA 03863 03911 09C72 09CA3
+                                 + 09DF6 09E27 0ACDE 0C960 1376E 158CC 15D10
+                                 + 15ECF 15F85 16004 16048 160AC 16149 161E4
+                                 + 16231 162B0 162FD 16353 163D3 1641A 1649B
+                                 + 16524 165E5 16790 168E9 16B3A 16BD2 16C5B
+                                 + 16C9D 16F20 16F43 16FB0 1713A 171BC 173D9
+                                 + 174AA 174D8 1753F 17577 175C4 17834 1A1EA
+                                 + 1AE2F 1C9BC 222AA 22CCF
+DOECMP                           *       - 03211 0C9CE 1A1BC
+DOEREL                           *       - 03299 0C9C4 1A1A8
+DOEXT                            *       - 02EEF 0B284 0C9E2 1A222
+DOEXT0                           *       - 0336C 0387F 0CA1E 0FD24 1A260
+DOEXT1                           *       - 03001 0CA28 1A26E
+DOEXT2                           *       - 03340 03886 0CA32 1A27C
+DOEXT3                           *       - 0334B 0388D 0CA3C 1A28A
+DOEXT4                           *       - 03356 03894 0CA46 1A298
+DOFALSE                          *       - 179AE 1AD90
+DOFLASHP                         *       - 03104 03171 0CA78 1A2E2 1C129 208D6
+                                 + 2263E 227FA
+DOGARBAGE                        *       - 0B694 0C45A
+DOGROB                           *       - 03314 0386A 0C988 1A23A 1AD84 1C35D
+DOHSTR                           *       - 0004D 001F6 03309 03871 044E8 0463B
+                                 + 049ED 0A82A 0C9A6 1993F 1A1F2
+DOIDNT                           *       - 0361E 0C97E 0CB82 0FC91 0FD72 185D7
+                                 + 1A2BE 1C021
+DOINT                            *       - 03056 0AC15 0CA50 185EA 18645 18775
+                                 + 1A320
+DOLAM                            *       - 03629 0C974 15850 158A9 15913 1594C
+                                 + 15AB0 15AC1 15AD0 15AE1 15AF2 15B01 15B14
+                                 + 15B25 15B36 15B47 15BF3 15C8D 15CA6 15CCE
+                                 + 15CF0 15D9E 15DDF 15DFF 15E8A 15EAA 15EFC
+                                 + 15F25 15F4D 1606F 160D8 16173 16338 163BD
+                                 + 16539 16578 16593 165C7 16628 1664B 166B6
+                                 + 166D8 166FD 1671F 16921 16AF8 16B1A 175F8
+                                 + 1761A 17662 17684 1771F 185E1 18F20 18F40
+                                 + 18F90 1A2C8 1AB40 1ACBE 1C02D 22935 22955
+                                 + 2297D 22A22 22A31 22A40 22B7E 22B9C 22BBF
+                                 + 22BE7
+DOLCD>                           *       - 21B7C
+DOLIB                            *       - 00000 03382 03C4E 0CA00 1532D 1A248
+DOLIST                           *       - 02EA9 0B270 0C942 15AAB 15DDA 15F7B
+                                 + 15F80 15F97 15FFF 16043 160A7 160BE 16144
+                                 + 16159 161DF 1622C 16243 162AB 162F8 1630F
+                                 + 16415 1642E 16496 164AD 16515 18628 1A1FE
+                                 + 1ACB4 2105F 22A1D 22D4D
+DOLNGCMP                         *       - 0CA64 1A308
+DOLNGREAL                        *       - 0CA5A 1A2FE
+DOLNKARRY                        *       - 0332A 0CA0A 1A1DE
+DOLPENV                          *       - 15B7C 17447
+DOMATRIX                         *       - 02F1C 0B28D 0CA82 18609 1A314
+DOMINIFONT                       *       - 03361 0AC0B 0CA6E 1A2F0
+DOREAL                           *       - 032E4 0C992 18657 188FD 1A1A0
+DOROMP                           *       - 015D2 015FB 01606 01616 01621 0163B
+                                 + 024B9 02719 0273F 02A24 02F94 031BF 0AA39
+                                 + 0AC9E 0ACA9 0ACB4 0ACC4 0AD0E 0AD1E 0AD58
+                                 + 0AD81 0AD96 0ADAB 0ADBB 0ADFA 0AE14 0AE1F
+                                 + 0AE39 0AE44 0AE4F 0AE73 0AE88 0AE9D 0AEAD
+                                 + 0AEE9 0AF1E 0AF4C 0AF57 0AF67 0AF81 0AF91
+                                 + 0B019 0B033 0B052 0B071 0B2AA 0B2BF 0B315
+                                 + 0B348 0C94C 0CB5B 0FDA8 0FDB3 0FE1D 15840
+                                 + 15869 1587E 158E8 15990 159A0 159B0 159C0
+                                 + 159E9 15A21 15A31 15A5F 15BDE 15C68 15C78
+                                 + 15E47 15E75 15F15 15F61 15FA6 15FB6 15FD5
+                                 + 15FE5 1601E 1602E 16064 16092 160CD 160FB
+                                 + 1611A 1612A 16168 16196 161B5 161C5 161FC
+                                 + 1620C 16221 16252 16262 16281 16291 162CE
+                                 + 162E3 1631E 163A3 1643D 1644D 1646C 1647C
+                                 + 164BC 164CC 164EB 164FB 1656D 1673C 16756
+                                 + 1676B 16785 167A6 167C5 167DA 167EF 16804
+                                 + 16819 1683D 16852 16871 16886 168AA 168BF
+                                 + 168D4 16941 16956 1696B 16980 16995 169AA
+                                 + 169BF 169D4 169E4 169FE 16A61 16AA8 16B6A
+                                 + 16B84 16BA8 16BBD 16C05 16CDA 16CF4 16D0E
+                                 + 16DDC 16E28 16E60 16EB1 17125 1716B 1721A
+                                 + 17252 1726C 17286 172A0 17323 1737E 17515
+                                 + 17534 175B4 176C2 176F5 17705 17735 17745
+                                 + 17769 17779 1778E 1779E 177B3 177D2 177E2
+                                 + 17810 17859 178EB 17905 17910 1795C 17976
+                                 + 17BC7 17BDC 17BF6 17C10 17C39 17C44 17C5E
+                                 + 17C82 17CA1 17D1D 17D46 17D6A 17D89 17DAD
+                                 + 17DD1 17DF0 17E0F 17E2E 17E4D 17E71 17E9A
+                                 + 17EB9 17ED8 17EE8 17EFD 17F17 17F3B 17F50
+                                 + 17F6A 17F8E 17FA8 17FE5 1802C 18070 180B7
+                                 + 18111 1813E 18167 18190 181B9 181D8 18230
+                                 + 1823B 18273 1827E 182B6 182C1 182F9 18304
+                                 + 1833C 18347 183E6 183F1 18406 1843D 18448
+                                 + 1845D 18491 1849C 184C9 184D4 189BA 189C5
+                                 + 18A3E 18A6C 18A9A 18AD7 18AEC 18B01 18B16
+                                 + 18B2B 18B40 18B55 18B6A 18B89 18B9E 18BB3
+                                 + 18BC8 18BDD 18BF2 18C07 18C1C 18C3B 18C50
+                                 + 18C65 18C7A 18C8F 18CA4 18CB9 18CCE 18CED
+                                 + 18D02 18D17 18D2C 18D41 18D56 18D6B 18D80
+                                 + 18D9F 18DB4 18DC9 18DDE 18DF3 18E08 18E1D
+                                 + 18E32 18E51 18E66 18E76 18E81 18EAA 18EB5
+                                 + 18ED9 18F58 18F76 19032 19283 1A2D4 1AB20
+                                 + 1AB30 1ACF0 1ACFB 1ADBA 1ADC5 1ADDA 1ADE5
+                                 + 1ADFA 1AE0F 1AE24 1AE7D 1AE9C 1AEA7 1AEF7
+                                 + 1AF11 1AF30 1AF3B 1AFAC 1AFBC 1AFD6 1AFE6
+                                 + 1B000 1B010 1B025 1B049 1B088 1B0D4 1B193
+                                 + 1C09A 20577 2058C 205A1 205B6 205CB 205F4
+                                 + 20680 206E5 2070E 20737 207CE 20806 20820
+                                 + 20858 2086D 20882 2090F 20960 209A1 209CF
+                                 + 20A16 20A21 20A87 20A9C 20AB6 20ADA 20AEF
+                                 + 20B88 20BA2 20BBC 20BD1 20C47 20C61 20C7B
+                                 + 20C90 20DF4 20FC6 21003 21018 210AF 210C9
+                                 + 210D9 212F8 222E6 2231B 2233F 22385 22395
+                                 + 223B4 223C4 22611 22764 22925 22AE0 22AF5
+                                 + 22B6E 22C82 22CB5 22D09 22D52 22D5D 22D68
+                                 + 22D73 22DAC
+DORRP                            *       - 0A8F3 0B163 0CA14 1A208
+DOSYMB                           *       - 02EFE 0B27B 0C9EC 185CB 1A214
+DOTAG                            *       - 035FF 0B157 0C9BA 18618 198F1 1A22E
+DOTRUE                           *       - 0AFF9 0B0EC 17116 179C0 191E5 1ADA6
+DOWNCODE                         = 0000F - 10585 156D5 21634 21C01
+DROP                             *       - 01646 0B301 15874 158C7 15C18 15D06
+                                 + 15EA0 15EC0 166EE 167A1 168CF 169DF 16B30
+                                 + 16D1E 16D96 16DC3 16DE7 16E0F 16E6B 16E98
+                                 + 172C9 17630 17920 17971 17EE3 18158 18AAA
+                                 + 1AB2B 1ADF0 1AE73 1AE88 1AF1C 20C0E 20FB2
+                                 + 21050 210D4 222F1 22E76
+DROP'                            *       - 17A82
+DROPDUP                          *       - 0B2E3 18A02
+DROPFALSE                        *       - 1AEB2 1AF46 2076A 22E2A
+DROPNULL$                        *       - 21380
+DROPSWAPDROP                     *       - 205E0
+DROPTRUE                         *       - 16E7A 17351 1AF50
+DROPZERO                         *       - 20863 20905 20A92 20AE5 20BC7
+DUMP                             *       - 20FA8
+DUP                              *       - 0AE64 0B30B 1632E 1661E 1669D 16D69
+                                 + 16DD2 16E1E 16E56 175E9 1771A 1775F 17943
+                                 + 17952 17D0E 189E4 1AD60 1ADB5 1AEF2 1B107
+                                 + 206D1 207AB 2083A 20AAC 20AFF 20FF9 21B81
+                                 + 222A0 22BFB
+DUP#2+PICK                       = 29362 - 16C93
+DUP%0=                           *       - 0AF2E
+DUP'                             *       - 17A6E
+DUP1LAMBIND                      *       - 21037
+DUP4UNROLL                       *       - 0B048
+DUPEQ:                           *       - 189EE
+DUPLEN$                          *       - 17393 20B1F
+DUPNULL$?                        *       - 20C86 21091
+DUPROMPTR@                       *       - 17784
+DUPSAFE@                         *       - 177C8
+DUPTWO                           *       - 0FE41
+DUPTYPEBINT?                     *       - 206FA 20E0E
+DUPTYPECOL?                      *       - 1769F 177F7 189D5 20B42
+DUPTYPECSTR?                     *       - 015E7 0FE0E 1AE92 1AF26 1B035 20719
+                                 + 207BA 20C71 21376
+DUPTYPEHSTR?                     *       - 21367
+DUPTYPEIDNT?                     *       - 0FDBE
+DUPTYPEROMP?                     *       - 0FDE6 17869 20B60 222C8
+DUPTYPETAG?                      *       - 21344
+Decomp1Line                      *       - 15D0B 15D62 1634E 16A71 16B35 16B94
+                                 + 16F1B 16FAB 174C9 174F7 1755E 17596 175EE
+                                 + 1782F 17948
+DisableIntr                      *       - 1FC14 215DC 21BAB
+DispEditLine                     *       - 2289D
+DispStsBound                     *       - 20618 20760
+DispTime?                        *       - 16C24 1718A
+Diss                             * 0BC57 - 0028C
+Do1st/1st+:                      = 19EFB - 17B3B
+Do1st/2nd+:                      *       - 17B40
+DoBadKey                         *       - 15FC6 1610B 161A6 16272 16394 1645D
+                                 + 164DC 16881 168BA 16D41 16D87 16DB9 16E70
+                                 + 172EC 17333 178E6
+DoCRC                            *       - 04A2F 152EF
+DoCont/Kill                      * 20F0D - 003C7
+DoDelim                          *       - 17A3C
+DoDelims                         *       - 17A46
+DoEC                             * 192A7 - 00386
+DoEd                             * 1B1BC - 00395
+DoEdAt                           * 1B12A - 00390
+DoEdErrJmp                       * 20F35 - 003CC
+DoEd_ASS                         * 205DB - 0039A
+DoEd_DOB                         * 2069A - 0039F
+DoEd_EC                          * 21028 - 003D6
+DoEd_GROB                        * 20FD6 - 003D1
+DoEd_STK                         * 20D63 - 003BD
+DoHere:                          *       - 17AAA
+DoKeyOb                          *       - 20DD1 22ABD
+DoLevel1:                        = 2B2F2 - 17A50
+Dob                              * 0AE34 - 00269
+DropBadKey                       *       - 22E25
+DupAndThen                       *       - 0B7B7 1799D
+
+ECView                           * 1AD65 - 0038B
+EC_REPSTK                        = 8012D - 1AA65
+EDFSTKSIZE                       = 00102 - 1B15C
+EDGREPEC                         = 0004C - 210AA
+EDITLINE                         *       - 10C80 11081 1C999
+EDSCANEC                         = 00004 - 210A0
+EEXCODE                          = 0001B - 10603 156FF
+EIGHT                            *       - 1598B 15A1C 15A5A 1628C 16848 16A34
+                                 + 17710
+ELEVEN                           *       - 0ADEB 0FE55 22330
+ENTERCODE                        = 00033 - 105E0 1519F 15714 1E0AF 1E0E8 216BB
+                                 + 21C97
+ENTRY_LIB                        = 00102 - 0C4B5 22413
+EQ:                              *       - 229BE 22C3C
+EQUAL                            *       - 20B10 20DFF 22AEB
+EQUALNOT                         *       - 1665C
+EQUALcase                        *       - 15EC5 17774 17967
+ERRBEEP                          *       - 01D1E 1B111 2061D 20BF5 20D9F 20E4F
+                                 + 20F49 212AD
+ERRJMP                           *       - 15BCF 15E6B 20F99
+ERROR                            *       - 01AA3
+ERROR@                           *       - 15E5C 20E45 20EC2 20F3F 22B05
+ERRSET                           *       - 15E42 17C25 18E9B 1AB63 1B0B1 205EA
+                                 + 206B8 20728 20AB1 20DA4 20DCC 21082 22AB8
+ERRTRAP                          *       - 01DB1 15BB6 15E52 17C34 18226 18269
+                                 + 182AC 182EF 18332 183D7 1842E 18487 184BF
+                                 + 189B0 18E4C 18EA5 18FE8 18FFF 19093 1AC04
+                                 + 1B0BB 20604 2074C 20AC1 20BE6 20DD6 20F94
+                                 + 212A3 22AC2
+EVAL                             *       - 15BC5 17C54 17EF3 18ACD 18EA0 1AD33
+                                 + 1B11B
+EVALCODE                         = 00012 - 105B6
+EXITLOOP                         = 07321 - 16689
+EXPAND                           *       - 0FD40 1AC22 1B161 1B1D0 20CAF 213D5
+Echo2Macros                      *       - 17AEB
+Echo3Macros                      = 19F6E - 17AFA
+Echo4Macros                      = 19F9B - 17B13
+EdDOBROMP                        * 207F2 - 003A4
+EdStkAssTrap                     * 20E09 - 003C2
+EditFont                         *       - 22E34
+Ent11111@                        * 22824 - 00412
+Entr>#                           * 223AF - 003EA
+Entr>Fptr                        * 227C4 - 0040D
+Entr>Romp                        * 2096B - 003AE
+Err#Cont                         = 337FB - 15E61 20ED6 22B19
+Err#Kill                         = 3376F - 20F03 22B3C
+Errjmp                           *       - 0A326
+ErrjmpC                          *       - 22673
+EvalNoCK                         *       - 159F4 18352 1B01B 205FF 206F0 20742
+                                 + 20811 20B93 222E1
+ExpOpStkStart                    = 82332 -
+ExpValStkStart                   = 822B2 -
+
+FALSE                            *       - 0AF7C 0B2A5 15A79 166F3 16715 16C1F
+                                 + 17185 17658 1767A 18E61 18F86 1B0FD 20F76
+                                 + 22A18
+FALSE'                           *       - 17A96
+FIFTEEN                          *       - 159BB 15A2C 16D5A 17281 17305 17755
+                                 + 207ED
+FIFTYSIX                         *       - 19298 1AF6E 1B143 1B19E
+FINDTAB                          * 223DE - 003EF
+FIVE                             *       - 159CB 15E70 16824 16CEF 17C0B 17CAC
+FIXENV                           = 04F19 - 01DAA 18FB4
+FLUSH                            *       - 1ACEB 1AD38
+FORTYNINE                        *       - 1AF9D
+FOUR                             *       - 0FEAA 15D67 16448 167FA 16A3E 16A76
+                                 + 16B99 16C33 174FC 17563 1759B 17BF1 17FFA
+                                 + 1800E 18018 18022 18E42 205C1
+FOURTEEN                         *       - 16DA0
+FPEntry?                         * 209DF - 003B3
+FPTR@                            * 22607 - 00403
+FREEINTEMP?                      = 06B3E - 1B1DA 20CB9
+FROMPTAB0_15                     *       - 22692
+FSTKDROP                         * 20C13 - 003B8
+FalseFalse                       *       - 15A97
+FindObEnd                        * 0B7E2 - 00282
+FindTabs                         * 224DE - 003F4
+FixStk&Menu                      = 2EF9B - 01D23 01D92 20E27 20E3B 20EBD 22B00
+FlashMsg                         *       - 158DE 1660F 16C00 17166
+FlashPtrBkp                      *       - 2278E
+Flush                            *       - 2065C 21CC2
+FlushAttn                        *       - 146A5 14712
+Fptr@                            * 2261C - 00408
+
+GARBAGE                          *       - 01636 0B60A 0EE46 0EEA5 1B1F3 20622
+                                 + 20CD2 213E9 22CAB
+GARBAGECOL                       *       - 0A64D 0D60D 188E1
+GDISP                            *       - 106C2
+GETAB0                           *       - 0D726
+GETLAMPAIR                       *       - 229AA 22C28
+GETPTR                           *       - 01C7D 01CE7 01DA3 01DED 021E5 02327
+                                 + 0239D 0A654 0D624 18911 18974 191CB 198B3
+                                 + 1C968 1FCF2 225ED
+GETPTRLOOP                       *       - 01B89 0A2C8 0A353 0B473 0C3DA 0FB85
+                                 + 0FBEC 0FC83 1ACA5 20671 216EB 21CC9 22E71
+GETTEMP                          *       - 198E1 19929 1C00E 1C08A 1C119 1C34D
+                                 + 208CF 20991 227EA
+GOTO                             *       - 18037
+GPErrjmpC                        *       - 0C31D 18982 2240A
+GPMEMERR                         *       - 01F24 023E5 03075 035F8 03672 03792
+                                 + 0A67A 0D631 188D7 20471
+GPOverWrFLp                      *       - 0FA47
+GPOverWrTLp                      *       - 0FA40 0FA7F
+GPPushA                          *       - 039A8 0A63F 170E4 199A3 1BDCE 1C228
+                                 + 1C3B3 1CA87 208F9 21203
+GPPushALp                        *       - 209CA 2281F
+GPPushFLoop                      *       - 0B000 0B0F3 0B180 0B46C 17096 1745C
+                                 + 1959C 1BC9C
+GPPushR0Lp                       *       - 0A277 1ABED
+GPPushT/FLp                      *       - 20951 20A07
+GPPushTLoop                      *       - 22DEC
+G_MDISPA1+                       = 263A5 - 17B31
+G_MDISPA2+                       = 263AA - 17B36
+G_MDISPA2A                       = 263A0 - 17B2C
+G_ROMPCOLT                       = 084F5 - 02A45
+Garbage?Err                      = 1633D -
+GetKeyOb                         *       - 20DC7 22AB3
+GetLamEnv                        * 17051 - 0030E
+GetLamEnv!                       * 16FDD - 00309
+GetLoopEnv                       * 1742D - 0031D
+GetTabCfg                        * 22528 - 003F9
+GetTimChk                        *       - 1A80B 1AA81 1FA90 1FD4F
+GraphPrtHook                     *       - 11066 110B8
+
+HALTTempEnv?                     = 13C12 - 20EE5 20F12 22B28 22B4B
+HISTCODE                         = 00011 -
+HXDCW                            *       - 01C15 01C24 12B0B 12B2D 12BA8 1DF48
+                                 + 1E1C9
+HXS>#                            *       - 0AD63 0AD6D 0ADF5 0AF3D 0FE5F 2233A
+HXS>$                            *       - 21371
+HasH3E0                          * 0004D - 00039
+Hashed?                          = 07A72 - 029E2
+
+IDIV                             *       - 08D90 08DD0
+INDEX@                           *       - 16A5C 16A80 16A94 17210 17239 172B5
+INNERCOMP                        *       - 159D5 1763F 176A9
+INPMAX                           = 00014 - 1EC2B
+INVCODE                          = 0001E - 105D9 109E7 15706
+IRAM@                            *       - 0AB5C 0B09E 0B3CD 0CD5B 0E540 0EB2F
+                                 + 21D8B
+IRAMBUFF                         *       - 10CB4
+IRAMBUFF+11                      = 80100 - 0A435 0A455 0A472 0A495 0C3E7 0FA86
+                                 + 0FA9B
+ISysFlag?                        = 0BCE8 -
+IT                               *       - 0B2DE 0FDC3 0FDEB 0FE13 15E1A 15F3E
+                                 + 16EA7 17374 1760B 1786E 179C5 17D13 18153
+                                 + 1817C 189DA 189F8 20B65 20F85 21349 2136C
+                                 + 2299B 229DC 22A5E 22C00 22CA6
+ITE                              *       - 0B2FC 0FCA7 0FEA0 15938 1595D 15D8F
+                                 + 16A48 17225 176A4 1AB54 1AD3D 1AE97 1AF2B
+                                 + 1AF78 1B1A8 1B1DF 2071E 20CBE 20E13 20E90
+                                 + 21096 21326 22514 22BAB 22BCE
+ITE_DROP                         *       - 229AF
+InitMenu                         *       - 15889 15C73
+InitTrack:                       *       - 17AAF
+IntDiv                           *       - 0F141 13587
+
+JavaDis1                         * 22C8D - 0042B
+JazzHook                         * 22D28 - 00430
+JazzStkDis1                      * 22C7D - 00426
+
+KC2_TABLE                        = 00815 -
+KC_TABLE                         = 00791 -
+KEYBUFFER                        *       - 10388
+KEYINBUFFER?                     *       - 15D8A
+KSTATEVGER                       *       - 106FA 1A7EA 1AA90 1FA6F 1FBE6 1FD5D
+                                 + 20663
+KeyInBuff?                       *       - 2063A
+KeyOb!                           *       - 229D2 22C55
+KeyOb@                           *       - 229E6 22C5F
+KeyObLam                         = 27660 - 229C3 229F0 22C41 22C69
+
+LAM>ID                           = 05B01 - 207A6
+LAST$                            *       - 15D6C 16A7B 16B9E 17501 17568 175A0
+LASTROMWDOB                      *       - 18219
+LEFTCODE                         = 0000E - 10570 156B9 2167F 21C10
+LEN$                             *       - 1739D 1B0EE
+LIB3E0                           * 00005 -
+LINECOUNT                        = 00128 - 10370
+LINECOUNTg                       *       - 10366
+LOOP                             *       - 16A9E 172BF 21394
+LSCODE                           = 00040 -
+LastRomWord@                     = 2654E - 20DE5 20E40 20F3A 22AD1
+LinK3E0                          * 001F6 - 00043
+LinSerRHS                        = 792FF - 17ACD
+LinSetRHSitg                     = 793BD - 17AD7
+LinSetRHStrg                     = 79363 - 17AD2
+LineW                            *       - 1A15A 22873
+LnCn?RHS                         = 7957A - 17B04
+Loop                             *       - 01D77 023B0 0FD68 0FFCC 109AA 15B8A
+                                 + 16AEE 17A1E 17CF5 1806B 180B2 183D2 186B9
+                                 + 19024 191EC 20A82 20C3D 225FD 22893
+
+MAKE$                            *       - 19973 1BDAC 1C206 211DE
+MAKE$N                           *       - 1AB9D 1CA6A 2259E
+MAKEBOT$N                        *       - 0A270
+MATHCODE                         = 00007 -
+MEM                              *       - 22C92
+MINI_FONT                        *       - 0191E 0FFB1 102E4 1A3C2 1DE55 21A85
+MINUSCODE                        = 00029 - 105A1 156EA 1E0FC 21617 21BE4
+MINUSONE                         *       - 028FF 0C7F5 2139E
+MODECODE                         = 00008 - 105E7 15167 21661
+MOVEDOWN                         *       - 02199 0383B 09C9C 09E20 0A43F 0A44E
+                                 + 0A45F 0A47B 0A4A4 0A5AF 0BE1F 0C7B6 0C874
+                                 + 0CBFB 0CCAA 0D437 0D8DD 0EBB5 10786 10EE0
+                                 + 12A90 19917 19993 1A461 1BDC4 1C044 1C21E
+                                 + 1C6AB 1C6ED 1C750 1C7FF 1C839 1C86D 1C940
+                                 + 1CA7D 1CAAA 1D172 1D2AB 1D4DE 1DA68 1EA4D
+                                 + 1EAA7 1EB01 1EB92 1EC4D 1EC99 1F1BF 1F34C
+                                 + 20381 20D47 211F9 21512 21876 21E4B 21E9A
+MOVERSD                          *       - 0A5BB 0A61E 1BCF3 1CA60
+MOVERSU                          *       - 0A6B1 0B6D3 0C495 20496
+MOVEUP                           *       - 020A0 0A48E 1A440 1C7E1 1C815 1C857
+                                 + 1C961 1D4AD 1DA92 1EC3A 203AE 217F4
+MPY                              *       - 08D63 08E36
+MTCHTBL                          = 20E80 - 1857B 18587
+MakeAssStat$                     * 0A256 - 00255
+MakeErrMesg                      = 2F0D8 - 20E9F 20F58
+
+NDROP                            *       - 16DBE 16E0A 16E93 20C09 212CB
+NDUPN                            *       - 03B93 16C38 1719E
+NINE                             *       - 164F6 16896 171FC
+NOHALTERR                        *       - 158C2
+NOP                              *       - 01B3E 01BA3 15E57 1682E 2060E 20756
+                                 + 20DE0 22ACC
+NOT                              *       - 16589 22C19 22E39
+NOT?GOTO                         *       - 180C2
+NOT?SEMI                         *       - 0B0F8 0B296 0FD06 15929 229C8
+NOT?SWAPDROP                     *       - 17E95
+NOTcase                          *       - 0ACCF 0AE5A 0B05D 0B32A 15864 158BD
+                                 + 15A0D 15A4B 15D44 166AC 169F9 16B7F 16BC8
+                                 + 17130 1732E 173B1 17789 177CD 177FC 1787D
+                                 + 20563 20B15 20B38 20B56 20D9A 223A0 223CF
+                                 + 22C46 22CC0
+NOTcase2drop                     *       - 16D82 16EDA
+NOTcasedrop                      *       - 16751 16780 1752F 17730 178D7 20C76
+NTHELCOMP                        *       - 18A0C
+NULL$                            *       - 16EE9 16EF8 16F88 1722F 172B0 1928E
+                                 + 20792 207E3 213B7
+NULL$SWAP                        *       - 21335
+NULL$TEMP                        *       - 0162C 0AD19 0ADA1 0ADB6 0AE93 0AEA8
+                                 + 0AF72 0AF8C 0B086 22CFF 22D04
+NULLHXS                          *       - 1AC13 1B152 1B1C1 20CA0 213C6
+NULLLAM                          *       - 03B6E 16C2E 17194 1ACB9 1ACCD 1ACD2
+                                 + 1ACD7 21064 21069 2106E 21073
+NULL{}                           *       - 22D48
+NXTCODE                          = 0000D - 10569 216AC
+NcaseSIZEERR                     *       - 0AD7C
+NcaseTYPEERR                     *       - 206DB 207B5 207BF 207FC 222C3 222CD
+                                 + 222D7
+NoExitAction                     *       - 15F76
+
+OBJ>R                            *       - 17E1A 17E24
+ONCODE                           = 0002F -
+ONE                              *       - 03B7C 0FE50 15DC6 1607E 1608D 167BB
+                                 + 16C1A 1740F 176AE 18C2C 1AEBC 20582 2103C
+                                 + 210BA 229F5 22C6E
+ONEFALSE'                        *       - 17A91
+ONE_DO                           *       - 16A57
+OR                               *       - 15CBF 20B51
+ORghost                          *       - 1FBCB 216FB
+OVER                             *       - 16EEE 16F5B 20B47
+OVER#>                           *       - 16A43
+OVER'                            *       - 17A78
+OVERSWAP                         *       - 0AF47 179CA
+OverWrT/FLp                      *       - 0FD01
+
+PCODE                            = 00031 - 10593 151A6 21C2E
+PEEK                             * 2254B - 003FE
+PICK                             *       - 16F16 16FA6
+PLUSCODE                         = 0002E - 1059A 156F1 1E0F0 21609 21BD6
+POP#                             *       - 0B36E 0B7F5 0FE70 0FF69 0FFBD 0FFF6
+                                 + 10000 16ABF 16FE9 1705D 17439 192CC 192D9
+                                 + 1931D 19336 19347 1AD71 1AD97 204F8 2142D
+POP2#                            *       - 0AFC8 0B113 0B3F8 0B9FB 0FAF8 0FB9D
+                                 + 1AB74 210F0
+POPKEY                           *       - 1AA47 1AAAC 1AAD6 1FD13 1FD79 1FDAC
+POWERCODE                        = 00016 - 10626
+PRLG                             *       - 0A567 0A9FD 0B768 0C8F5 13902 1874A
+                                 + 19132 1A137 2270E 22858
+PTR>ROMPTR                       = 07E76 - 20DEA 22AD6
+PTRADJUST2                       = 0686E - 0A3CB
+PUSH#                            *       - 01CA9 01CCC 0AFF2 170B1 1710F 19863
+                                 + 1987D 19892 198BA 1BDF6 1C198
+PUSH#ALOOP                       *       - 0AEE4 0BA19 1AEED 2121B 2236C 22546
+PUSH#LOOP                        *       - 22730 2290F
+PUSH2#                           *       - 0B0E5 0B1BE 0B20C 0B240 0B39F 1748C
+                                 + 1BE2D 1BE64 1C25B 1C3F5 22508
+PUSHhxs                          *       - 178CB
+PWLseq                           = 01D47 - 01DCF 01F56 026C9 034C6 099E2 0BCBB
+                                 + 0BD53 1902D
+Pad$                             * 17389 - 00318
+PassiveEval                      = 780E9 - 17A5F
+PopASavptr                       *       - 0A65B 0AEDD 178C2 1AC38 1AED7 20977
+                                 + 20CF8 210FD 21438 22365 227D0
+ProcessAlarm                     = 2F3D2 - 20F30 22B69
+Push#TLoop                       *       - 0B1D2 0B740 0B820 174A0 1BE84
+Push2#Loop                       *       - 223FC
+Push2#aLoop                      *       - 0FE87
+PushFLoop                        *       - 224FD
+PushT/FLoop                      *       - 178BB 20E8B 22D3E
+PushTLoop                        *       - 178D2 198C1 1BE34 1BE6B 1C262 1C3FC
+                                 + 2250F
+
+R4?2DROP                         = 14568 - 18172
+R4?DROP                          = 1476F - 18149
+R>                               *       - 16A6C 17525 1763A 1792A 17DFB 17E0A
+R>OBJ                            *       - 17E39 17E48
+R@                               *       - 15D58 16B8F 174F2 17591 17E58 17E67
+RAMSTART                         *       - 0A6CC 0FB48 0FC17
+RCKBp                            *       - 19588 19C97 1B886
+RDRDTRUE                         = 739C3 - 181B4
+RDROP                            *       - 15C88 15DD0 165E0 16776 167B6 168E4
+                                 + 17825 178E1 17900 17925 1793E 17C7D 17E8B
+                                 + 17EB4 17F12 17F89 181CE 18A16 18A2F 18A5D
+                                 + 18A8B 18E91 18EEE 18F0C 20613 20AD0 20BF0
+                                 + 212B2
+RDUP                             *       - 15C4F 15C54 15C59 15F48 16684 17D28
+                                 + 17D37 17FC7 18004 181D3
+RECLAIMDISP                      *       - 15BCA 21B8B
+REPEAT                           *       - 15C2C 16675 1B059
+REQcase                          *       - 17B9A
+REQcasedrop                      *       - 17B9F 18A20 18A4E 18A7C
+RESOROMP                         *       - 159E4 1B00B 205EF 206E0 20732 20801
+                                 + 20B83
+RIGHTCODE                        = 00010 - 10577 156C7 1E134 2168E 21C1F
+ROMID#                           = 003E0 - 0043F
+ROMID3E0                         = 003E0 -
+ROMPARTS                         *       - 151CE
+ROMPTAB                          *       - 0A782 0A85B 0C4BC 2241A
+ROMPTR@                          *       - 0FDF5 15A46 17878 1AE1A 207F7 20B6F
+                                 + 222D2
+ROOM                             *       - 0A627 0A664 0B67F 0C43B 0D604 0D614
+                                 + 188BD 20457
+ROT                              *       - 0B067 0B339 17277 17414 176CD 17E90
+                                 + 20676 20D6D 2276F
+ROTDROP                          *       - 206A9
+ROTSWAP                          *       - 0B35D
+RPEntry?                         * 20929 - 003A9
+RPICK                            * 16AB3 - 002F5
+RPIT                             *       - 17EC4
+RPITE                            *       - 17E7C
+RROLL                            = 2644A - 17D41 17D60 17DB8 17DC7 17FC2 17FD6
+                                 + 17FE0 17FFF 18013 1801D 18027
+RSCODE                           = 000C0 -
+RSKIP                            *       - 17C97 18401 18458 18ED4 2075B 20EF4
+RSKTOP                           *       - 10C40
+RSWAP                            *       - 15D3A 15D4E 15D5D 17635 17653 17820
+                                 + 178FB 17939 17C20 17C4F 17C59 17D04 17D18
+                                 + 17D32 17D51 17D65 17D7F 17D9E 17DA8 17DCC
+                                 + 17DEB 17E05 17E29 17E43 17E62 17E6C 17F2C
+                                 + 17F36 181C9
+RUI                              * 15C83 - 002C8
+RUIHALT                          * 15DC1 - 002CD
+Rcl&Do:                          *       - 17AB9
+Roll&Do:                         *       - 17A55
+RunRPN:                          *       - 17AB4
+
+SAFE@                            *       - 15A08 206D6 207B0
+SAFESTO                          *       - 2078D 207DE
+SAVESTACK                        *       - 15E1F 20DAE 22A63
+SAVEWORD                         = 206BC - 10034
+SAVPTR                           *       - 01DE6 01E18 01E3D 021F1 078D3 0A262
+                                 + 0A288 0A337 0A646 0AFC1 0B097 0B120 0B1C5
+                                 + 0B213 0B375 0B405 0B7EE 0BA04 0BC63 0F9EE
+                                 + 0FB0B 0FB96 0FBFD 0FC4A 0FE7A 16A15 16FF0
+                                 + 17064 170B8 170EB 17440 17493 187DB 19049
+                                 + 19359 1986A 19884 19899 199AA 1A9C8 1AB81
+                                 + 1B204 1BDD5 1BDFD 1C22F 1C3BA 1C974 1CA8E
+                                 + 1FC90 20633 20899 20935 209EB 2120A 215A9
+                                 + 21BA1 223EA 224EF 22534 2257A 22729 22908
+                                 + 22DF3
+SCREEN                           = 822B2 -
+SEMI                             *       - 00449 015F6 01655 01D3C 01D50 01D69
+                                 + 01D9C 0229A 02E87 0AA09 0AD09 0AD33 0ADD0
+                                 + 0ADD5 0AE05 0AE2A 0AEC2 0AEF4 0AEF9 0AFA6
+                                 + 0AFAB 0B043 0B07C 0B144 0B2CA 0B2CF 0B358
+                                 + 0BD8E 0C88A 0CB4F 0FD1A 0FD88 0FD8D 0FD92
+                                 + 0FDE1 0FE09 0FE2D 0FE91 0FEAF 0FEB4 0FEDC
+                                 + 1097F 109BA 109C5 1582F 1588E 158F3 1596C
+                                 + 15976 159F9 159FE 15A3C 15A6A 15B58 15BD4
+                                 + 15C22 15C27 15C31 15C36 15D35 15D53 15D85
+                                 + 15DB7 15DF0 15E80 15F20 15F6C 15FC1 15FF0
+                                 + 15FF5 15FFA 16039 1603E 1609D 160A2 16106
+                                 + 16135 1613A 1613F 161A1 161D0 161D5 161DA
+                                 + 16217 1621C 1626D 1629C 162A1 162A6 162EE
+                                 + 162F3 1638F 16406 1640B 16410 16458 16487
+                                 + 1648C 16491 164D7 16506 1650B 16510 1655E
+                                 + 165A9 165AE 165B3 165B8 16614 16670 16747
+                                 + 167B1 16891 168CA 1690D 16B75 16C10 16D55
+                                 + 16D9B 16DF6 16E47 16E75 16E84 16F07 16F97
+                                 + 16FD8 17176 172AB 17300 1734C 1735B 173CF
+                                 + 17428 1769A 176E1 17750 177A9 177BE 177ED
+                                 + 1781B 17887 178F6 17981 17C2F 17C8D 17CBB
+                                 + 17EA5 181C4 18521 18A1B 18A49 18A77 18AA5
+                                 + 18AAF 18AE2 18AF7 18B0C 18B21 18B36 18B4B
+                                 + 18B60 18B75 18B7F 18B94 18BA9 18BBE 18BD3
+                                 + 18BE8 18BFD 18C12 18C27 18C31 18C46 18C5B
+                                 + 18C70 18C85 18C9A 18CAF 18CC4 18CD9 18CE3
+                                 + 18CF8 18D0D 18D22 18D37 18D4C 18D61 18D76
+                                 + 18D8B 18D95 18DAA 18DBF 18DD4 18DE9 18DFE
+                                 + 18E13 18E28 18E3D 18E47 18EE4 1AC0E 1ACDC
+                                 + 1ADF5 1AE6E 1AE8D 1AEB7 1AF21 1AF4B 1AF55
+                                 + 1AF69 1AF87 1AFC7 1AFF1 1B054 1B05E 1B063
+                                 + 1B093 1B102 1B120 1B125 1B1B7 205D6 2068B
+                                 + 20695 20747 2076F 20779 20797 207E8 2082B
+                                 + 20878 2091A 209DA 20AA7 20AFA 20B7E 20BAD
+                                 + 20BDC 20BE1 20C52 20D5E 20E36 20EAE 20EB8
+                                 + 20EFE 20F21 20F6C 20F71 20F8F 20F9E 20FD1
+                                 + 21023 21078 210BF 2129E 21303 21362 213A8
+                                 + 213BC 21573 21B6D 22291 222F6 222FB 2232B
+                                 + 2234A 22376 2237B 223AA 223D9 22523 22602
+                                 + 227BA 227BF 22991 229FF 22A4F 22AAE 22B37
+                                 + 22B5A 22B79 22B92 22C14 22C78 22CFA 22D1E
+                                 + 22D23 22D7E 22D83 22E2F 22E7B 22E80
+SETNONEXTERR                     *       - 0FDDC 15A12 223A5 223D4
+SETROMPERR                       *       - 0FE04 15A50 17882
+SETSIZEERR                       *       - 0AE5F
+SETTYPEERR                       *       - 015F1 159DF 20B1A 20B3D 20B5B 20B79
+SEVEN                            *       - 159AB 1625D 16833 16D09 17267 17319
+                                 + 17700 2079C
+SHIFTCODE                        = 00040 -
+SINCODE                          = 00018 - 1060A 1517C
+SIX                              *       - 1599B 162DE 1680F 176F0 206C7
+SIXTEEN                          *       - 16DFB
+SKIP                             *       - 20AC6
+SKIPOB                           *       - 0381C 0B16E 0B1FC 0B233 0B392 0C1B9
+                                 + 0C2C4 0CB75 0D00A 0D1FC 1378F 183AF 183B6
+                                 + 183BD 183C4 183CB 18670 1915E 19165 19230
+SPACE$                           *       - 15D71
+SPCCODE                          = 00032 - 1058C
+SPLITA                           *       - 0D738
+SQRTCODE                         = 00017 - 1061F 1518A
+SSTKErrTrap                      * 22AC7 - 00421
+SSTKLOOP                         * 22A68 - 00417
+SSTend?                          = 13184 - 15D3F 1674C 1677B 169F4 16B7A 1752A
+SSTfind                          = 1312F - 1668E
+SSTmark                          = 139E2 - 15C45
+SSTmark5                         = 139E7 - 16A23 18FD0
+STO'                             *       - 17A87
+STOCODE                          = 0000C - 105EE 21670
+STOLAM                           *       - 15F0B 16349 163CE 165A4 16637 16710
+                                 + 16732 16932 17675 17695 18F31 18F53 18FA3
+                                 + 2298C
+STRIPTAGS                        *       - 015E2
+SUB$                             *       - 17419 20B2E 213A3
+SWAP                             *       - 0AD68 0AD72 0AF38 0AF42 15933 17291
+                                 + 173C0 17559 1782A 17ECE 205E5 20788 207D9
+                                 + 20B29 20C5C 20C6C 20FE0 22519
+SWAP#1+                          *       - 16EFD 16F8D 16FCE
+SWAP&$                           *       - 15D26 16385 16A8F 16B60 1784A
+SWAP'                            *       - 17A73
+SWAPDROP                         *       - 01611 0B062 0B306 0B334 16EE4 16F83
+                                 + 17806 20690 206A4 20AD5 2135D 22C0A
+SWAPOVER                         *       - 16917
+SYMALG->                         = 2BDEB - 17A5A
+SYMBCODE                         = 00014 - 15160
+SYMB_=                           = 00002 - 07AD4
+SYNTAXERR                        *       - 20447
+SYS3E0                           * 00036 -
+SYSEND3E0                        * 22E89 - 00005
+SafeSkipOb                       * 0A9E1 -
+ScanLabels                       * 0B081 - 00273
+ScanLabsXY                       * 0AFB0 - 0026E
+SdbCheckMe                       * 165BD - 002D7
+SdbD0Disp                        * 16AF3 - 002FA
+SdbDbCode                        * 17864 - 00340
+SdbDispLam                       * 16EBC - 00304
+SdbDoMode                        * 16619 - 002DC
+SdbEval                          * 16912 - 002EB
+SdbExec                          * 175BF - 0032C
+SdbFinish                        * 168DF - 002E6
+SdbInId                          * 177C3 - 00336
+SdbInOb                          * 176E6 - 00331
+SdbInThis                        * 177F2 - 0033B
+SdbLamDisp                       * 16BB3 - 002FF
+SdbLoopDisp                      * 1711B - 00313
+SdbMenu                          * 15F71 - 002D2
+SdbName                          * 15A03 - 002B9
+SdbRomp                          * 15A41 - 002BE
+SdbRstFlags                      * 15909 - 002AF
+SdbRstkDisp                      * 169EF - 002F0
+SdbSeco                          * 15A6F - 002C3
+SdbSemi                          * 17520 - 00327
+SdbSkip                          * 174A5 - 00322
+SdbSstOb                         * 17934 - 0034A
+SdbSstSemi                       * 1791B - 00345
+SdbStart                         * 15981 - 002B4
+SdbThisMode                      * 16698 - 002E1
+SetDA12Temp                      *       - 16AA3
+SetDA1IsStat                     *       - 16EAC 17379
+SetDA1Temp                       *       - 01D37 15D30 15D80 17510 175AF 20EB3
+                                 + 20F67
+SetDisXYOps                      * 0FAEC - 00296
+SetDisnOps                       * 0FB8A - 0029B
+SetDissOps                       * 0F9E2 - 00291
+SetStackErr                      = 206F8 -
+SetStkDis1Ops                    * 0FBF1 - 002A0
+SetSysFlag                       *       - 1593D 15962 1AF7D 1B1AD 22A77 22A81
+                                 + 22BB0 22BD3
+SetTypeErr                       = 206ED - 10040 186DE
+SetupAssOps                      * 0A27C - 0025A
+Sfkey1                           = 00001 - 10538 111A5 15113 19A9F 21C3D
+Sfkey2                           = 00002 - 1053F 111A7 1511A 19AA1 21C4C
+Sfkey3                           = 00003 - 10546 111A9 15121 19AA3 21C5B
+Sfkey4                           = 00004 - 1054D 111AB 15128 19AA5 21C6A
+Sfkey5                           = 00005 - 10554 111AD 1512F 19AA7 21C79
+Sfkey6                           = 00006 - 1055B 111AF 15136 19AA9 1E14C 21C88
+SkipMLN                          * 0B9EF - 00287
+SrvcKbdAB                        *       - 103CD 1A7FD 1AAA5 1FA82 1FD72
+Std/BoxLabel                     *       - 16559
+SuspendOK?                       *       - 20D95
+SwapDisp                         = 1276F - 1068D 106B4
+Sys@                             *       - 0FCA2
+SysDisplay                       *       - 20DC2
+SysDisplay!                      * 22A90 - 0041C
+SysErrFixUI                      = 2F05C - 01D28 01D97 20E4A 20ED1 20EEF 20F44
+                                 + 22B14
+SysErrorTrap                     *       - 01C9D 01CF1 01DF7
+SysMenuCheck                     *       - 20DBD 22A8B
+SysSTO                           *       - 0FD83
+SystemFlags                      = 80F02 - 0505C 18963 1899C
+SystemFont                       *       - 0FF8C 102F4
+
+T1COUNT                          *       - 1A8A1 1A901 1FB1E 1FB7C
+TANCODE                          = 0001A - 105C4 1570D 1E11E
+TEMPENV                          *       - 15B71
+TEMPOB                           *       - 0A35A 10C1A
+TEN                              *       - 16477 1685D 16D28 172D3 229A5 22C23
+THIRTY                           *       - 1B0A2
+THIRTYONE                        *       - 0AE2F 0FE3C 20830
+THIRTYTHREE                      *       - 0FEB9
+THREE                            *       - 0AE0A 0FEA5 164C7 167E5 16CD5 17199
+                                 + 17BD7 17D3C 17D5B 17FBD 17FD1 17FDB 18A67
+                                 + 18D90 1AFCC 1B079 205AC 2091F 21589 22311
+TIMER1                           *       - 1A862 1FADF
+TIMER2                           *       - 1A84E 1FACB 2171E 21752 21CDA 21D04
+TIMERCTRL.1                      *       - 1A840 1FABD
+TIMESCODE                        = 00024 - 105A8 156E3 1E107
+TOADISP                          *       - 01D2D 0FED2 16C47 171AD 1AD1A 1B12F
+                                 + 20E54 20F4E 20FB7 212E9 21593
+TOOLCODE                         = 00009 - 105F5 21652
+TOSRRP                           *       - 00444
+TOTEMPBOT?                       * 0A32B - 00264
+TOTEMPOB                         *       - 0AD04 1AE69 1B1E9 20CC8 20FF4 20FFE
+                                 + 21B86 22CF5 22DA7
+TRAVERSE+                        = 08400 - 03ED0 04535 04692 0B1F5 0B223 0B382
+                                 + 0C2BD 0D003
+TRAVERSE-                        = 0841E - 0A8D3 0C282
+TRUE                             *       - 0B04D 15D94 16554 18F36 1AF5A 20774
+                                 + 2077E 20EF9 22973
+TRUE'                            *       - 17A8C
+TURNMENUOFF                      *       - 0FED7 16C4C 171B2 1AD24 1B139 20FBC
+                                 + 212EE 21598 21B90
+TURNMENUON                       *       - 16E9D 1736A
+TWELVE                           *       - 21B72
+TWENTY                           *       - 15C9C 15FB1 166A2 16961
+TWENTYEIGHT                      *       - 1618C 161C0 16976
+TWENTYFIVE                       *       - 15DAD 160E7 160F6 1694C
+TWENTYONE                        *       - 16029 169A0 1729B
+TWENTYSEVEN                      *       - 15F34 160F1 16125 16937
+TWENTYSIX                        *       - 15CB5 16182 16191 1698B
+TWENTYTHREE                      *       - 16207 169CA
+TWENTYTWO                        *       - 15FE0 169B5
+TWO                              *       - 0FE8C 0FEC3 16088 167D0 17201 1724D
+                                 + 17BC2 18A07 18A39 18A95 18CDE 20597 20B24
+                                 + 21399
+TYPEROMP?                        *       - 20B4C
+TakeOver                         *       - 15FA1 15FD0 16019 1605F 160C8 16115
+                                 + 16163 161B0 161F7 1624D 1627C 162C9 16319
+                                 + 1639E 16438 16467 164B7 164E6 1651F 16568
+                                 + 189F3
+TempArea                         = 82341 - 02531 025CC 02614 02667
+TempAreaEnd                      = 82337 -
+TempAreaSize                     = 8233C -
+TempAreaStart                    = 82332 -
+TestFlag                         = 0BC04 - 0A2D7
+TestSysFlag                      *       - 15A83 15A8D 1929D 1B148 22A09 22A13
+ThisKeyDnCb?_                    *       - 21717 21D84
+Timer1On                         = 0047C - 1A889 1FB06
+TopicVar1!                       = 2E76A - 228CE
+TrueTrue                         *       - 15A9C
+TurnOff                          *       - 1A9A6 1FC7A
+
+UNCOERCE                         *       - 01D46 20E1D
+UNDO_ON?                         *       - 15A74 15DD5 15E15 22A59
+UNDO_TOP?                        = 26440 - 20F80 22996 229D7
+UNDOsetABND                      = 13026 - 1667F
+UNROT                            *       - 0ADA6 0AE6E 0AE98 0AF77 0B2B5 0B320
+                                 + 1738E
+UNROT2DROP                       *       - 1AB59 229B9 22C37
+UNROTSWAP                        *       - 0B024
+UNTIL                            *       - 16E8E 17365 1AF5F 1B116 20783 20F7B
+                                 + 22B8D 22C1E
+UPCODE                           = 0000A - 1057E 156CE 1E140 21625 21BF2
+USEROB                           *       - 02971 0A2FD 0A8C1 0A8FF 0A95D 0AB9A
+                                 + 0C57F 0D071
+UStackDepth                      *       - 20D7C
+UnScroll                         = 26422 - 01D32 1AD1F 1B134 20E59 20F53
+Unitversion                      = 2D9CB - 17A37
+UserFlags                        *       - 0FAA8 10119 214A6
+UserITE                          *       - 0FEBE
+
+VARCODE                          = 0000B - 105FC 15198 2169D
+VERYVERYSLOW                     *       - 20765
+Vger1RplEntryi                   = 2598A - 228E8
+ViewGrob                         * 21B77 - 003DB
+ViewGrob!                        * 21B95 - 003E0
+
+WHILE                            *       - 15C09 16661 1B03A
+WIPEOUT                          *       - 0450F 0465C 06529 0FA94 102CB 1265F
+                                 + 132E5 193C1 1A0C3 1DB31 1DB47 1DB6E 1DCB1
+                                 + 1E786 21939 21998
+WaitForKey                       *       - 16D19 172C4
+WithHidden                       *       - 17A32
+
+XCODE                            = 0001D - 15183
+XerrDBpar                        = 3E003 - 0FD10
+
+ZERO                             *       - 01FC9 028F8 0AEC7 0C4FA 0C526 0C7E9
+                                 + 0FE96 0FEC8 15A92 15EF2 1686C 168A5 16BB8
+                                 + 16C15 16DEC 16E3D 17120 17180 177AE 18B7A
+                                 + 19293 192FD 1AC09 1ACAF 1AD51 1AFE1 1AFF6
+                                 + 1B020 1B083 1B098 1B0CA 2056D 20704 207C4
+                                 + 20816 20B98 20BB2 20D86 20EC7 20FA3 22296
+                                 + 2234F 22B0A
+ZEROZERO                         *       - 2251E
+ZEROZEROZERO                     *       - 1B044
+ZERO_DO                          *       - 15DCB 2133A
+
+aADISP                           = 26CDA - 019AE 11D18 1D8DF 1DB55 1DB90 21E7C
+aATTNFLG                         = 26CE1 -
+aClkOnNib                        = 2B7CE - 1FC1B
+aLINECNTg                        = 26CE8 -
+aORghost                         = 01663 -
+aTEMPENV                         = 04E68 - 16FF7 1706B
+aTEMPTOP                         = 2ACAB - 0A365 10C2A
+aVDISP                           = 26CEF -
+aVDISP2                          = 26CF6 -
+addrADISP                        = 26CD8 -
+addrATTNFLG                      = 26CDF -
+addrClkOnNib                     = 2B7CC -
+addrLINECNTg                     = 26CE6 -
+addrORghost                      = 01661 -
+addrTEMPENV                      = 04E66 -
+addrTEMPTOP                      = 2ACA9 -
+addrVDISP                        = 26CED -
+addrVDISP2                       = 26CF4 -
+adjustLwhich                     = 7A145 - 17AE1
+adjustRwhich                     = 7A088 - 17ADC
+allkeys                          *       - 1FBC6
+applyinv1                        = 74198 - 17B4A
+argtypeerr                       *       - 2264F
+
+case                             *       - 0B005 0B02E 0B343 15CE1 15DBC 166C9
+                                 + 16766 16B0B 16E33 17ED3 181AA 18E71 1AE1F
+                                 + 2084E 20956 20A0C 20E04 22AF0 22D43
+case2drop                        *       - 16F79
+caseDROP                         *       - 165DB 2294B
+caseERRJMP                       *       - 20EEA 20F17 22B2D 22B50
+caseSIZEERR                      *       - 0AF33
+caseTRUE                         *       - 1B0E9
+casedrop                         *       - 1ADD0 1AE05 20C8B 22969 22C2D
+chk_attn                         = 04988 - 01EFC 0C30E 146FA 1AA31 1B288 1F169
+                                 + 1FCFD 20644
+chk_timeout                      = 049DB - 1A8F2 1FB6D
+cknum2                           = 74544 - 17B6D
+cknumdsptch1                     *       - 17B27
+clrbusy                          = 1DAD4 - 1A8AF 1FB2C 2064E
+clrflag                          = 0BD2C - 1A92D 1FBA8
+clrtimeout                       *       - 1A934 1FBAF 1FC2F
+
+ederr                            *       - 1B0C0
+editdecomp$w                     *       - 1B0B6
+
+findsst                          = 13ABC - 16A2A
+
+getBPOFF                         *       - 193C8 1B219 21525 2156A
+
+haltrtn                          = 12FB8 -
+haltrtn-5                        = 12FB3 - 15E29
+
+ifeclause                        = 1348A - 17B81
+
+maybeder                         = 739A0 - 1819B
+
+nscknum2                         *       - 17B68
+nssymdsptch                      = 2BB6C - 17B4F
+
+ofloerr                          *       - 1897B
+
+palparse                         *       - 1B0E4 20B33 222BE
+popflag                          *       - 0B3EB 18091 180D8
+
+resolwith                        = 286BF - 17A69
+restartol                        = 2B772 -
+restartol-5                      = 2B76D - 15E38
+rstfmt1                          *       - 1B0C5
+
+savefmt1                         *       - 1B0AC
+setannun                         = 0052A - 1A822 1A8B6 1FA9F 1FB33
+setflag                          *       - 1A89A 1FB17
+settimeout                       *       - 1A882 1FAFF
+showbusy                         = 1DAAE - 1A93B 1FBB6
+showsst                          = 13951 - 1638A 16401 1679C 16B65 16BA3 1784F
+                                 + 1794D
+skipCOMP                         = 03077 - 13783
+skipDOBINT                       = 0308E - 137B2
+skipDOCHAR                       = 030B7 - 1380D
+skipDOFPTR                       = 027EB - 137EA
+skipDOLNGCMP                     = 027F4 -
+skipDOLNGREL                     = 02807 -
+skipDOROMP                       = 03094 - 137C7
+skipLAMIDNT                      = 030A8 - 1381E
+skipSIZED                        = 0309A - 13842
+skipcola                         *       - 1822B 1826E 182B1 182F4 18337 1848C
+                                 + 184C4 189B5
+sncknum2                         *       - 17B63
+snsymdsptch                      = 2BB80 - 17B54
+sscknum2                         *       - 17B5E
+sssymdsptch                      = 2BBFD - 17B59
+sstSILENT'                       = 139F1 - 17AA0
+sst_addtop                       * 18F16 - 00372
+sst_cola                         * 18EF8 - 00368
+sst_dtrap                        * 18F81 - 0037C
+sst_exam                         * 18E5C - 00354
+sst_ntrap                        * 18F63 - 00377
+sst_raddtop                      * 18F07 - 0036D
+sst_rcola                        * 18EE9 - 00363
+sst_reval:                       * 18EC0 - 0035E
+sst_rpite                        * 17E86 - 0034F
+sst_rprot                        * 18E8C - 00359
+sst_status?                      * 1903D - 00381
+symdispatch1                     = 2B9AF - 17B45
+
+ticR                             *       - 16761 17CFA 17D09
+tickCODE                         = 00013 - 10618
+top&Cr                           *       - 17A2D
+
+uart_buffer                      *       - 10CC1
+
+w->W                             *       - 21F21 21F72 21FAC 21FC9
+
+x'                               *       - 17AA5
+xASS                             * 015C8 - 00200
+xDB                              * 0FD9E - 00219
+xDIS                             * 0AC94 - 00205
+xDISN                            * 0AF05 - 00214
+xDISXY                           * 0AD3F - 0020A
+xDOB                             * 0ADE1 - 0020F
+xEA                              * 22307 - 00241
+xEC                              * 19279 - 0022D
+xED                              * 1AF93 - 00232
+xKILL                            *       - 15971 15AA6 163B3
+xMFED                            * 22D8E - 0024B
+xOBJ>                            *       - 21358
+xSDB                             * 1583B - 0021E
+xSHALT                           * 1589A - 00223
+xSILENT'                         *       - 17A7D
+xSKILL                           * 158FF - 00228
+xSSTK                            * 2291B - 00246
+xTED                             * 1B06F - 00237
+xVV                              * 2157F - 0023C
+xxCONFIG                         * 00435 - 00048
+xxMESSAGE                        * 0044E - 0003E
+
+~#>Entr                          = 613E0 - 1ADBF 22344
+~AddLabsRPL                      = 183E0 - 0B01E 0B2C4 0B31A 0B34D
+~AddLabsXY                       = 193E0 - 0AF86 0B057 0B2AF
+~Assemble                        = 103E0 - 01640
+~CHECKME                         = 133E0 - 015D7 0ACA3 0AD5D 0AE3E 0AF23 0FDAD
+                                 + 15845 19288 1AFB1 1AFDB 1B005 22616 2292A
+~DBHOOK                          = 213E0 -
+~DBHook                          = 223E0 - 0FDB8
+~Diss                            = 1C3E0 - 0AD23 0ADC0 0AEB2 0AF96 22D0E
+~DoCont/Kill                     = 5B3E0 -
+~DoEC                            = 4E3E0 - 210B4
+~DoEd                            = 513E0 - 1B198 20685 20713 207D3 20825 20872
+                                 + 20914 20AA1 20AF4 20BA7 20BD6 20C4C 20C80
+                                 + 20C95 20FCB 2101D 212FD
+~DoEdAt                          = 503E0 - 1AFC1 1AFEB 1B02A 1B08D 1B0D9
+~DoEdErrJmp                      = 5C3E0 - 22B73
+~DoEd_ASS                        = 523E0 - 1B04E 2057C
+~DoEd_DOB                        = 533E0 - 20591
+~DoEd_EC                         = 5E3E0 - 205D0
+~DoEd_GROB                       = 5D3E0 - 205BB
+~DoEd_STK                        = 593E0 - 205A6
+~Dob                             = 153E0 - 0ADFF 0AE24 0AEEE 2085D 20887 20ADF
+                                 + 22769
+~ECView                          = 4F3E0 - 1AEFC
+~EdDOBROMP                       = 543E0 - 209D4
+~EdStkAssTrap                    = 5A3E0 - 22AFA
+~Ent11111@                       = 6A3E0 - 0AE49
+~Entr>#                          = 623E0 - 0AE19 0FE22 20965 20A1B 20ABB 22320
+~Entr>Fptr                       = 693E0 - 1ADDF 20A26
+~Entr>Romp                       = 563E0 - 1AE14
+~FINDTAB                         = 633E0 - 1AB25 1ACF5 210CE 2238A 223B9
+~FPEntry?                        = 573E0 - 1ADCA
+~FPTR@                           = 673E0 - 1ADEA
+~FSTKDROP                        = 583E0 - 20C66
+~FindObEnd                       = 1A3E0 - 0AE54
+~FindTabs                        = 643E0 - 0160B 0ACB9 0AD86 0AE78 0AF5C 22C87
+                                 + 22D57
+~Fptr@                           = 683E0 - 20A8C 20BC1
+~GetLamEnv                       = 363E0 -
+~GetLamEnv!                      = 353E0 - 168AF 16BC2 16DE1 16E2D 16E65
+~GetLoopEnv                      = 393E0 - 16876 1712A 1721F 17328
+~GetTabCfg                       = 653E0 - 01600 1AB35 1AD00 210DE 22D62
+~JavaDis1                        = 6F3E0 - 22D78
+~JazzHook                        = 703E0 -
+~JazzStkDis1                     = 6E3E0 - 22D6D
+~MakeAssStat$                    = 113E0 - 0161B
+~PEEK                            = 663E0 -
+~Pad$                            = 383E0 - 17257 17271 1728B 172A5
+~RPEntry?                        = 553E0 - 1ADFF
+~RPICK                           = 313E0 - 16A66
+~RUI                             = 283E0 - 15C7D 167AB 1688B 168C4 168D9 169E9
+                                 + 16AAD 16B6F 16BAD 16C0A 16EB6 17170 17383
+                                 + 1751A 175B9 1785E 178F0 17915 1797B 17C49
+                                 + 17C63 17CA6 17D22 17D4B 17D6F 17D8E 17DB2
+                                 + 17DD6 17DF5 17E14 17E33 17E52 17E76 17EED
+                                 + 17FAD 18075 180BC 18116 18143 1816C 18195
+                                 + 181BE 181DD 1840B 18462 18E86 18EBA 18F5D
+                                 + 18F7B 19037
+~RUIHALT                         = 293E0 - 158ED 15F1A
+~SSTKErrTrap                     = 6D3E0 -
+~SSTKLOOP                        = 6B3E0 - 15E4C
+~ScanLabels                      = 173E0 - 0AD13
+~ScanLabsXY                      = 163E0 - 0ADB0 0AEA2 0B038 0B076
+~SdbCheckMe                      = 2B3E0 - 15FAB 15FDA 16023 16069 160D2 1611F
+                                 + 1616D 161BA 16201 16257 16286 162D3 16323
+                                 + 163A8 16442 16471 164C1 164F0 16572
+~SdbD0Disp                       = 323E0 - 167CA 16A03
+~SdbDbCode                       = 403E0 - 169D9
+~SdbDispLam                      = 343E0 - 16CDF 16CF9 16D13
+~SdbDoMode                       = 2C3E0 - 15E7A 15FBB 15FEA 16033 16097 16100
+                                 + 1612F 1619B 161CA 16211 16267 16296 162E8
+                                 + 16452 16481 164D1 16500
+~SdbEval                         = 2F3E0 - 16741 16770
+~SdbExec                         = 3C3E0 - 1681E
+~SdbFinish                       = 2E3E0 - 1675B 1678A 16B89 17539
+~SdbInId                         = 3E3E0 - 176FA 1770A
+~SdbInOb                         = 3D3E0 - 16985 1699A 169AF
+~SdbInThis                       = 3F3E0 - 1774A 177A3 177E7
+~SdbLamDisp                      = 333E0 - 167F4
+~SdbLoopDisp                     = 373E0 - 16809
+~SdbMenu                         = 2A3E0 - 15883 15C6D
+~SdbName                         = 253E0 - 159A5 159B5
+~SdbRomp                         = 263E0 - 159C5 15A36
+~SdbRstFlags                     = 233E0 - 15BE3
+~SdbRstkDisp                     = 303E0 - 167DF
+~SdbSeco                         = 273E0 - 15995 15A26 15A64
+~SdbSemi                         = 3B3E0 - 16857
+~SdbSkip                         = 3A3E0 - 16842
+~SdbSstOb                        = 423E0 - 16946 1695B 16970 1773A 1777E 17793
+                                 + 177B8 177D7 17815
+~SdbSstSemi                      = 413E0 - 169C4
+~SdbStart                        = 243E0 - 1586E 159EE
+~SdbThisMode                     = 2D3E0 - 15F66
+~SetDisXYOps                     = 1E3E0 - 0AD9B 0AE8D
+~SetDisnOps                      = 1F3E0 - 0AF6C
+~SetDissOps                      = 1D3E0 - 0ACC9
+~SetStkDis1Ops                   = 203E0 - 22CBA
+~SetupAssOps                     = 123E0 - 01626
+~SkipMLN                         = 1B3E0 - 0AF51
+~SysDisplay!                     = 6C3E0 -
+~TOTEMPBOT?                      = 143E0 - 0ACAE
+~ViewGrob                        = 5F3E0 - 222EB
+~ViewGrob!                       = 603E0 - 21008
+~sst_addtop                      = 4A3E0 - 17EDD 18E7B
+~sst_cola                        = 483E0 - 183EB 18442
+~sst_dtrap                       = 4C3E0 - 17C3E 18EAF
+~sst_exam                        = 443E0 - 18ADC 18AF1 18B06 18B1B 18B30 18B45
+                                 + 18B5A 18B6F 18B8E 18BA3 18BB8 18BCD 18BE2
+                                 + 18BF7 18C0C 18C21 18C40 18C55 18C6A 18C7F
+                                 + 18C94 18CA9 18CBE 18CD3 18CF2 18D07 18D1C
+                                 + 18D31 18D46 18D5B 18D70 18D85 18DA4 18DB9
+                                 + 18DCE 18DE3 18DF8 18E0D 18E22 18E37
+~sst_ntrap                       = 4B3E0 - 18240 18283 182C6 18309 1834C 183F6
+                                 + 1844D 184A1 184D9 189CA 18E56
+~sst_raddtop                     = 493E0 - 17C87 17E9F 17F02 17F1C 17F40 17F93
+                                 + 17FEA 18031 18EDE
+~sst_rcola                       = 473E0 - 18235 18278 182BB 182FE 18341 18496
+                                 + 184CE 189BF
+~sst_reval:                      = 463E0 - 17F55 17F6F
+~sst_rpite                       = 433E0 - 17EBE
+~sst_rprot                       = 453E0 - 17BCC 17BE1 17BFB 17C15 18A43 18A71
+                                 + 18A9F
+~sst_status?                     = 4D3E0 - 18E6B
+~xASS                            = 003E0 - 015C2 205F9 2073C 20DF9 22AE5
+~xDB                             = 053E0 - 0FD98 1790A
+~xDIS                            = 013E0 - 0AC8E 1AE29 1B015 206EA 2080B 20B8D
+~xDISN                           = 043E0 - 0AEFF
+~xDISXY                          = 023E0 - 0AD39
+~xDOB                            = 033E0 - 0ADDB 1AE82 1AF16
+~xEA                             = 0D3E0 - 22301
+~xEC                             = 093E0 - 19273
+~xED                             = 0A3E0 - 1AEA1 1AF35 1AF8D
+~xMFED                           = 0F3E0 - 22D88
+~xSDB                            = 063E0 - 15835 1597B
+~xSHALT                          = 073E0 - 15894 176C7 1776E 17961
+~xSKILL                          = 083E0 - 158F9 16226
+~xSSTK                           = 0E3E0 - 22915
+~xTED                            = 0B3E0 - 1B069
+~xVV                             = 0C3E0 - 1AEAC 1AF40 21579
+
+/SLOAD:  End of Saturn Loader Execution

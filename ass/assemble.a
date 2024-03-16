@@ -1,0 +1,706 @@
+**********************************************************************
+* 		Main Assembler Loop
+**********************************************************************
+
+* This is executed only once - at the first start
+
+AssembleStart	GOSBVL	=SAVPTR
+		GOSUB	PopAssArgs
+		GOSUB	ExpandBuf
+
+* Restart entry for pass 2
+AssPass2	A=R0	A		* Set ->pc
+		D1=A
+		A=R1	A		* Set ->src = ->srcloc
+		D0=A
+		GOSUBL	ClearStat?
+		GOTO	AssRpl
+
+* Restart entry for new source file.
+* Note that since GC is forced there is no way any of the addresses
+* pointing into the buffers can change. (eg O_PC is valid)
+* Only pointers into source code can change, and that is settled
+* by using an offset stack for include.
+
+AssNew		GOSBVL	=SAVPTR
+		GOSUB	PopAssArgs		->Tab & ->Status ok
+		A=R2.F	A
+		D0=A
+		D0=(2)	O_PC
+		A=DAT0	A
+		D1=A				->pc
+		GOSBVL	=D0=DSKTOP
+		A=DAT0	A
+		A=A+CON	A,10			->src start
+		D0=A				->src
+		D0=D0-	5
+		C=DAT0	A			srclen
+		D0=D0+	5
+		C=C+A	A
+		C=C-CON	A,5			->srcend
+		GOSBVL	=CSLW5
+		C=A	A			->srcloc
+		R1=C				->srcloc ->srcend
+		GOSUB	CheckFree		free ok
+
+**********************************************************************
+* 		Main RPL Assembler loop
+* R0	->srcmed
+* R1	->srcloc	->srcend
+* R2	->status
+* R3	->tab
+* R4	->free
+* D0	->source
+* D1	->pc
+**********************************************************************
+
+AssRpl		?ST=1	qASSEMBLE	* Jump to code assembler?
+		GOYES	AssCode
+		GOSUB	SavePc		* Save output address
+		GOSUB	Interrupt?	* ON-key down?
+		GOSUBL	GetRplTok	* Updates srcloc and srcmed
+		GOC	DoFinish	* End of this src stream
+		GOSUBL	What?		* Assemble object
+		GOSUB	CheckFree	* Check free counter
+		GOSUBL	RplReport?	* Display srcloc - D0
+		GOTO	AssRpl		* Continue loop
+
+DoFinish	GOTO	Finish?		* Check if done
+
+**********************************************************************
+*		Main CODE Assembler loop
+* R0	->srcmed
+* R1	->srcloc	->srcend
+* R2	->status	->lineend
+* R3	->tab
+* R4	->free
+* D0	->source
+* D1	->pc
+**********************************************************************
+
+AssCode		?ST=0	qASSEMBLE	* Jump to rpl assembler?
+		GOYES	AssRpl
+		GOSUB	SavePc		* Save output address
+		GOSUB	Interrupt?	* ON-key down?
+		GOSUBL	GetLine		* Get next line
+		GOC	DoFinish	* If none then finish
+		GOSUBL	CodeReport?	* Report the line
+		GOSUBL	WhatLine?	* Assemble the line
+		GOSUB	CheckFree	* Check free counter
+		GOTO	AssCode		* Continue loop
+
+**********************************************************************
+* Save current ->pc to the status buffer
+**********************************************************************
+SavePc		A=R2			* A.A = ->Status
+		AD1EX
+		D1=(2)	O_PC
+		DAT1=A	A
+		AD1EX
+		RTN	
+
+**********************************************************************
+* Exit assembler loop if ATTNFLG <> 0
+**********************************************************************
+Interrupt?	AD1EX
+		GOSBVL	=chk_attn
+		AD1EX
+		RTNNC			* Return if no attn
+*		C=RSTK			* Pop return address, not needed
+		C=0	A		* Set error number to 0
+		GOLONG	Error
+
+**********************************************************************
+* Special entry to check we have required minimum free memory
+**********************************************************************
+Ensure		AR4EX.F	A		* Ensure without decreasing memory
+		?A<C	A
+		GOYES	+
+		AR4EX.F	A
+		RTN
++		GOVLNG	=GPMEMERR
+**********************************************************************
+* Special entry to fix free counter. This is safer since we don't have
+* to worry about an obscure allocation bug, warmstart is generated
+* if we notice we have used too much memory.
+**********************************************************************
+CheckFree	A=R2.F	A
+		LC(5)	O_NEXTNODE
+		A=A+C	A
+		AD0EX
+		C=DAT0	A	->nextcode
+		D0=A
+		AD1EX		->pc
+		D1=A
+		C=C-A	A	nextcode-pc
+		R4=C.F	A
+		RTNNC
+		P=	15		Unused WSLOG entry to mark Jazz
+		GOVLNG	=PWLseq		error
+
+**********************************************************************
+* Pop status buffer to R2.A and A.A from stk3
+* Uses D0 for the popping, leaving it to ->stk1
+**********************************************************************
+PopStat0	GOSBVL	=D0=DSKTOP
+		D0=D0+	10
+		A=DAT0	A
+		D0=D0-	10
+-		A=A+CON	A,10		* Skip prolog & len fields
+		A=0	B		* Clear page
+		LC(5)	#100		* Next page
+		A=A+C	A
+		R2=A.F	A
+		RTNCC
+
+* Same as above but uses D1
+
+PopStat1	GOSBVL	=D1=DSKTOP
+		D1=D1+	10
+		A=DAT1	A
+		D1=D1-	10
+		GONC	-
+
+**********************************************************************
+* Pop assembler arguments:
+*	R3.A = ->Tab		->bank config
+*	R2.A = ->Status
+*	A.A = ->Status
+*	D1 = ->stk1
+**********************************************************************
+PopAssArgs	GOSBVL	=D1=DSKTOP
+		A=0	W
+		D1=D1+	15		get to config address
+		D1=D1+	5
+		A=DAT1	A
+		CD1EX
+		AD1EX
+		D1=D1+	5
+		A=DAT1	A
+		CD1EX
+		GOSBVL	=ASLW5
+		D1=D1-	5		now get rtab address
+
+*		D1=D1+	15
+		A=DAT1	A
+*		LC(5)	=NULL$
+		LC(5)	=ZERO
+		?A#C	A
+		GOYES	+	---+
+		A=0	A	   |	No table exists
+*+		R3=A.F	A	<--+
+*		GOTO	PopStat1
+		GONC	++
+
++		AD1EX
+		D1=D1+	5		skip bint prolog
+		A=DAT1	A
+++		R3=A
+		GOTO	PopStat1
+
+**********************************************************************
+* Expand assembler code & symbols buffer, converting status buffer
+* offsets into work addresses.
+* Input:	R2[A]  = ->status
+* Stack:	( $rtab $status $buffer $source )
+* Output:	R0[A]  = ->pc
+*		R1[A]  = srcloc	( After Maximize$ ! )
+*		R1[A1] = srcend ( After Maximize$ ! )
+*		R4[A] = free
+* Notes:
+*		If pass1 then symbols were shrinked to pc
+*		If pass2 then symbols were shrinked to pcend from pass1
+*
+*		This subroutine should be called only at first startup
+*		or when ShrinkBuf has been called. For example INCLUDE
+*		and DEFINE code will not call either for speed.
+*
+**********************************************************************
+
+* if you choose to include ascii factor in expr, you have to 
+* re-activate this very-long GOSUB
+* Too long for GOSUBL
+maximbuf	A=PC
+		LC(5)	(MAXIM$)-(*)
+		C=C+A	A		->MAXIM$
+		A=DAT1	A		->$buffer
+		PC=C			Call
+
+
+ExpandBuf	P=	0
+		SETHEX
+		GOSBVL	=D1=DSKTOP
+		D1=D1+	5
+
+*		A=DAT1	A		->$buffer
+*		GOSUBL	MAXIM$
+		GOSUB	maximbuf
+
+* R4[A] = free
+* A[A]  = ->bufend (new)
+* C[A]  = ->bufend (old)
+
+		R0=C.F	A		->bufend (old)
+		R1=A.F	A		->bufend (new)
+
+* Get status flags back
+
+		A=R2.F	A
+		D0=A
+		D0=(2)	O_ST_SAVE
+		C=DAT0	X
+		ST=C
+
+* Convert status buffer offsets to addresses. Note that all offsets
+* should initially be zero so WIPEOUT is all we need to initialize status
+
+* Fix PCOFF
+		GOSBVL	=D0=DSKTOP
+		D0=D0+	5
+		A=DAT0	A
+		A=A+CON	A,10
+		B=A	A		->pc start
+		A=R2.F	A
+		D0=A
+		D0=(2)	O_PC
+		A=DAT0	A		PC OFFSET
+		A=A+B	A		PC address
+		DAT0=A	A
+
+* Now set correct values of NEXTSLOT and HASHEND
+* First we need to determine where the symbols are now:
+*	If pass1 then at pc
+*	If pass2 then at pass1end
+
+		?ST=0	qPASS2
+		GOYES	+		Pass 1, A[A] is ->symbols
+		D0=(2)	O_PASS1END
+		A=DAT0	A		PASS1END offset
+		A=A+B	A		PASS1END address
++
+
+* NEXTSLOT was at A[A], will move up by 'free' nibbles
+* HASHEND equals ->bufend (new)
+		B=A	A		->symbols (old)
+		A=R2.F	A
+		LC(5)	O_NEXTNODE
+		A=A+C	A
+		D0=A
+		C=R4.F	A		free
+		C=C+B	A		->nextslot (new)
+		DAT0=C	A
+		D0=D0+	5		O_HASHEND
+		A=R1.F	A		->bufend (new)
+		DAT0=A	A
+
+* Now move the symbols to end of the buffer
+* Eg everything between B[A] and bufend(old) goes to the end of the new buffer
+
+		D1=A			->bufend (new)
+		C=R0.F	A
+		D0=C			->bufend (old)
+		C=C-B	A		bufend-symbs = memory for symbs
+		GOSBVL	=MOVEUP
+
+* Now return proper values to the main program:
+*		R0[A]  = ->pc
+*		R1[A]  = srcloc	( After Maximize$ ! )
+*		R1[A1] = srcend ( After Maximize$ ! )
+*		R4[A] = free
+
+		A=R2.F	A
+		D0=A
+		D0=(2)	O_PC
+		A=DAT0	A
+		R0=A.F	A		->pc
+
+		GOSBVL	=D1=DSKTOP
+		C=DAT1	A		->$src
+		D1=C
+		D1=D1+	5
+		A=DAT1	A		$srclen
+		A=A+C	A
+		A=A+CON	A,5		->$srcend
+		GOSBVL	=ASLW5		A[A1] = srcend
+
+		D0=(2)	O_SRC
+		A=DAT0	A		srcoff
+		A=A+C	A
+		A=A+CON	A,10		->src
+		R1=A
+		RTNCC
+
+
+**********************************************************************
+* Shrink assembler code & symbols buffer, converting work addresses
+* into status buffer offsets.
+* Input:	R1[A] = ->srcloc
+*		R2[A] = ->status
+*		O_PC O_XTRA
+* Stack:	( $rtab $status $buffer $source )
+* Uses:		R0[A] R2[A]
+* Note:		The buffer is not necessarily topmost in tempob,
+*		thus Shrink$ cannot be used.
+*		If pass1 then shrink down to pc
+*		If pass2 then shrink down to pcend from pass1
+**********************************************************************
+
+**	!! THIS IS NOT CURRENTLY USED DUE TO FORCED GC !!
+**	!! SAVE IT FOR POSSIBLE MACRO EXPANSION IMPLEMENTATIONS !!
+
+ShrinkBuf	P=	0
+		SETHEX
+
+* Save ST flags
+		C=R2.F	A
+		D0=C
+		D0=(2)	O_ST_SAVE
+		C=ST
+		DAT0=C	X
+
+* Save ->srcloc into O_SRC as offset
+
+		GOSBVL	=D1=DSKTOP
+		A=DAT1	A		->$src
+		C=R1.F	A		->srcloc
+		C=C-A	A
+		C=C-CON	A,10
+		D0=(2)	O_SRC
+		DAT0=C	A
+
+* Save PC OFFSET
+		D0=(2)	O_PC
+		C=DAT0	A		->pc
+		R2=C.F	A		R2[A] = ->pc (!! Overwrites ->status )
+		D1=D1+	5
+		A=DAT1	A		->$buffer
+		R0=A.F	A		->$buffer (For Shrink)
+		A=A+CON	A,10		->pc start
+		C=C-A	A		PC OFF
+		DAT0=C	A
+
+* Determine address down to which the symbols are moved
+
+		D0=(2)	O_PASS1END
+		?ST=0	qPASS2
+		GOYES	+		Pass 1 use R2[A] = ->pc
+		C=DAT0	A
+		C=C+A	A		->pass1end
+		R2=C.F	A
++
+
+* Fix XTRA into an offset. New value = ->xtra - ->pcstart
+
+		AD0EX
+		LC(5)	(O_XTRA)-(O_PASS1END)
+		A=A+C	A
+		AD0EX
+		C=DAT0	A		->xtra
+		?C=0	A
+		GOYES	+
+		C=C-A	A		xtra - pcstart
+		DAT0=C	A
++
+* Move down the symbols buffer:
+*	nextnode - hashend moves down to R2[A]
+
+		D0=(2)	O_NEXTNODE
+		A=DAT0	A		->nextnode
+		D0=(2)	O_HASHEND
+		C=DAT0	A		->hashend
+		D0=A			->nextnode
+		C=C-A	A		nibbles taken by symbols
+		A=R2.F	A		->downto
+		D1=A
+		GOSBVL	=MOVEDOWN	D1 = ->end address for new location
+		AD1EX
+		D0=A			->tail
+*		GOLONG	SHRINK$		Too far
+		GOLONG	GoL_SHRINK$
+*		A=PC
+*		LC(5)	(SHRINK$)-(*)
+*		A=A+C	A
+*		PC=A
+**********************************************************************
+
+
+**********************************************************************
+* Current source string done, check if all done
+**********************************************************************
+* Source code ended, check include depth
+
+Finish?		C=R2			* C.A = ->Status
+		D0=C
+		D0=(2)	O_INCL_DEPTH
+		A=DAT0	A
+		A=A-1	A
+		GONC	IncludeBack
+		GOTO	FinishAss
+
+* Note that above does *not* set incl_depth to FFFFF.
+* If Free would run out while adding extra SEMIs then the restarted
+* assembler would try to include back a non-existant object
+
+**********************************************************************
+* Included string has been assembled, recall previous string and
+* restart the assembler
+* To speed thing up normal entry is not used, and only the source
+* pointers & stack are updated.
+**********************************************************************
+
+IncludeBack	DAT0=A	A		* Set new incl_depth here!!
+
+* Fetch the source offset for the old source
+
+		LC(5)	(O_INCL_STACK)-(O_INCL_DEPTH)
+		C=C+A	A
+		A=A+A	A
+		A=A+A	A
+		C=C+A	A		->stack n offset
+		AD0EX
+		A=A+C	A		->stack n
+
+		AD1EX
+		R0=A			Save ->pc in R0[A]
+		
+		C=DAT1	A		#srcoff
+		R1=C			Save in R1 temporarily
+
+* Now: ( $srcold $tab $status $buffer $src )
+*  --> ( $tab $status $buffer $srcold )
+
+* Now change the stack
+
+		GOSBVL	=GETPTR
+		D1=D1+	5
+		D=D+1	A		Drop $src
+		GOSBVL	=SAVPTR
+		A=DAT1	15		$tab $status $buffer
+		D1=D1+	15
+		C=DAT1	A		$srcold
+		D1=D1-	10
+		DAT1=A	15
+		D1=D1-	5
+		DAT1=C	A		( $tab $status $buffer $srcold )
+
+* Setup ->srcend and ->srcloc	R1[A]=#srcoff
+		A=R1	A
+		C=DAT1	A		->srcold
+		A=A+C	A
+		A=A+CON	A,10		->srcloc
+		B=A	A		->srcloc
+		C=C+CON	A,5
+		D1=C
+		A=DAT1	A		srclen
+		A=A+C	A		->srcend
+		GOSBVL	=ASLW5
+		A=B	A		->srcloc
+		R1=A
+* Setup assembler loop
+		D0=A			->srcloc
+		A=R0
+		D1=A			->pc
+		GOTO	AssRpl		* Continue assembling
+**********************************************************************
+* Finish the assembler
+**********************************************************************
+
+FinishAss
+
+* Error if branch was expected
+
+		?ST=0	qBRANCH
+		GOYES	+
+		XERR	errWantGoyes	* "GOYES Expected"
+
+* Error if ENDCODE was not found
+
++		?ST=0	qCODE
+		GOYES	+
+		XERR	errWantEndcode	* "ENCODE Expected"
+
+* Error if conditional assembly stack is not empty
+
++		D0=(2)	O_IFDEPTH
+		A=DAT0	B
+		?A=0	B
+		GOYES	+
+		XERR	errMissEndif
+
+* Append possible missing SEMIs
+
++		?ST=1	qLIB
+		GOYES	SemiAddDone
+		D0=(2)	O_COMP_DEPTH
+		A=DAT0	A		* comp_depth--
+		?A=0	A		* None to add?
+		GOYES	SemiAddDone	* None
+
+* Calculate needed memory
+
+		C=A	A
+		C=C+C	A
+		C=C+C	A
+		C=C+A	A
+		GOSUB	Free-
+
+* And add semis
+
+		LC(5)	=SEMI
+SemiAddLoop	DAT1=C	A
+		D1=D1+	5
+		A=A-1	A
+		?A#0	A
+		GOYES	SemiAddLoop
+SemiAddDone
+
+* Now check if we need pass2
+
+		?ST=1	qPASS2
+		GOYES	goFinish!
+		?ST#0	qNEEDPASS2
+		GOYES	+
+goFinish!	GOTO	Finish!
+
+**********************************************************************
+* Initialize pass 2 and start it
+**********************************************************************
++		?ST=0	qLIB
+		GOYES	+
+		GOSUBL	FinishLib1	Finish library after pass 1
++		GOSBVL	=D0=DSKTOP
+		D0=D0+	5
+		A=DAT0	A
+		A=A+CON	A,10		->pc start
+		CD1EX
+		D1=C
+		C=C-A	A		resulting size
+		A=R2
+		D0=A
+		D0=(2)	O_PASS1END
+		DAT0=C	A		Save object size
+		C=0	A
+		D0=(2)	O_CODELAB	Init codelab
+		DAT0=C	A
+		D0=(2)	O_ABASE		Init abase
+		DAT0=C	A
+		D0=(2)	O_GENLABS	Init generator indexes
+		P=	16-4		All 4 of them
+-		DAT0=C	A
+		D0=D0+	5
+		P=P+1
+		GONC	-
+
+		A=R2			Init lambda count to zero
+		LC(5)	O_LAMBDAS
+		A=A+C	A
+		D0=A
+		A=0	A
+		DAT0=A	B
+
+		AD1EX			A[A] = ->pc (final)
+		GOSBVL	=GETPTR
+		C=DAT1	A
+		C=C+CON	A,10
+		R1=C.F	A		R1[A] = ->src
+		D1=D1+	5
+		C=DAT1	A		C[A] = ->buf
+		C=C+CON	A,10
+		R0=C.F	A		R0[A] = ->pc (start)
+		A=A-C	A		A[A] = size after pass1
+		C=R4.F	A		Fix free with size
+		C=C+A	A
+		R4=C.F	A
+		ST=0	qCODE
+		ST=0	qASSEMBLE
+		ST=1	qPASS2
+		GOTO	AssPass2
+
+**********************************************************************
+* Assembly done. Now check for a valid object
+**********************************************************************
+Finish!		?ST=0	qLIB
+		GOYES	+
+		GOSUBL	FinishLib2	Finish library after pass 2
++		AD1EX			Save pcend to R4
+		R4=A
+		GOSBVL	=D1=DSKTOP
+		D1=D1+	5
+		A=DAT1	A
+		R0=A			R0 = ->buf
+
+*		GOSUBL	SHRINKOB$
+		GOSUBL	GoL_SHRINKOB$
+		GOC	ShrError
+
+		GOSBVL	=AllowIntr
+		GOSBVL	=GETPTR		Shrinked ok, now overwrite
+		A=R0			stk2 with the extracted ob
+		D1=D1+	5
+		DAT1=A	A
+		D1=D1-	5
+		GOVLNG	=Loop
+
+ShrError	?P=	1
+		GOYES	UndefErr
+		XERR	errNoPrgm	"No Program"
+UndefErr	P=	0
+		XERR	errUndefRes	"Undefined Result"
+
+**********************************************************************
+* Free C.A nibbles
+**********************************************************************
+Free-		AR4EX.F	A
+		A=A-C	A
+FreeCK		AR4EX.F	A
+		RTNNC
+		GOVLNG	=GPMEMERR	* Error - no memory left
+**********************************************************************
+* Free 1 nibble, preserves C.A
+**********************************************************************
+Free-1		AR4EX.F	A
+		A=A-1	A
+		GOTO	FreeCK
+**********************************************************************
+* Free 2 nibbles, preserves C.A
+**********************************************************************
+Free-2		AR4EX.F	A
+		A=A-CON	A,2
+		GOTO	FreeCK
+**********************************************************************
+* Free 3 nibbles, preserves C.A
+**********************************************************************
+Free-3		AR4EX.F	A
+		A=A-CON	A,3
+		GOTO	FreeCK
+**********************************************************************
+* Free 4 nibbles, preserves C.A
+**********************************************************************
+Free-4		AR4EX.F	A
+		A=A-CON	A,4
+		GOTO	FreeCK
+**********************************************************************
+* Free 5 nibbles, preserves C.A
+**********************************************************************
+Free-5		AR4EX.F	A
+		A=A-CON	A,5
+		GOTO	FreeCK
+**********************************************************************
+* Free 6 nibbles, preserves C.A
+**********************************************************************
+Free-6		AR4EX.F	A
+		A=A-CON	A,6
+		GOTO	FreeCK
+**********************************************************************
+* Free 7 nibbles, preserves C.A
+**********************************************************************
+Free-7		AR4EX.F	A
+		A=A-CON	A,7
+		GOTO	FreeCK
+**********************************************************************
+* Free 10 nibbles, preserves C.A
+**********************************************************************
+Free-10		AR4EX.F	A
+		A=A-CON	A,10
+		GOTO	FreeCK
+**********************************************************************

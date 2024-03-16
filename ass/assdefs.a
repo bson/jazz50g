@@ -1,0 +1,440 @@
+**********************************************************************
+*		General Definitions
+**********************************************************************
+
+* MINMEM must be big enough to support all the pushing done by
+* DEFINE and INCLUDE
+
+*MINMEM		EQU 1000	* Minimum memory required by rpl UI
+MINMEM		EQU 2000	* Minimum memory required by rpl UI
+INCLMAX		EQU 20		* Maximum include depth
+
+**********************************************************************
+*		Status flags
+**********************************************************************
+
+* Internal assembler status flags:
+
+qTEMP		EQU 0		* Misc status
+qTEMP1		EQU 1		* Misc status (modified by SKIPOB!)
+
+qOVERFLOW	EQU 0		* Overflow when parsing a number?
+qTEST		EQU 0		* Mnemonic starts with '?' ?
+qXNAME		EQU 0		* Visible mnemonic is xNAME ?
+
+qRELVALUE	EQU 1		* Set if expression value is relative
+
+qPASS2		EQU 2		* Pass1 / Pass2 ?
+qNEEDPASS2	EQU 3		* Set if Pass2 is needed
+				* For example if Pass1 finds an unidentified label
+
+qOPT4		EQU 4
+qOPT5		EQU 5
+qLIB		EQU 6		* Assembling a library?
+qASSEMBLE	EQU 7		* Assemble machine language?
+qCODE		EQU 8		* ENDCODE expected?
+qBRANCH		EQU 9		* Branch expected?
+qOPT10		EQU 10		* GARBAGECOL
+
+* User options:
+
+qREPORT		EQU 11		* Report assembled lines?
+
+**********************************************************************
+* 		Status Buffer
+**********************************************************************
+
+		ABASE	0
+ASSBUF		ALLOC	0
+
+O_COMP_DEPTH	ALLOC	5	* Composite depth
+O_INCL_DEPTH	ALLOC	5	* Include depth
+O_PC		ALLOC	5	* Current address if code buffer
+				* Offset during GC etc
+O_SRC		ALLOC	5	* Offset into the $source. plg&len not in
+O_PASS1END	ALLOC	5	* Offset to end of output after pass1
+
+O_ROMID?	ALLOC	1	* ROMID defined? (non-zero if yes)
+O_ROMID		ALLOC	3	* ROMID
+O_TITLE?	ALLOC	1	* TITLE defined? (non-zero if yes)
+O_CONFIG?	ALLOC	1	* CONFIG defined? (non-zero if yes)
+O_MESSAGE?	ALLOC	1	* MESSAGE defined? (non-zero if yes)
+O_HASHES?	ALLOC	1	* Secondary hashnames? (non-zero if yes)
+O_ROMPS		ALLOC	3	* Number of externals
+O_XNAMES	ALLOC	3	* Number of xnames
+O_NULLNAMES	ALLOC	3	* Number of nullnames
+
+O_CODELAB	ALLOC	5	* Index for "CODE"
+O_CODEADDR	ALLOC	5	* pc of last "CODE" + 5
+O_ABASE		ALLOC	5	* Current address for ALLOC
+
+O_ST_SAVE	ALLOC	3	* Status flag save
+
+O_IFDEPTH	ALLOC	2	* Depth of IF stack
+O_IFSTACK	ALLOC	16	* IF stack: 64 status bits
+
+O_TEMPLAB	ALLOC	1+2*18	* Temporary label. Size + 18 chars
+
+*---------------------------------------------------------------------
+* Local label generator indexes
+
+O_GENLABS	ALLOC	0	* Generated labels
+O_LAB+		ALLOC	5	* Running index of +  type labels
+O_LAB-		ALLOC	5	* Running index of -  type labels
+O_LAB++		ALLOC	5	* Running index of ++ type labels
+O_LAB--		ALLOC	5	* Running index of -- type labels
+
+* Following should define the offsets to the specific indexes
+
+GENLAB+		EQU 0		* Note that these are all conveniently
+GENLAB-		EQU 5		* whitespace values, so they can
+GENLAB++	EQU 10		* be used in the dummy label generation.
+GENLAB--	EQU 15
+
+*---------------------------------------------------------------------
+* Expression buffers
+* Pos #87
+
+EXPRMAX		EQU 8			* Depth of expression stacks
+					* Code assumes 1 nibble is enough
+O_OPERSAVE	ALLOC	2
+O_OPERSTK	ALLOC	(EXPRMAX)*2
+O_EXPRSTK	ALLOC	(EXPRMAX)*17
+O_EXPREND	ALLOC	0
+
+* Second page.
+
+*---------------------------------------------------------------------
+* Temporary register save area. Code assumes 2nd page
+* Pos #121
+
+O_D0		ALLOC	5
+O_D1		ALLOC	5
+O_B		ALLOC	16
+O_D		ALLOC	16
+O_R0		ALLOC	16
+O_R1		ALLOC	16
+O_R2		ALLOC	16
+O_R3		ALLOC	16
+O_R4		ALLOC	16
+
+* loc #19B
+
+*---------------------------------------------------------------------
+* Include offset buffer. The intention is to save offsets into
+* old source code when a new source is included (define, macro, include)
+
+O_INCL_STACK	ALLOC	5*(INCLMAX)
+
+*---------------------------------------------------------------------
+* Symbol buffer area.
+* Code assumes the order below is fixed and in the same page (not hashes)
+
+O_LABELS	ALLOC	1	* <>0 if any symbols exist
+O_DEFINES	ALLOC	1	* <>0 if any defines exist
+O_MACROS	ALLOC	1	* <>0 if any macros exist
+O_XTRA		ALLOC	5	* Misc pointer to label buffer area
+O_NEXTNODE	ALLOC	5	* Tail address of next free node
+O_HASHEND	ALLOC	5	* Address for end of buffer
+O_HASHES	ALLOC	256*5	* Backward offsets from end of buffer
+
+* Note that hash 00000 means there are no symbols for that hash
+* Also the entire symbols buffer and hashes remain valid over GC, also
+* NEXTNODE and HASHEND can be calculated on expansion so shrink phase
+* doesn't have to worry about it. XTRA is provided as a pointer into
+* the symbols area so that DEFINE code can call ShrinkBuf safely to get
+* memory for the data allocation it needs.
+
+*---------------------------------------------------------------------
+* Lambda name buffer
+*	CON(2)	lambdas		<>0 if there is atleast one, else 1-22
+*	CON(1)	chars1
+*	NIBASC	'name1'
+*	..
+
+LAMBDAMAX	EQU	22
+O_LAMBDAS	ALLOC	2
+O_LAMBDASTACK	ALLOC	(LAMBDAMAX)*(1+2*16)
+
+*---------------------------------------------------------------------
+
+* Buffer end
+
+ASSBUFEND	ALLOC	0
+
+ASSBUFSIZE	EQU	(ASSBUFEND)-(ASSBUF)
+
+**********************************************************************
+*		Expression Definitions
+**********************************************************************
+*
+* OPERSTK format:
+*	CON(1)	num		* number of operators, 0 = 0 operators
+*	CON(2)	oper1		* operator & it's priority
+*	...
+*	CON(2)	oper(EXPRMAX)
+*
+* EXPRSTK format:
+*	CON(1)	num		* number of values, 0 = 0 values
+*	CON(1)	type_val1	* value type (external, relative, undefined)
+*	CON(16)	value1
+*	...
+*	CON(1)	type_val(EXPRMAX)
+*	CON(16)	value(EXPRMAX)
+*
+* Both stacks grow downwards
+*
+**********************************************************************
+
+**********************************************************************
+*		Register Usage by the Assembler
+**********************************************************************
+
+**********************************************************************
+*	A		A1		A2
+* R0	->srcmed
+* R1	->srcloc	->srcend
+* R2	->Status	->lineend
+* R3	->Tab		->bankconfig
+* R4	free
+*
+* D0	->source
+* D1	->pc
+*
+* srcmed = address of the token being parsed
+* srcloc = address of the 1st token needed arguments
+* ->Status = address of the status buffer body
+* ->Tab = address of RPL.TAB or 00000 if none exists
+* ->bankconfig = address to configure flash bank containing entry lib
+* ->lineend = end of current line, used only by the ml assembler
+*
+* ->source = current source pointer
+* ->pc = current pointer to the code buffer
+*
+**********************************************************************
+
+
+
+
+**********************************************************************
+*			Symbol Buffer
+**********************************************************************
+
+* The symbols are separate chained so that each node looks like:
+*
+*	REL(5)	nextsymbol
+*	CON(1)	symblen		0-15 = 1-16 chars
+*	NIBASC	\name\
+*	CON(1)	type		0-F
+*	<type specific data>
+*
+* For symbols the data is:
+*	CON(1)	valuelen	0-15 = 1-16 nibbles
+*	NIBHEX	value
+* For propsymbols the data is:
+*	CON(1)	5		Lenght in nibbles (courtesy for expr.a)
+*	CON(6)	prop		romid in [X], cmdnum in [X1]
+* For hashsymbols the data is:
+*	CON(3)	cmdnum
+*	CON(1)	chars
+*	NIBASC	hash
+* For rompsymbols the data is:
+*	CON(5)	address		Offset from start to location of romp
+*	CON(3)	cmdnum		Command number
+*	CON(1)	visible?	Indicates visible/nullname (1/0)
+*	CON(1)	chars		0-15 to indicate 1-16 chars in hash
+*	NIBASC	hash		hashname, 16 chars slot
+* Note that because EXTERNAL may declare a rompsymbol and since EXTERNAL
+* declaration itself gives no indication on the visibility of the romp
+* and its hashname, the hashname slot must be allocated along with the
+* rest of the data.
+
+* Symbol types:
+
+SYMB_LABEL	EQU 0		* This is assumed to be 0 in code!
+SYMB_EQU	EQU 1		* Value fixed
+SYMB_=		EQU 2		* Value can be changed
+SYMB_PROP	EQU 3		* Propsymbol
+SYMB_EXPROK	EQU 3		* Above are allowed in expressions
+
+SYMB_HASH	EQU 4		* Hashsymbol
+SYMB_ROMP	EQU 5		* Rompsymbol
+SYMB_CODELAB	EQU 6		* CODE-ENDCODE label
+SYMB_DEFINE	EQU 7		* DEFINE string
+SYMB_MACRO	EQU 8		* MACRO string
+
+MACRO_SUBS	EQU 1		* Substitutions exist?
+
+* Special labels:
+*
+*	3 chars:	 0+xxxx	= +
+*	3 chars:	 1+xxxx	= code label
+*	3 chars:	 5+xxxx	= -
+*	3 chars:	10+xxxx	= ++
+*	3 chars:	15+xxxx	= --
+
+**********************************************************************
+*			The RPL parser
+**********************************************************************
+*
+* To enable dynamic memory allocation without forcing a GC the following
+* method is used when assembling rpl:
+*
+* Save PC location
+* Call GetRPlTok
+*	Updates srcloc and srcmed to start of next token
+*	Returns token lenght and pointer to next token
+*	Also handles comment skipping
+* If RplToken is found then
+*	Call What?
+* 	Jump back to "Save PC location"
+* Else
+*	If include depth <> 0 then
+*		Decrease include depth
+*		Pop new source and offset into it from the stack
+*		Jump to "Save PC location"
+*	Else if composite depth <> 0 then
+*		Ensure room for all needed SEMIs first
+*		Then write all semis and Finish Up
+*	Else Finish Up
+*
+**********************************************************************
+* Comments in RPL:
+*
+* Any line starting with "*" is a comment
+* Any token starting with "(" starts comment scan which ends at
+* ")" followed by whitespace.
+**********************************************************************
+* Finish Up:
+*
+* Save last ->pc
+* If size of assembled object = 0 then error (No program)
+* If size of assembled object < 5 then error (Undefined result)
+* If size of assembled object = 5 then overwrite buf with that address
+*    and exit
+* If assembled object does not start with a prolog then error
+* If SAFESKIPOB fails then error
+* If end address given by SAFESKIPOB does not match last ->pc then error
+* Else shrink the buffer and return the object
+**********************************************************************
+* What?
+*
+* ?CtrlWord		* Is token control word?
+* ?Entry		* Is token in RPL.TAB?
+* ?Symbol		* Is token a symbol?
+* ?Defined		* Is token defined?
+* ?Bint			* Is token a ROM binary?
+* ?BuiltIn		* Is token a ROM word?
+* ?UserOb		* Is token valid in user rpl?
+* Error Invalid Token
+*
+* Each of above subroutines should pop the return stack address if token was
+* recognized. Also each should use another subroutine to seek the token
+* from the related buffer so that we have subroutines just to check for the 
+* existance of the label. This enables LabelUsed?
+*
+* Also every one of the assembler subroutines must update ->pc and ->src
+* to the new position, whitespace following the last token does not have to
+* be skipped.
+**********************************************************************
+
+**********************************************************************
+*		Memory Allocation
+**********************************************************************
+
+* At entry the assembler expands the buffer to maximum.
+* The label etc buffers are moved to the end of the buffer, updating the
+* related offsets in the status buffer
+*
+* Each token write must first check with Free- or similar that there is
+* enough memory, if yes then free memory is just decreased.
+*
+* If there's not enough memory for the new data then the data buffer is
+* shrinked; offsets are updated, addresses are converted to offsets. Then GC is
+* performed. If the ROOM before GC is not smaller than the ROOM after the GC
+* the out of memory error is issued. Else the assembler is just restarted by
+* maximizing the buffer; updating offsets and converting addresses if needed.
+*
+* Adding new symbols is done simply by allocating memroy with the same Free-
+* call. If succesfull then the new symbols is just linked to the list it
+* belongs to. The symbols are separate chained into the end of the allocated
+* memory area, 256 hashes is enough for any code fitting into HP48.
+**********************************************************************
+
+**********************************************************************
+*			Error Handling
+**********************************************************************
+
+* Error messages are displayed with a built-in font.
+* Following kinds of error displays are used:
+*
+* XError
+*	Assembler error. No source is displayed, only a message
+* BError
+*	Invalid argument error.
+*	Source are displayed: srcloc - srcmed + NextToken
+* CError
+*	Invalid token error.
+*	Source area displayed: srcloc - srcmed+toklen is displayed
+* DError
+*	Invalid token error.
+*	Source area displayed: srcloc - srcmed
+* LError
+*	Invalid mnemonic/label etc error
+*	Source area displayed: srcloc - lineend
+* All error routines first emulate ERRJMP code to remove environments and
+* find an errortrap. If one is found then if the errortrap object
+* is not syserrortrap then error display is not done, a message is assigned
+* to errm and errn and the errortrap code is evaluated.
+* If SysErrorTrap is found then the error display is performed and then
+* SysErrorTrap is emulated.
+*
+* A special error condition is pressing the ATTN key. In this case ERRJMP is
+* emulated. If SysErrorTrap is found the ABORT is emulated. Else the trap is
+* just executed. Must add clearing ERRNUM later.
+*
+* Han:	The introduction of flash pointers changes the behavior of the
+*	error traps. =DOFLASHP has an executor that inserts an error
+*	trap as well as flash bank information into the return stream.
+*	In particular, command line execution is done via a flash
+*	pointer. So that the error messages are displayed correctly,
+*	the behavior of XError is that it now also returns the position
+*	of the error. The other error calls should be have the same.
+*	Calling xASS from a menu, however, will produce the same
+*	behavior as in prior versions of Jazz.
+**********************************************************************
+
+* Error macros:
+
+XERR	MACRO	$label
+	LC(3)	(ERR_X)+($1)
+	GOLONG	Error
+XERR	ENDM
+
+BERR	MACRO	$label
+	LC(3)	(ERR_B)+($1)
+	GOLONG	Error
+BERR	ENDM
+
+CERR	MACRO	$label
+	LC(3)	(ERR_C)+($1)
+	GOLONG	Error
+CERR	ENDM
+
+* added for long calls; see ass.s
+CERRL	MACRO	$label
+	LC(3)	(ERR_C)+($1)
+	GOLONG	GoL_Error
+CERRL	ENDM
+
+DERR	MACRO	$label
+	LC(3)	(ERR_D)+($1)
+	GOLONG	Error
+DERR	ENDM
+
+LERR	MACRO	$label
+	LC(3)	(ERR_L)+($1)
+	GOLONG	Error
+LERR	ENDM
+
+**********************************************************************

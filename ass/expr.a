@@ -1,0 +1,993 @@
+**********************************************************************
+*		Expression Parser
+**********************************************************************
+
+* To Do:
+*	%	=  *256 +
+
+**********************************************************************
+* 		Operator types
+**********************************************************************
+
+EXPRTYP_LP	EQU 0*16+0	* Lower priority than ")" !!!
+EXPRTYP_RP	EQU 1*16+1	* Lower priority than any 'real' operator!!!
+EXPRTYP_END	EQU 2*16+1	* Dummy operator with same priority as ")"!!!
+
+* The following use the same priorities as in HP48 itself. The order matches
+* the order in SASM, the actual numbers are of course unknown.
+
+EXPRTYP_!	EQU 2*16+4	* or
+EXPRTYP_&	EQU 3*16+5	* and
+EXPRTYP_-	EQU 4*16+7	* substraction
+EXPRTYP_+	EQU 5*16+7	* addition
+EXPRTYP_%	EQU 6*16+8	* modulo
+EXPRTYP_/	EQU 7*16+8	* division
+EXPRTYP_*	EQU 8*16+8	* multiplication
+EXPRTYP_^	EQU 9*16+9	* exponentiate
+
+EXPRTYP_eq	EQU 10*16+2	* ==
+EXPRTYP_neq	EQU 11*16+2	* <>
+EXPRTYP_le	EQU 12*16+2	* <
+EXPRTYP_ge	EQU 13*16+2	* >
+EXPRTYP_geq	EQU 14*16+2	* >=
+EXPRTYP_leq	EQU 15*16+2	* <=
+
+
+bUNKNOWN	EQU 3		* Bit 3 set if unknown value
+bRELATIVE	EQU 0		* Bit 0 set if relative value
+vUNKNOWN	EQU 8		* Unknown value
+vRELATIVE	EQU 1		* Relative value
+
+qEXPRSYMB	EQU qRELVALUE	* Temporary flag to separate "symbol" from
+				* "(symbol)" 
+
+**********************************************************************
+* Parse an expression.
+* Input:
+*	D0 = ->stream	(whitespace is skipped)
+*	B[A] = lenght in chars (-1)
+*	D1 = ->pc
+*	R2[A] = ->Status
+*	R3[A] = ->Tab
+* Output:
+*	CS: Undefined value, sNEEDPASS2 is set, sTEMP is clear
+*	CC: C[W] = D[W] = value  - sTEMP set if relative value
+*	
+*	D0 = ->past expression
+* Exits:
+*	Unresolved expr error if pass2 and sNEEDPASS2
+*	Invalid expression error
+* Modifies:
+*	A[W] B[A] C[W] D[W] D0 P=0 CRY R0[A,A1]
+*
+* 			Notes
+*			^^^^^
+* Expression parser loop:
+* fact [oper fact oper fact..]
+* 1) Parse fact
+* 2) If end of expression jump to 7
+* 3) Parse operator, error is none received. Also error is operator
+*    was the last part of the expression
+* 4) Evaluate higher/equal priority operators in stack
+*	a) Equal priority operators *must* be evaluated too to get
+*	   the correct left-right evaluation of *integer* math
+*	b) "(" is of lower priority than ")", else all "("'s would be popped
+*	c) Above requires a special check after the evaluation to see
+*	   if the operator is ")" and if it is then a check if there's
+*	   a "(" in the stack (and pop it). If there is none then we had more
+*	   "("'s than ")"'s
+* 5) Push operator to stack
+* 6) Jump to 1
+* 7) Execute operator stack using a low priority (equal to ")") dummy
+*    operator. If operator stack is not emptied we had more "("'s than ")"'s
+*
+* Note:
+*	(=symbol) (:symbol) (symbol) and (*) are special cases that are
+*	parsed directly without using the operator stack.
+*	Recognition (as is SASM) is based on the leading character. Anything
+*	starting with [#|0-9] is not any of the special cases.
+* Note:	The expression stacks can grow only if operators change from
+*	higher priority to lower, for example: 1^2*3+4&5!6
+*	Extensive use of left parentheses grows the operator stack only.
+*	Even with above conditions the reasonable maximum expression stack
+*	sizes are small.
+**********************************************************************
+NoArgErr	LERR	errWantArg	* "Argument Field Expected"
+
+Expression	GOSUBL	NextTokHere?	* Skip white
+		GOC	NoArgErr	* D0 = ->expr  B.A=exprlen
+
+**********************************************************************
+* Alternate entry input:
+*	D0 = ->expression
+*	B.A = lenght in chars (-1)
+**********************************************************************
+
+Expression?
+
+		ST=0	15		* Need space in RSTK..
+
+		CD1EX			* Save ->pc to R0[A]
+		R0=C.F	A		* D0 will point after expr
+					* so srcmed is of no importance
+
+* Init expression stack
+
+		C=R2.F	A
+		D1=C
+		C=0	S
+		D1=(2)	O_OPERSTK
+		DAT1=C	S
+		D1=(2)	O_EXPRSTK
+		DAT1=C	S
+
+* Start expression parser loop
+
+Fact		D=0	W		* Init value
+		ST=0	qEXPRSYMB	* Assume not "(symbol)"
+		A=DAT0	B
+		GOSUB	FactHEX?
+		GONC	GotFact
+		GOSUB	FactDEC?
+		GONC	GotFact
+		GOSUB	FactBIN?
+		GONC	GotFact
+		GOSUB	FactASC?
+		GONC	GotFact
+		GOSUB	FactGLOB?
+		GONC	GotFact
+		GOSUB	FactLOC?
+		GONC	GotFact
+		GOSUB	FactSYMB?
+		GONC	GotFact
+* Now only "(" is left
+		GOSUB	FactLP
+GotFact		GOSUB	PushValue	* Push A[S] & D[W]
+
+* Now expect operator
+
+Operator	LC(2)	EXPRTYP_END
+		B=B+1	A
+		B=B-1	A
+		GOC	OperDo		* Guessed right, end it is
+		GOSUB	Operator?	* C[B1] = type
+		CSR	A
+		CSR	A		* C[B] = type
+
+* 1) Save operator
+* 2) Evaluate higher/equal priority operations
+* 3) Push operator
+* 4) Expect new factor
+
+OperDo		A=R2.F	A		* Save operator
+		D1=A
+		D1=(2)	O_OPERSAVE
+		DAT1=C	B
+
+OperEvalLP	A=R2.F	A		* Fetch saved operator
+		D1=A
+		D1=(2)	O_OPERSAVE
+		C=DAT1	B
+		D=C	A		* D[B] = operator
+
+		D1=(2)	O_OPERSTK
+		A=0	A
+		A=DAT1	1		* C[A] = operdepth
+		?A=0	A
+		GOYES	OperLpOK	* Empty stack, no more evaluations
+		CD1EX
+		C=C+A	A
+		C=C+A	A
+		C=C-1	A		* Skip num, back 2
+		D1=C
+		C=DAT1	B		* Get operator
+		?C<D	P		* Smaller priority in stack?
+		GOYES	OperLpOK	* Yes - stop eval loop
+
+		D1=(2)	O_OPERSTK	* Back to num, assumes all of operstk
+					* is in the same page!!!
+		A=DAT1	S		* operdepth--
+		A=A-1	S
+		DAT1=A	S
+		P=C	1		* P = operation
+
+* There are no 1-argument operators in SASM nor in Jazz.
+
+		GOSUB	Pop2Values	* D[W] = value1 C[W] = value2
+		GOSUB	ExecOper	* Exec oper in P
+		GOSUB	PushValue	* Push result in D[W] back to stk
+		GOTO	OperEvalLP	* Loop until higher pri in stack
+
+* Topmost operator now of higher priority, push saved operator
+
+Oper&Fact	D=C	A		* Entry for "(" pushing
+		C=R2.F	A
+		D1=C
+		D1=(2)	O_OPERSTK
+		A=0	A
+		A=DAT1	1		* A[A] = operdepth
+
+* 1st check if we got end of expression
+
+OperLpOK	D1=(2)	O_OPERSTK
+		LC(2)	EXPRTYP_END	* Dummy op to mark end?
+		?C=D	B
+		GOYES	ExprEnd
+		LC(2)	EXPRTYP_RP	* Need to pop "(" too?
+		?C=D	B
+		GOYES	ExprRP
+
+		LC(1)	EXPRMAX
+		?A>=C	P
+		GOYES	ExprBufErr
+		A=A+1	A		* operdepth++
+		DAT1=A	1
+		CD1EX
+		C=C+A	A
+		C=C+A	A
+		C=C-1	A		* Skip num, backup 2
+		CD1EX
+		C=D	A
+		DAT1=C	B		* Push oper
+		GOTO	Fact		* Now expect a factor again
+
+* Do ")" operator. No need to check that topmost really is "(" due to the
+* priorities used.
+
+ExprRP		?A=0	A
+		GOYES	OperRPErr	* Too many ")"'s
+		A=A-1	A		* operdepth--
+		DAT1=A	1
+		GOTO	Operator	* Expect operator
+
+OperLPErr	LERR	errManyLefts	* "Too Many ('s"
+OperRPErr	LERR	errManyRights	* "Too Many )'s"
+ExprBufErr	LERR	errFlowExpr	* "Expr Buffer Overflow"
+
+* End of expression, finish up
+
+ExprEnd		?A#0	A
+		GOYES	OperLPErr	* Too many "("'s
+		C=R2.F	A		* Get the only value in the stack
+		D1=C
+		D1=(2)	(O_EXPRSTK)+1
+		A=DAT1	S		* A[S] = type
+		D1=D1+	1
+		C=DAT1	W
+		D=C	W		* D[W] = value
+		C=R0.F	A		* Restore D1
+		D1=C
+		C=D	W		* Return value in C[W] and D[W]
+
+* Now convert type to carry & sRELVALUE state
+
+		SB=0
+		ASRB.F	S		* Set SB if relative
+		A=A+A	S
+		ST=0	qRELVALUE
+		?SB=0
+		GOYES	ExprValOK
+		ST=1	qRELVALUE
+ExprValOK	A=A+A	S		* Set carry if unknown value
+		ST=1	15
+		RTN
+*		GOVLNG	=AllowIntr	Better?
+
+**********************************************************************
+* Push value to expression value buffer, error if overflow
+* Input:
+*	D.W = value
+*	A.S = type
+**********************************************************************
+PushValue	P=	0		* Assure 0
+		C=R2.F	A
+		D1=C
+		D1=(2)	O_EXPRSTK
+		A=0	A
+		A=DAT1	1
+		LC(1)	EXPRMAX
+		?A>=C	P
+		GOYES	ExprBufErr
+		A=A+1	P		* depth++
+		DAT1=A	P
+		A=A-1	P
+		C=A	A
+		ASL	A
+		A=A+C	A		* #11*depth(new)
+		CD1EX
+		C=C+A	A
+		D1=C
+		D1=D1+	1		* Skip num
+		DAT1=A	S		* Push type
+		D1=D1+	1		
+		C=D	W
+		DAT1=C	W
+		RTN
+
+**********************************************************************
+* Pop 2 values from expression buffer
+* Output:
+*	CS: Insufficient values
+*	CC: C[W] = value2 B.S = type2
+*	    D.W = value1 A.S = type1
+* Note: P is preserved
+**********************************************************************
+Pop2Values	C=R2.F	A
+		D1=C
+		D1=(2)	O_EXPRSTK
+		A=0	A
+		A=DAT1	1
+		A=A-CON	A,2
+*		GOC	ExprArgErr	* Obsolete
+		DAT1=A	1
+		C=A	A
+		ASL	A		* 17*depth
+		A=A+C	A
+		CD1EX
+		C=C+A	A
+		CD1EX
+		D1=D1+	1		* Skip num too
+		A=DAT1	S		* A[S] = type1
+		D1=D1+	1
+		C=DAT1	W
+		D=C	W		* D[W] = value1
+		D1=D1+	16
+		C=DAT1	S
+		B=C	S		* B[S] = type2
+		D1=D1+	1
+		C=DAT1	W		* C[W] = value2
+		RTNCC
+
+*ExprArgErr	P=	0
+*		LERR	errFewArgs	* "Too Few Arguments in Expr"
+
+**********************************************************************
+
+
+**********************************************************************
+* Execute operation
+* Input:
+*	P = operation
+*	D[W] = value1 A[S] = type1
+*	C[W] = value2 B[S] = type2
+* Output:
+*	D[W] = value A[S] = type
+**********************************************************************
+
+ExecOper	A=C	A		Save C[A]
+		C=PC
+		GOTO	execoper
+		NOP4			See EXPRTYP declarations for order
+		NOP4
+		GOTO	DoOper!
+		GOTO	DoOper&
+		GOTO	DoOper-
+		GOTO	DoOper+
+		GOTO	DoOper%
+		GOTO	DoOper/
+		GOTO	DoOper*
+		GOTO	DoOper^
+		GOTO	DoOperEQ
+		GOTO	DoOperNEQ
+		GOTO	DoOperLE
+		GOTO	DoOperGE
+		GOTO	DoOperGEQ
+		GOTO	DoOperLEQ
+*		NOP4
+
+execoper	C+P+1
+		C+P+1
+		C+P+1
+		C+P+1			type*4+4
+		P=	0
+		ACEX	A		Restore C[A]
+		PC=A			And dispatch
+
+**********************************************************************
+DoOper+		A=A!B	S		* Both flags remain
+		D=D+C	W		* D[W] = result
+		RTN
+**********************************************************************
+* rel - abs = rel
+* abs - rel = rel
+* rel - rel = abs
+**********************************************************************
+DoOper-		D=D-C	W		* Substracted
+		C=A	S
+		A=A!B	S		* abs preserved
+		C=C&B	S		* bREL set only if both are rel
+		C=C+C	S		* Shift away bUNKNOWN
+		?C=0	S		* Both not rel?
+		RTNYES
+		ASRB.F	S		* Clear bREL
+		A=A+A	S
+		RTN
+**********************************************************************
+DoOper!		A=A!B	S
+		D=D!C	W
+		RTN
+**********************************************************************
+DoOper&		A=A!B	S
+		D=D&C	W
+		RTN
+**********************************************************************
+DoOper*		A=A!B	S
+		R0=A.F	S		* Save to R0[S]
+		A=C	W
+		GOSBVL	(=MPY)+3	* Skip D=C W, A[W] = C[W] = result
+					* Alternate entry hxsmul uses B[W]
+		D=C	W
+		A=R0.F	S		* Restore type to A[S]
+		RTN
+**********************************************************************
+DoOper%		A=A!B	S
+		?C=0	W
+		GOYES	DoOper%0	* MOD 0 - return value1 as is
+		R0=A.F	S
+		CDEX	W
+		A=C	W
+		C=B	W
+		CDEX	W
+		GOSBVL	=IDIV		* B[W] = modulo
+		C=D	W
+		CBEX	W		* Restore B[W]
+		D=C	W		* D[W] = modulo
+		A=R0.F	S
+DoOper%0	RTN
+**********************************************************************
+DoOper/		A=A!B	S
+		B=A	S
+		BSRB.F	S		* Drop sRELATIVE
+		?B#0	S
+		GOYES	DoOperIgn/	* Ignore so we won't get x/0
+		?C=0	W
+		GOYES	ZeroDivErr	* Division by 0
+		R0=A.F	S		* Save type
+		CDEX	W		* C[W] = value1 D[W] = value2
+		A=C	W		* A[W] = value1
+		C=B	W
+		CDEX	W		* C[W] = value2 D[W] = saved B[W]
+		GOSBVL	=IDIV		* A[W] = C[W] = value1/value2
+		CDEX	W		* D[W] = value1/value2
+		B=C	W		* Restore B[W]
+		A=R0.F	S		* Restore type
+DoOperIgn/	RTN
+ZeroDivErr	LERR	errZeroDiv	* "Division By Zero"
+**********************************************************************
+DoOper^		A=A!B	S
+		R0=A.F	S		* Save type
+		A=0	W
+		LA(2)	#30		* Error if big exponent
+		?C>A	W
+		GOYES	BigPotErr
+		C=C-1	A
+		GOC	DoOper^0
+		C=C-1	A
+		GOC	DoOper^1
+		RSTK=C			* Save exponent to RSTK
+		A=B	A		* Save B[A] to R0[A1]
+		GOSBVL	=ASLW5
+		A=R0.F	A
+		A=R0.F	S
+		R0=A
+		C=D	W
+		A=C	W
+		B=C	W		* Save x to B[W]
+DoOper^LP	GOSBVL	=MPY		* A[W] = x^n
+		C=RSTK
+		C=C-1	A
+		GOC	DoOper^OK
+		RSTK=C
+		C=B	W		* C[W] = x
+		GONC	DoOper^LP
+DoOper^OK	C=A	W
+		D=C	W		* D.A = result
+		A=R0			* Restore B[A]
+		GOSBVL	=ASRW5
+		B=A	A
+DoOper^1	A=R0.F	S		* A[S] = type
+		RTN
+DoOper^0	D=0	W		* Result = 1
+		D=D+1	W
+		GONC	DoOper^1
+BigPotErr	LERR	errBigExp	* "Too Big Exponent"
+
+**********************************************************************
+DoOperEQ	?D=C	W
+		GOYES	doopeq?
+		GONC	doopeq?
+**********************************************************************
+DoOperNEQ	?D#C	W
+		GOYES	doopeq?
+		GONC	doopeq?
+**********************************************************************
+DoOperLE	?D<C	W
+		GOYES	doopeq?
+		GONC	doopeq?
+**********************************************************************
+DoOperGE	?D>C	W
+		GOYES	doopeq?
+		GONC	doopeq?
+**********************************************************************
+DoOperLEQ	?D<=C	W
+		GOYES	doopeq?
+		GONC	doopeq?
+**********************************************************************
+DoOperGEQ	?D>=C	W
+		GOYES	doopeq?
+doopeq?		D=0	W
+		GONC	+		Not equal
+		D=D+1	A		Equal
++		A=A!B	S		* Keep unknown bit
+		ASRB.F	S		* Always absolute result
+		A=A+A	A
+		RTN
+
+**********************************************************************
+* Factor if "%1010.."
+**********************************************************************
+FactBIN?	LCASC	'%'
+		?A#C	B
+		RTNYES
+
+		A=0	S			* Set no value yet
+		A=A-1	S			* F = no value
+
+FctBinLP	D0=D0+	2			* Skip "%"
+		B=B-1	A			* exprlen--
+		GOC	FctEndBIN
+		A=DAT0	B
+		LCASC	'0'
+		A=A-C	B
+		GOC	FctChrNonBIN
+		LC(2)	1
+		?A>C	B
+		GOYES	FctChrNonBIN
+FctChrIsBIN	A=0	S			* 0 = value exists
+		C=A	P			* Add hxs digit to value
+		D=D+D	W
+		D=D+C	P			* Add to 0 so carry is cleared
+		GONC	FctBinLP
+
+FctChrNonBIN
+FctEndBIN	?A#0	S
+		GOYES	FctErrBIN
+		RTNCC
+FctErrBIN	LERR	errInvBin		* "Invalid Binary Number"
+
+**********************************************************************
+* Factor if "#hhh"
+**********************************************************************
+FactHEX?	LCASC	'#'
+		?A#C	B
+		RTNYES
+
+		A=0	S			* Set no value yet
+		A=A-1	S			* F = no value
+
+FctHexLP	D0=D0+	2			* Skip "#"
+		B=B-1	A			* exprlen--
+		GOC	FctEndHEX
+		A=DAT0	B
+		LCASC	'0'
+		A=A-C	B
+		GOC	FctChrNonHEX
+		LC(2)	9
+		?A<=C	B
+		GOYES	FctChrIsHEX
+		LC(2)	'F'-'0'
+		?A>C	B
+		GOYES	FctChrNonHEX
+		LC(2)	'A'-'0'
+		A=A-C	B
+		GOC	FctChrNonHEX
+		A=A+CON	A,10
+FctChrIsHEX	A=0	S			* 0 = value exists
+		C=A	P			* Add hxs digit to value
+		DSL	W
+		D=D+C	P			* Add to 0 so carry is cleared
+		GONC	FctHexLP
+
+FctChrNonHEX
+FctEndHEX	?A#0	S
+		GOYES	FctErrHEX
+		RTNCC
+FctErrHEX	LERR	errInvHex		* "Invalid Hex Number"
+
+**********************************************************************
+* Factor if "1-9..."
+**********************************************************************
+FactDEC?	LCASC	'9'
+		?A>C	B
+		RTNYES
+		LCASC	'0'
+		?A<C	B
+		RTNYES
+		A=0	S			* Absolute term
+FctDecLP	A=DAT0	B
+		LCASC	'0'
+		A=A-C	B
+		GOC	FctChrNonDEC
+		LC(2)	9
+		?A>C	B
+		GOYES	FctChrNonDEC
+		D=D+D	W			* 2x
+		C=D	W
+		D=D+D	W			* 4x
+		D=D+D	W			* 8x
+		D=D+C	W			* 10x
+		C=0	W			* Add decimal digit
+		C=A	P
+		D=D+C	W
+		D0=D0+	2			* Skip digit
+		B=B-1	A
+		GONC	FctDecLP
+FctChrNonDEC	RTNCC				* Return value in D[W]
+**********************************************************************
+* Factor if 'ascii' "ascii" or \ascii\
+**********************************************************************
+FactASC?	LCASC	\'\
+		?A=C	B
+		GOYES	FactIsASC
+		LCASC	'\\'
+		?A=C	B
+		GOYES	FactIsASC
+		LCASC	'"'
+		?A#C	B
+		RTNYES
+FactIsASC	A=0	S	
+		A=A-1	S
+FactAscLP
+		D0=D0+	2
+		B=B-1	A
+		GOC	FactAscErr
+		A=DAT0	B
+		?A=C	B
+		GOYES	FactAscEnd
+		RSTK=C
+		LCASC	'\\'
+		ACEX	B
+		?A#C	B
+		GOYES	++
+		D0=D0+	2
+		B=B-1	A
+		GOC	FactAscErr
+		GOSUBL	SpcChar?
+		GONC	++
+		LCASC	'0'
+		?A#C	B
+		GOYES	+
+		C=0	B
+		GONC	++
++		LCASC	'w'
+		ACEX	B
+		?A#C	B
+		GOYES	++
+		LCASC	' '
+++		DSL	W
+		DSL	W
+		D=C	B
+		C=RSTK
+		A=0	S
+		GOTO	FactAscLP	
+		
+FactAscEnd 	?A#0	S
+		GOYES	FactAscErr		
+		D0=D0+	2
+		B=B-1	A
+		RTNCC
+
+FactAscErr		
+		LERR	errInvAsc
+**********************************************************************
+* Factor if "=symbol"
+**********************************************************************
+FactGLOB?	LCASC	'='
+		?A#C	B
+		RTNYES
+		D0=D0+	2
+		B=B-1	A
+		GOC	ExprSymbErr		* Only "="
+FactGLOB	GOSUBL	Entry?
+		GONC	FactIsEntry
+		GOSUBL	SymbolValue?
+		GOC	ExprSymbNo
+		D1=A
+		A=DAT1	B
+		LC(1)	SYMB_EXPROK		* Allowed in expressions?
+		?A>C	P
+		GOYES	ExprSymbErr
+		A=0	S			* Absolute
+		LC(1)	SYMB_LABEL
+		?A#C	P
+		GOYES	RetSymbVal
+		A=A+1	S			* Relative
+RetSymbVal	D1=D1+	1
+		C=DAT1	B			* value lenght
+		D1=D1+	1
+		P=C	0
+		D=0	W
+		C=DAT1	WP
+		D=C	WP
+		P=	0
+		GONC	ExprSymbSkip
+FactIsEntry	D=0	W
+		C=A	A
+		D=C	A
+		A=0	S			* Absolute
+		GONC	ExprSymbSkip
+
+ExprSymbErr	GOTO	ExprErr	
+UndefSymbErr	LERR	errUndefined		* "Undefined Label"
+
+ExprSymbNo	?ST=1	qPASS2
+		GOYES	UndefSymbErr
+		ST=1	qNEEDPASS2		* Pass 2 needed
+		D=0	W
+		P=	15
+		LA(1)	vUNKNOWN
+		P=	0
+
+* Skip symbol if more to go in "(symbol)"
+
+ExprSymbSkip	?ST=0	qEXPRSYMB		* Not in parentheses?
+		GOYES	ExprSymbEnd		* Yep - we're done anyway
+		C=R0
+		GOSBVL	=CSRW5			* C[A] = exprlen (remaining)
+		CBEX	A			* C[A] = symblen
+		C=C+C	A
+		AD0EX
+		A=A+C	A			* Skip symbol
+		D0=A
+		D0=D0+	4			* Skip 1 more and ")"
+ExprSymbOK	RTNCC
+ExprSymbEnd	B=0	A			* Set end of expr
+		B=B-1	A
+		RTNCC
+**********************************************************************
+* Factor if ":symbol"
+**********************************************************************
+FactLOC?	LCASC	':'
+		?A#C	B
+		RTNYES
+		D0=D0+	2
+		B=B-1	A
+		GOC	ExprSymbErr		* Only ":"
+FactSYMB	GOSUBL	SymbolValue?
+		GOC	ExprSymbNo
+		D1=A
+		A=DAT1	B
+		LC(1)	SYMB_EXPROK
+		?A>C	P
+		GOYES	ExprSymbErr
+		A=0	S			* Assume absolute
+		LC(1)	SYMB_LABEL
+		?A#C	P
+		GOYES	retfsym
+		A=A+1	S			* Flag relative
+retfsym		GOTO	RetSymbVal
+**********************************************************************
+* Factor if "symbol"
+**********************************************************************
+FactSYMB?	LCASC	'('
+		?A=C	B
+		RTNYES
+		GONC	FactSYMB
+
+FactErr		GOTO	ExprErr
+
+**********************************************************************
+* Factor "(?????"
+**********************************************************************
+FactLP		D0=D0+	2			* Skip "("
+		B=B-1	A
+		GOC	FactErr			* Trailing "("
+		?B=0	A
+		GOYES	FactErr			* Only "(x" left
+
+* We have atleast "(xx"
+
+		A=DAT0	B
+		LCASC	'#'
+		?A=C	B
+		GOYES	FactIsLP
+		LCASC	\'\
+		?A=C	B
+		GOYES	FactIsLP
+		LCASC	'\\'
+		?A=C	B
+		GOYES	FactIsLP
+		LCASC	'"'
+		?A=C	B
+		GOYES	FactIsLP
+		LCASC	'*'
+		?A=C	B
+		GOYES	FactIsPC?
+		LCASC	'='
+		?A=C	B
+		GOYES	FactIsEGLOB
+		LCASC	':'
+		?A=C	B
+		GOYES	FactIsELOC
+		LCASC	'('
+		?A=C	B
+		GOYES	FactIsLP
+		LCASC	'0'
+		?A<C	B
+		GOYES	FactIsESYMB
+		LCASC	'9'
+		?A>C	B
+		GOYES	FactIsESYMB
+* Expression in parentheses, push "(" and expect operator
+FactIsLP	C=RSTK			* Pop return address to GotFact
+		LC(2)	EXPRTYP_LP
+		GOTO	Oper&Fact
+FactIsPC?	D0=D0+	2
+		A=DAT0	B
+		D0=D0-	2
+		LCASC	')'
+		?A#C	B
+		GOYES	FactIsESYMB
+		D0=D0+	4		* Skip "*)"
+		B=B-1	A
+		B=B-1	A
+		GOSBVL	=D1=DSKTOP
+		D1=D1+	5
+		C=DAT1	A
+		D=C	A
+		C=R2.F	A
+		D1=C
+		D1=(2)	O_PC		* Saved pc
+		C=DAT1	A
+		C=C-D	A
+		C=C-CON	A,10
+		D=0	W
+		D=C	A	
+		A=0	S
+		A=A+1	S		* Relative value
+		RTN
+**********************************************************************
+* Factor "(=symbol)"
+**********************************************************************
+FactIsEGLOB	ST=1	qEXPRSYMB	* Mark "="
+**********************************************************************
+* Factor "(:symbol)"
+**********************************************************************
+FactIsELOC	D0=D0+	2		* Skip ":"
+		B=B-1	A
+**********************************************************************
+* Factor "(symbol)"
+**********************************************************************
+FactIsESYMB	GOSUB	ExtractSymb	* B[A] = symblen
+		?ST=1	qEXPRSYMB
+		GOYES	FactEsymbNow
+		ST=1	qEXPRSYMB	* Mark "(symbol)" or "(:symbol)"
+		GOTO	FactSYMB
+FactEsymbNow	GOTO	FactGLOB
+**********************************************************************
+
+**********************************************************************
+* Extract symbol in parentheses, error if ")" not found or if ")" is
+* the 1st character 
+* Input:
+*	D0 = ->"symbol)"
+*	B[A] = exprlen
+* Output:
+*	D0 = ->"symbol)"
+*	B[A] = symblen
+*	R0[A1] = remaining exprlen after ")"
+**********************************************************************
+ExtractSymb	D=0	A		* Init symblen
+		AD0EX
+		D0=A
+		D1=A			* D1 = ->symbol
+		LCASC	')'
+ExtractLp	A=DAT1	B
+		?A=C	B
+		GOYES	ExtractedSymb
+		D1=D1+	2		* Skip chr
+		D=D+1	A		* symblen++
+		B=B-1	A
+		GONC	ExtractLp
+ExtractErr	GOTO	ExprErr		* "Invalid Expression"
+ExtractedSymb	D=D-1	A
+		GOC	ExtractErr
+		C=B	A
+		C=C-1	A		* Skip ")" too
+		GOSBVL	=CSLW5		* Save remaining lenght to R0[A1]
+		C=R0.F	A
+		R0=C
+		C=D	A
+		B=C	A		* B[A] = symblen
+		RTN
+**********************************************************************
+* Extract operator from expression, error if there isn't one
+* Input:	D0   = ->"operator.."
+*		B[A] = exprlen
+* Output:	D0   = ->".."
+*		B[A] = exprlen'
+*		C[B2] = operator type
+*		CS
+**********************************************************************
+ExprErr		LERR	errInvExpr	* "Invalid Expression"
+
+Operator?	A=DAT0	A		* Max 2 chars for operator
+		D0=D0+	2		* Skip operator
+		B=B-1	A		* exprlen--
+		LC(4)	')'+(EXPRTYP_RP)*256
+		GONC	+
+		?A=C	B
+		RTNYES
+		GONC	ExprErr		* Was no more chars!
++
+* Try regular operators first
+
+		?A=C	B
+		RTNYES
+		LC(4)	'+'+(EXPRTYP_+)*256
+		?A=C	B
+		RTNYES
+		LC(4)	'-'+(EXPRTYP_-)*256
+		?A=C	B
+		RTNYES
+		LC(4)	'*'+(EXPRTYP_*)*256
+		?A=C	B
+		RTNYES
+		LC(4)	'/'+(EXPRTYP_/)*256
+		?A=C	B
+		RTNYES
+		LC(4)	'!'+(EXPRTYP_!)*256
+		?A=C	B
+		RTNYES
+		LC(4)	'&'+(EXPRTYP_&)*256
+		?A=C	B
+		RTNYES
+		LC(4)	'%'+(EXPRTYP_%)*256
+		?A=C	B
+		RTNYES
+		LC(4)	'^'+(EXPRTYP_^)*256
+		?A=C	B
+		RTNYES
+
+* Now try two-character comparisons:
+
+		C=A	A
+		LCSTR	'<='
+		?A=C	A
+		GOYES	operleq
+		LCSTR	'>='
+		?A=C	A
+		GOYES	opergeq
+		LCSTR	'<>'
+		?A=C	A
+		GOYES	operneq
+		LCSTR	'=='
+		?A=C	A
+		GOYES	opereq
+
+* Now try 1-character comparisons:
+
+		LC(4)	'<'+(EXPRTYP_le)*256
+		?A=C	B
+		RTNYES
+		LC(4)	'>'+(EXPRTYP_ge)*256
+		?A=C	B
+		RTNYES
+
+OperErr		LERR	errInvOp	* "Invalid Operator"
+
+operleq		LC(4)	'X'+(EXPRTYP_leq)*256
+		GOC	opreq2
+opergeq		LC(4)	'X'+(EXPRTYP_geq)*256
+		GOC	opreq2
+operneq		LC(4)	'X'+(EXPRTYP_neq)*256
+		GOC	opreq2
+opereq		LC(4)	'X'+(EXPRTYP_eq)*256
+
+opreq2		D0=D0+	2		* Skip 2nd char of operator
+		B=B-1	A
+		GOC	OperErr		* There wasn't one!
+		RTNSC
+**********************************************************************
+
+

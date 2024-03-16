@@ -1,0 +1,96 @@
+**********************************************************************
+*		JAZZ - Global Macros
+**********************************************************************
+
+STOPME	MACRO
+	A=PC
+	PC=A
+STOPME	ENDM
+
+*MYEXIT	MACRO
+*	LCHEX	12345
+*	A=C	A
+*	P=	5-1
+*	GOVLNG	=PUSHhxsLoop
+*MYEXIT	ENDM
+
+EXITA	MACRO
+	P=	5-1
+	GOVLNG	=PUSHhxsLoop
+EXITA	ENDM
+
+*EXITc	MACRO
+*	A=C	A
+*	P=	5-1
+*	GOVLNG	=PUSHhxsLoop
+*EXITc	ENDM
+
+*EXITB	MACRO
+*	A=B	A
+*	P=	5-1
+*	GOVLNG	=PUSHhxsLoop
+*EXITB	ENDM
+
+*FACE	MACRO
+*	LCHEX	#FACE
+*	A=C	A
+*	P=	4-1
+*	GOVLNG	=PUSHhxsLoop
+*FACE	ENDM
+
+**********************************************************************
+ADDR	MACRO	$label,$reg
+x IFSTREQ	'A'$2'
+	A=PC
+	LC(5)	($1)-(*)
+	A=A+C	A
+x ELSE
+y  IFSTREQ	'C'$2'
+	A=PC
+	LC(5)	($1)-(*)
+	C=C+A	A
+y  ELSE
+	A=PC
+	$2=(5)	($1)-(*)
+	C$2EX
+	C=C+A	A
+	C$2EX
+y  ENDIF
+x ENDIF
+ADDR	ENDM
+**********************************************************************
+* Add to D0/D1
+LADD	MACRO	$value,$reg
+  IFLE	($1)-16
+	$2=$2+	$1
+  ELSE
+	$2=$2+	16
+	LADD	($1)-16,$2
+  ENDIF
+LADD	ENDM
+
+* Substract from D0/D1
+LSUB	MACRO	$value,$reg
+  IFLE	($1)-16
+	$2=$2-	$1
+  ELSE
+	$2=$2-	16
+	LSUB	($1)-16,$2
+  ENDIF
+LSUB	ENDM
+**********************************************************************
+* Positive offset macros
+POS2	MACRO
+	CON(2)	($1)-(*)
+POS2	ENDM
+
+POS3	MACRO
+	CON(3)	($1)-(*)
+POS3	ENDM
+
+POS4	MACRO
+	CON(4)	($1)-(*)
+POS4	ENDM
+**********************************************************************
+*		Data Buffer Allocation
+**********************************************************************

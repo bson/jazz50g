@@ -1,0 +1,1130 @@
+**********************************************************************
+*		Disassembler Entry Point
+**********************************************************************
+* Stack:	tab tab? $labels $buffer
+* 1) expand buffer to maximum, store free counter in chars
+* 2) Setup disbuf
+* 3) Pop labels & tables
+* 4) Start loop according to status
+*
+*	Don't forget to start SSTK when debugging if the tables
+*	are covered. Otherwise DB will retrieve them are trash IRAMBUFF.
+**********************************************************************
+
+Disassemble	GOSBVL	=SAVPTR
+		GOSUB	PopDisArgs	Pop arguments - setup
+		GOSUBL	GetRompList	Find 'Romps' if there is one
+
+**********************************************************************
+*		Main Disassembler Entry
+*	A		A1		A2
+* R0
+* R1	$labels
+* R2	status
+* R3	$tab		$dtab
+* R4	free
+* D0	pc
+* D1	output buffer
+**********************************************************************
+
+disrestart	?ST=0	sDISOB
+		GOYES	godisnonob
+
+* Now we are disassembling an object, special mode or not
+
+		?ST=1	sDISRPL
+		GOYES	DisRplLP
+		GOTO	DisCodeLP
+
+* Not disassembling an object, act according to mode
+
+godisnonob	C=R2.F	A
+		CD0EX
+		D0=(2)	dDISMODE
+		A=DAT0	B
+		CD0EX
+		LC(2)	typDISXY
+		?A=C	B
+		GOYES	goDISXY
+		LC(2)	typDISPCO
+		?A=C	B
+		GOYES	goDISPCO
+		LC(2)	typDISN
+		?A=C	B
+		GOYES	goDISN
+		LC(2)	typDISRRP
+		?A=C	B
+		GOYES	goDISRRP
+		P=	#A		* Undefined mode!!
+		GOVLNG	=PWLseq
+
+goDISXY		GOTO	DisXY
+goDISN		GOTO	DisN
+goDISPCO	GOTO	DisPCO
+goDISRRP	GOTO	DisRrp
+
+**********************************************************************
+*		Main RPL Disassembler Loop
+**********************************************************************
+
+* Where to put CheckLabel, CheckEntry & RplEntr/Lab ????
+
+DisRplLP	GOSUB	SaveDis		* Save CURADDR & DISPOS
+		GOSUBL	CheckLabel	* Update label
+		GOSUBL	CheckEntry	* Update entry
+		GOSUB	RplEntr/Lab?	* Output entry/label
+DisRplLP1	GOSUB	CheckRplMem	* Check memory for composites
+		GOSUBL	Dcadr		* Disassemble object
+		?ST=0	sDISOB		* Start a special mode inside rpl?
+		GOYES	RplToSpecial
+		?ST=0	sDISRPL		* Start code disassembler?
+		GOYES	RpltoCode
+DisRplCont	GOSUB	?DisEnd		* End address reached?
+		GOSUB	?StkDisEnd	* Enough for display?
+		GOSUB	?StkDisIntr	* Abort if ATTN
+		?ST=1	sDISSTK
+		GOYES	+
+		LCASC	'\n'		* Add new line
+		GOSUBL	JailChr
+		GOSUBL	CheckLabel	* Update label
+		GOSUBL	CheckEntry	* Update entry
+		GOSUB	RplEntr/Lab?	* Output label if any
++		GOSUB	RplIndent	* Indent next instruction
+		GOSUB	SaveDis
+		GOTO	DisRplLP1
+RpltoCode	GOTO	DisCodeNow	* Clear sBRANCH & disass code
+RplToSpecial	C=R2.F	A
+		CD0EX
+		D0=(2)	dDISMODE
+		A=DAT0	B
+		D0=C
+		LC(2)	typDISRRP
+		?A=C	B
+		GOYES	rplgoDISRRP
+		P=	#A
+		GOVLNG	=PWLseq
+rplgoDISRRP	GOTO	DisRrpNow	* Start disassembling variables
+
+**********************************************************************
+* Because we can run out of free space between dcSEMI and RplIndent
+* we require first that there be enough memory in case INDLEV etc change.
+* Change INDLEV:	; } :: { UNIT SYMBOL
+* Memory needed:	6 (SYMBOL) + 1 (newline) + INDLEV+1
+**********************************************************************
+CheckRplMem	A=R2.F	A
+		AD0EX
+		D0=(2)	dINDLEV
+		C=DAT0	A
+		AD0EX
+		C=C+CON	A,8
+		GOLONG	Bail
+
+**********************************************************************
+* Indent next RPL instruction
+* Normal mode:
+*	- Add INDLEV spaces (-1 if next is SEMI)
+**********************************************************************
+* Fin: Added code for stack display case
+
+RplIndent
+		?ST=0	sDISSTK
+		GOYES	+
+		GOLONG	JailSpc		* 1-line mode: 1 space only
+
++		ST=0	sTEMP		* Set sTEMP if next is SEMI
+		A=DAT0	A
+		LC(5)	=SEMI
+		?A#C	A
+		GOYES	rplind10
+		ST=1	sTEMP
+
+rplind10	A=R2.F	A
+		AD0EX
+		D0=(2)	dINDLEV
+		C=DAT0	A
+		AD0EX
+
+		?ST=0	sTEMP		* -1 if next is SEMI
+		GOYES	rplind20
+		?C=0	A
+		GOYES	rplind20
+		C=C-1	A
+
+rplind20	GOLONG	JailSpcN
+
+**********************************************************************
+* Output RPL mode 'LABEL entry' or 'LABEL Lhhhhh'
+* Local label is output if:
+*	sSPECIAL is set
+*	indentlevel = 0
+*	pc contains a prologed object/a PCO
+**********************************************************************
+RplEntr/Lab?	?ST=0	sSPECIAL	* Ignore if not special mode
+		RTNYES
+
+RplEntr/Lab	GOSUBL	GetNextEntry	* C[A]=next entry A[A]=pc
+		?A#C	A
+		GOYES	RplLab		* Try outputting a label
+
+* Han:	no 'LABEL entry' for addresses between #40000 and #80000
+*	since these would only be FPTRs
+		LC(5)	#40000
+		?A<C	A
+		GOYES	RplEntry
+		LC(5)	#80000
+		?A<C	A
+		RTNYES
+
+RplEntry
+		P=	6
+		GOSUBL	JailP
+		LCSTR	'LABEL '
+		DAT1=C	12
+		D1=D1+	12
+
+		GOSUBL	EntryAddr?
+		B=A	A		* B[A]=pc
+		C=0	A
+		C=DAT0	B
+		GOSUBL	Jail
+		D0=D0+	2
+		C=C+C	A
+		GOSBVL	=MOVEDOWN
+		LCASC	'\n'
+		GOSUBL	JailChr
+
+		GOSUBL	RestoreBanks
+
+		A=B	A
+		D0=A
+		RTNCC
+
+* If sSPECIAL & indentlevel = 0 & prologed ob then output pc as 'Lhhhhh'
+* (Also require not disrrp mode)
+
+RplLab		?ST=0	sSPECIAL
+		RTNYES
+		C=R2.F	A
+		CD0EX
+		D0=(2)	dDISMODE
+		A=DAT0	B
+		CD0EX
+		LC(2)	typDISRRP
+		?A=C	B
+		RTNYES
+		CD0EX
+		D0=(2)	dINDLEV
+		A=DAT0	A
+		CD0EX
+		?A#0	A
+		RTNYES			* indlev <> 0 - no label
+
+		GOSUBL	PC=PRLG?	* RPL prolog?
+		GOC	RplLab10
+		GOSUBL	PC=PCO?
+		GOC	RplLab10
+		GOSUBL	PC=DupAndThen?
+		RTNNC			* Not DupAndThen either - return
+		
+RplLab10	LC(5)	5+1+7		* Allocate 'LABEL Lhhhhh\n'
+		GOSUBL	Jail
+		LCSTR	'LABEL '
+		DAT1=C	12
+		D1=D1+	12
+		AD0EX			* A[A]=pc
+		D0=A
+		GOSUBL	DIlabel		* Output A[A] as 'Lhhhhh'
+		LCASC	'\n'
+		DAT1=C	B
+		D1=D1+	2
+		RTN		
+
+**********************************************************************
+*	Main Code Disassembler Loop
+**********************************************************************
+
+DisCodeNow	ST=0	sBRANCH
+
+DisCodeLP	GOSUB	SaveDis		* Save status
+		GOSUB	?DisIntr	* Interrupt?
+		LC(5)	100		* Allocate memory for labels etc
+		GOSUBL	Bail		* 100 chars should be a safe value
+		GOSUB	CheckLabel	* Check NXTLAB is valid
+		GOSUB	CheckEntry	* Check NXTENTR is valid
+		GOSUBL	DisEntr/Lab	* Entry/label
+		GOSUB	CodEnd?		* Reached end of code?
+		GOC	CodEnd		* Handle end condition
+		GOSUBL	DisInstr	* Add instruction
+		LCASC	'\n'		* Finish line
+		DAT1=C	B
+		D1=D1+	2
+		GOSUBL	PayBack		* Fix free memory
+		GOTO	DisCodeLP
+
+* This should first output a possible label pointing to the
+* end of the code object..
+
+CodEnd		LCASC	' '		* Remove trailing whitespace
+-		D1=D1-	2
+		A=DAT1	B
+		?A<=C	B
+		GOYES	-
+		D1=D1+	2
+		LCSTR	'\nENDCODE'	* RrplIndent will add a newline..
+		DAT1=C	16
+		D1=D1+	16
+		GOSUBL	PayBack
+
+		ST=1	sDISRPL		* Mark RPL mode is current
+* Fix: Set continue address to be CODEND , not current addr
+
+		A=R2.F	A
+		D0=A
+		D0=(2)	dCODEND
+		C=DAT0	A
+		D0=(2)	dCURADDR
+		DAT0=C	A
+		D0=C
+		GOTO	DisRplCont	* Enter middle of rpl loop
+
+* Check if reached end of code.
+
+CodEnd?		A=R2.F	A
+		AD0EX			* A[A]=pc
+		D0=(2)	dCODEND
+		C=DAT0	A		* C[A]=codeend
+		D0=A
+		?A>=C	A
+		RTNYES
+		RTN
+
+**********************************************************************
+* Disassemble PCO by outputting D0 as a pointer
+**********************************************************************
+DisPCO		GOSUB	SaveDis		* Save CURADDR & DISPOS
+		A=R2.F	A
+		AD0EX
+		D0=(2)	dPCODIS
+		DAT0=A	A
+		GOSUBL	DcadrPCO	* No need to update loc since done
+		GOTO	FinishDis	* Finish up
+
+**********************************************************************
+* Disassemble X-Y as strict machine language
+**********************************************************************
+DisN		GOSUB	SaveDis		* Save status
+		LC(5)	100		* Allocate memory for labels etc
+		GOSUBL	Bail
+		GOSUB	CheckLabel	* Update next label
+		GOSUB	CheckEntry	* Update next entry
+		GOSUBL	DisEntr/Lab	* Disass entry/label
+		GOSUBL	DisInstr	* Disass instruction
+		LCASC	'\n'		* End line
+		DAT1=C	B
+		D1=D1+	2
+		GOSUBL	PayBack		* Fix free counter
+		GOSUB	?DisEnd		* Reached end?
+		GOSUB	?DisIntr	* Interrupt?
+		GOTO	DisN		* Continue
+**********************************************************************
+* Disassemble X-Y doing RPL/PCO guesses during the stream
+* If PC=PCO then disass entry/label, output PCO, skip 5, continue
+* If PC=RPL then jump to DisRplLP
+*	This works since Finish will continue up to global end if
+*	DISXY is on
+* Else normal disass
+**********************************************************************
+
+DisXY		GOSUB	SaveDis		* Save status
+		?ST=1	sBRANCH		* Branch expected?
+		GOYES	DisXY_10
+		GOSUBL	PC=ML>RPL?
+		GOC	DisXYRPL	* Switch to RPL mode
+DisXY_10	LC(5)	100		* Allocate memory
+		GOSUBL	Bail
+		GOSUB	CheckLabel	* Update next label
+		GOSUB	CheckEntry	* Update next entry
+		?ST=1	sBRANCH		* Branch expected?
+		GOYES	DisXY_15
+		GOSUBL	PC=PCO?
+		GONC	DisXY_15
+		GOTO	DisXYPCO	* Disass PCO
+DisXY_15	GOSUBL	DisEntr/Lab	* Disass entry/label
+DisXY_20	GOSUBL	DisInstr	* Disass instruction
+DisXY_30	LCASC	'\n'		* End line
+		DAT1=C	B
+		D1=D1+	2
+		GOSUBL	PayBack		* Fix free counter
+		GOSUB	?DisEnd		* Reached end?
+		GOSUB	?DisIntr	* Interrupt?
+		GOTO	DisXY		* Continue
+
+* PC=ML>RPL? returned true  C[A]=obend
+
+DisXYRPL	ST=1	sDISRPL		* RPL mode
+		ST=1	sDISOB		* Object
+		A=R2.F	A
+		D0=A
+		D0=(2)	dGLOBEND
+		A=C	A		* A[A] = obend
+		C=DAT0	A		* C[A]=global end
+		?C>A	A
+		GOYES	dsxyrp10
+		A=C	A		* Use global end as local end
+dsxyrp10	C=R2.F	A
+		D0=C
+		D0=(2)	dENDADDR
+		DAT0=A	A
+		D0=(2)	dCURADDR
+		A=DAT0	A		* Restore pc
+		D0=A
+		GOTO	DisRplLP		
+
+* Output entry name/label  CON(5)  (*)+5 & continue
+
+DisXYPCO	C=R4.F	A		* Save free
+		RSTK=C
+		GOSUB	RplEntr/Lab	* Always outputs '\n' if label exists
+		C=RSTK			* Restore free
+		R4=C.F	A
+		GOSUBL	indfree
+		LCSTR	'CON(5)'
+		DAT1=C	12
+		D1=D1+	12
+		P=	7-6
+		GOSUBL	DIspaces
+		LCSTR	'(*)+5'
+		DAT1=C	10
+		D1=D1+	10
+		D0=D0+	5		* Skip PCO
+		GOTO	DisXY_30
+
+* FinishUp decided DisXY must continue
+* Set pc=endaddr and determine wheter to start rpl/ml disassembly
+* Now: (From FinishUp code)
+*	B[A]=endaddr	C[A]=global end
+
+* First we need to output a space to terminate rpl line
+
+DisXYCont	D=C	A		* D[A] = global end
+		LCASC	'\n'
+		GOSUBL	JailChr
+		A=R2.F	A
+		D0=A
+		D0=(2)	dCURADDR
+		A=B	A
+		DAT0=A	A		* New pc set
+		D0=(2)	dENDADDR
+		C=D	A
+		DAT0=C	A		* Set endaddr = global end
+		D0=A			* D0=pc
+		GOSUB	SaveDis		* Save DISPOS now !!!!!!!
+* Determine rpl/ml mode like in ScanLabs
+		ST=0	sDISOB		* Not object
+		ST=0	sDISRPL		* Insignificant?
+		GOSUBL	PC=RPL?
+		GOC	goDisXYRPL	* Found RPL - start rpl mode
+		GOTO	DisXY		* ML mode
+goDisXYRPL	GOTO	DisXYRPL
+
+**********************************************************************
+* Disassemble variable
+**********************************************************************
+DisRrpNow	?ST=1	sDISSTK
+		GOYES	+
+		LCASC	'\n'
+		GOSUBL	JailChr
+		LCASC	'\n'
+		GOSUBL	JailChr
+		GOSUB	CheckLabel
+		GOSUB	CheckEntry
+		GOSUB	RplEntr/Lab?
++		GOSUB	RplIndent
+		GOSUB	SaveDis
+DisRrp		C=R2.F	A		* Check if end of rrp
+		CD0EX
+		D0=(2)	dRRPEND
+		A=DAT0	A	->rrpend
+		D0=C
+		?C<A	A
+		GOYES	+
+		GOTO	disrrpend
++		P=	7		* Not end of rrp - output name
+		GOSUBL	JailP
+		LCSTR	'VARNAME '
+		DAT1=C	16
+		D1=D1+	16
+		D0=D0+	5		* Skip the backward link
+		C=0	A
+		C=DAT0	B
+		D0=D0+	2
+		?C=0	A
+		GOYES	disvar0
+		GOSUBL	Jail
+		D=C	A
+		ST=0	sTEMP		* ID type disassembly
+		GOSUBL	dcmemchrN
+		D0=D0+	2
+		GOTO	disvarob
+disvar0		LCSTR	'0'
+		GOSUBL	JailChr
+* Name is out, continue by outputting object
+disvarob	GOSUB	SaveDis
+		ST=1	sDISOB		* Always object
+		ST=1	sDISRPL		* And in rpl mode
+		AD0EX
+		B=A	A		->ob
+		D0=A
+		GOSBVL	=SKIPOB
+		C=R2.F	A
+		CD0EX			->obend
+		D0=(2)	dENDADDRSAVE
+		A=DAT0	A		->global end
+		?C<=A	A
+		GOYES	+
+		C=A	A
++		D0=(2)	dENDADDR
+		DAT0=C	A
+		A=B	A
+		D0=A
+		GOTO	DisRplCont
+* End of current rrp, check if more
+disrrpend	B=A	A		->rrpend
+		P=	6
+		GOSUBL	JailP
+		LCSTR	'ENDDIR'
+		DAT1=C	12
+		D1=D1+	12
+		C=R2.F	A
+		D0=C
+		D0=(2)	dRRPDEPTH
+		A=DAT0	A
+		A=A-1	A
+		?A#0	A
+		GOYES	disrrpnext	* More rrp's to go
+* Last rrp done, restore old modes
+
+		LCASC	'\n'
+		?ST=0	sDISSTK
+		GOYES	+
+		LCASC	' '
++		GOSUBL	JailChr
+		D0=(2)	dENDADDRSAVE
+		A=DAT0	A
+		D0=(2)	dENDADDR
+		DAT0=A	A
+		D0=(2)	dRRPDEPTH
+		A=0	A
+		DAT0=A	A
+		D0=(2)	dDISMODESAVE
+		A=DAT0	B
+		D0=(2)	dDISMODE
+		DAT0=A	B
+		?A#0	B
+		GOYES	+
+		ST=0	sSPECIAL	* Back to normal mode
+		ST=1	sDISOB
+		ST=1	sDISRPL
++		C=B	A
+		D0=C
+		GOSUBL	?DisEnd
+		GOTO	disrestart
+
+* End current rrp, setup the rrp above, continue at B[A]
+
+disrrpnext	DAT0=A	A
+		D0=(2)	dRRPSTART	->offset field of current rrp
+		A=DAT0	A
+		D0=A
+		D0=D0-	5+3		->rrp prolog
+* Note that srrp cannot be embedded, thus above is valid
+		GOSBVL	=TRAVERSE-	Skip the rrp name too
+		CD0EX
+-		C=C-CON	A,5		Back to link
+		D0=C
+		A=DAT0	A		Skip back until last link)
+		C=C-A	A
+		?A#0	A
+		GOYES	-	
+		D0=D0-	5		->offset field
+
+		C=R2.F	A		Save new start address
+		CD0EX
+		D0=(2)	dRRPSTART
+		DAT0=C	A
+		D0=C
+
+		A=DAT0	A
+		A=A+C	A		->lastramword
+		D0=A
+		GOSBVL	=TRAVERSE+
+		GOSBVL	=SKIPOB
+
+		C=R2.F	A		Save new rrp end address
+		CD0EX
+		D0=(2)	dRRPEND
+		DAT0=C	A
+
+		A=B	A		Continue where we left off
+		D0=A
+		GOTO	DisRrpNow
+
+**********************************************************************
+* Save disassembly pointers
+* Note: DISPOS is saved as an address. Jail converts it to an offset
+*       if GC happens. DisPopArgs assumes $status contains an offset.
+**********************************************************************
+SaveDis		A=R2.F	A
+		AD0EX
+		D0=(2)	dCURADDR
+		DAT0=A	A		* Save CURADDR
+		D0=(2)	dDISPOS
+		CD1EX			* Save DISPOS
+		DAT0=C	A
+		CD1EX
+		AD0EX
+		RTN
+**********************************************************************
+* Quit disassembly if ATTN has been pressed
+**********************************************************************
+?StkDisIntr	?ST=1	sDISSTK
+		RTNYES
+?DisIntr	AD1EX
+		GOSBVL	=chk_attn
+		AD1EX
+		RTNNC
+		C=0	A		* Exec ABORT
+		GOVLNG	=GPErrjmpC
+**********************************************************************
+* Test if got enough for stack display
+**********************************************************************
+?StkDisEnd	?ST=0	sDISSTK
+		RTNYES			* Not for stack display - ignore
+		AD1EX			* A[A] = ->out
+		GOSBVL	=D1=DSKTOP
+		C=DAT1	A
+		D1=A
+		A=A-C	A		* Nibbles out + 10
+		LC(5)	(STKDIS1MIN)*2+10
+		?A<C	A
+		RTNYES
+		GONC	?FinishDis
+**********************************************************************
+* Test if at end of disassembly
+**********************************************************************
+?DisEnd		A=R2.F	A
+		AD0EX			* A[A] = pc
+		D0=(2)	dENDADDR
+		C=DAT0	A		* C[A] = endaddr
+		D0=A
+		?A>=C	A		* pc >= endaddr ?
+		GOYES	?FinishDis	* Finish if no DISXY running
+		RTN
+**********************************************************************
+* Finish up
+**********************************************************************
+
+?FinishDis	?ST=1	sSPECIAL	* Special mode running?
+		GOYES	+
+		GOTO	FinishDis	* No - done
++		A=R2.F	A
+		D0=A
+		D0=(2)	dENDADDR
+		A=DAT0	A
+		B=A	A		endaddr
+		D0=(2)	dDISMODE
+		A=DAT0	B
+		LC(2)	typDISXY
+		?A=C	B
+		GOYES	FinishDISXY
+		LC(2)	typDISRRP
+		?A=C	B
+		GOYES	FinishDISRRP
+		GOTO	FinishDis
+
+FinishDISXY	D0=(2)	dGLOBEND
+		C=DAT0	A
+		?B>=C	A		* pc >= global end?
+		GOYES	FinishDis
+		GOTO	DisXYCont	* Continue DisXY
+
+FinishDISRRP	D0=(2)	dENDADDRSAVE
+		C=DAT0	A
+		?B>C	A		* Not >= so we get ENDDIR!!!
+		GOYES	FinishDis
+		A=B	A
+		D0=A
+		GOTO	DisRrpNow
+
+* 1) Shrink buffer up to D1
+
+FinishDis
+		CD1EX
+		D0=C			* D0 = ->$end (new)
+		GOSBVL	=D1=DSKTOP
+		C=DAT1	A
+		R0=C			* R0 = ->$
+		GOSUBL	SHRINK$
+
+* 2) Exit ml, drop extra buffers in rpl
+
+		GOVLNG	=GETPTRLOOP
+
+**********************************************************************
+* Pop disassembler argument buffers
+* Stack:	dtab tab $labels $status $buffer
+* Output:
+*		R4[A] = free chars
+*		R3[A] = ->$tab		R3[A1] = ->$dtab	R3[A2] = cfg
+*		R2[A] = ->status
+*		R1[A] = ->$labels
+*		D0 = ->pc
+*		D1 = ->output
+**********************************************************************
+PopDisArgs	
+		C=0	W		* clear R4
+		R4=C
+
+*		D0=(5)	(=IRAM@)-4
+*		C=DAT0	A
+*		LC(4)	#100
+		LC(5)	=IRAMBUFF+11
+		R2=C.F	A		* R2[A]=->status
+
+		C=R2.F	A
+		D0=C
+		D0=(2)	dDISPOS
+		A=DAT0	A
+		B=A	A		* B[A] = dispos
+		GOSBVL	=D1=DSKTOP
+		C=DAT1	A		* C[A] = $buffer
+		B=B+C	A
+		B=B+CON	A,10		* B[A] = DISPOS
+		C=C+CON	A,5
+		D0=C
+		A=DAT0	A
+		A=A+C	A		* A[A] = $end
+		A=A-B	A		* A[A] = $end - DISPOS
+		ASRB.F	A
+		R4=A.F	A		* R4[A] = free
+		?A#0	A
+		GOYES	bufisok		* free chars exist, no expand
+
+* Now the buffer has no free characters, expand it
+
+		ST=0	10
+bufexplp	GOSBVL	=ROOM
+		A=C	A		* A[A] = room
+		LC(5)	MINBUFMEM
+		A=A-C	A
+		GOC	bufexpGC	* No minimum memory, GC first
+		ASRB.F	A
+		?A#0	A
+		GOYES	bufexpok	* Found some memory, expand A[A] chars
+
+* Note: Always take care DISPOS is an offset when entering PopDisArgs!!
+* ob will not move during GC so labels etc do not have to be updated
+
+bufexpGC	GOSBVL	=DOGARBAGE
+		GONC	bufexplp
+
+* Now expand the string by A[A] chars and try popping stuff again
+
+bufexpok	A=A+A	A
+		B=A	A		* B[A] = nibbles
+		GOSBVL	=D1=DSKTOP
+		C=DAT1	A		* C[A] = $
+		C=C+CON	A,5
+		D0=C
+		A=DAT0	A		* A[A] = $len
+		C=C+A	A		* C[A] = $end (old)
+		A=A+B	A
+		DAT0=A	A		* Set new $len
+		D0=C			* D0 = ->$end (old)
+		A=DAT0	A
+		A=A+B	A
+		DAT0=A	A		* Set new link field
+		AD0EX			* A[A] = ->$end (old)
+		C=B	A		* C[A] = nibbles
+		GOSBVL	=MOVERSU	* Move link field upwards
+* Now pop arguments again. Expansion code will not be called again
+* since there are now free characters in the buffer
+		GOTO	PopDisArgs	* Pop again
+
+bufisok	
+
+* Now there are free characters in the buffer so we can pop everything
+* B[A]  = DISPOS
+* R4[A] = free (chars)
+* R2[A] = ->status
+* D1 = stk1
+
+* First pop $labels
+
+		D1=D1+	5
+		A=DAT1	A
+		R1=A.F	A
+
+* get cfg addr
+		GOTO	skipFTsub
+
+disFindTab	A=0	W
+		C=0	A
+		LC(3)	=ENTRY_LIB	* hptab library id
+		D=C	A
+		D0=(5)	=ROMPTAB
+		A=DAT0	X
+		D0=D0+	3
+-		A=A-1	X
+		RTNC
+		C=DAT0	X
+		D0=D0+	16
+		?C#D	X
+		GOYES	-
+		D0=D0-	16-8
+		A=DAT0	A		* A[A] ->libaccess
+		RTNCC
+
+skipFTsub	GOSUB	disFindTab
+		GONC	+
+		A=0	A
++		GOSBVL	=ASLW5
+
+
+* Next pop RPL.TAB
+
+		D1=D1+	5
+		A=DAT1	A
+*		LC(5)	=NULL$
+		LC(5)	=ZERO
+		?A#C	A
+		GOYES	poptab10
+		A=0	A
+		GONC	+
+poptab10
+		CD1EX			* get value of bint
+		AD1EX
+		D1=D1+	5
+		A=DAT1	A
+		CD1EX
++		R3=A.F	A		* R3[A] = ->tab
+
+* Next pop DIS.TAB
+
+		D1=D1+	5
+		A=DAT1	A
+*		LC(5)	=NULL$
+		LC(5)	=ZERO
+		?A#C	A
+		GOYES	popdtab10
+		A=0	A
+		GONC	+
+popdtab10
+		CD1EX			* get value of bint
+		AD1EX
+		D1=D1+	5
+		A=DAT1	A
+		CD1EX
++		GOSBVL	=ASLW5
+		A=R3.F	A
+		R3=A			* R3[A1] = ->dtab
+
+* Now get entries table switcher
+*		?A=0	A		* no rtab?
+*		GOYES	disGetOptions
+
+*** moved code
+
+*		A=R4.F	A
+*		R4=A
+*disGetOptions		
+
+* Get dispos to D1
+		A=B	A
+		D1=A			* D1 = DISPOS
+* Get disass options
+		A=R2.F	A
+		D0=A
+		D0=(2)	dMODES
+		C=DAT0	X
+		ST=C
+* Get curaddr to D0
+		D0=(2)	dCURADDR
+		A=DAT0	A
+		D0=A			* D0 = CURADDR
+		RTN
+
+**********************************************************************
+* Find 'Romps' variable if there is one
+* Note: D0 and D1 must not be altered
+**********************************************************************
+GetRompList	CD0EX
+		B=C	A		Old D0
+*		D0=(5)	=aUSEROB
+*		C=DAT0	A
+*		D0=C
+		D0=(5)	=USEROB
+
+		C=DAT0	A
+		D0=C			->userob
+		D0=D0+	5
+		A=0	A
+		A=DAT0	X		libs in home
+		D0=D0+	3
+		C=A	A
+		CSL	A		16*libs
+		C=C-A	A
+		C=C-A	A
+		C=C-A	A		13*libs
+		AD0EX
+		A=A+C	A
+		AD0EX
+		A=DAT0	A
+		A=-A	A		negate so - would jump forwards
+		C=A	W		same high nibbles
+		LC(N)	12
+		CON(2)	5
+		NIBASC	'Romps'
+-		?A=0	A
+		GOYES	+		Not found - end
+		CD0EX
+		C=C-A	A
+		CD0EX			->varname
+		A=DAT0	12
+		?A=C	W
+		GOYES	++		Success
+		D0=D0-	5
+		A=DAT0	A
+		GONC	-
++		A=B	A
+		D0=A
+		RTN
+++		D0=D0+	2+10+2		Skip the name
+		C=R2.F	A
+		CD0EX
+		D0=(2)	dROMPLIST
+		DAT0=C	A		->list
+		A=B	A
+		D0=A
+		RTN
+**********************************************************************
+* Update NTXLAB if it is < pc to be >= pc
+**********************************************************************
+CheckLabel	GOSUB	GetNextLabel
+		A=A-1	A
+		GOTO	updatelaba
+
+**********************************************************************
+* Update NXTLAB if it is <= pc to be > pc
+**********************************************************************
+UpdateLabel	GOSUB	GetNextLabel	* C[A]=nxt
+updatelaba	?C<=A	A
+		GOYES	updatelab
+noupdlab	RTNCC			* NXTLAB > pc - ok
+
+updatelab	A=A+1	A
+		GOSUB	FindNextLabel	* C[A]=next (possibly 00000)
+SetNextLabel	A=R2.F	A
+		AD0EX
+		D0=(2)	dNXTLAB
+		DAT0=C	A
+		AD0EX
+		RTNSC
+
+GetNextLabel	A=R2.F	A
+		AD0EX
+		D0=(2)	dNXTLAB
+		C=DAT0	A
+		D0=A
+		RTNCC
+
+**********************************************************************
+* Update NXTENTR if it is < pc to be >= pc
+**********************************************************************
+CheckEntry	GOSUB	GetNextEntry
+		A=A-1	A
+		GOTO	updateenta
+**********************************************************************
+* Update NXTENTR if it is <= pc to be > pc
+**********************************************************************
+UpdateEntry	GOSUB	GetNextEntry	* C[A]=nxt A[A]=->dNXTENTR
+updateenta	?C<=A	A
+		GOYES	updateentr
+		RTNCC
+updateentr	A=A+1	A		* Minimum to search for
+
+*		CD0EX			* Check if in RAM, if so
+*		RSTK=C			* then ignore update
+*		D0=(5)	(=IRAM@)-4
+*		C=DAT0	A
+*		LCHEX	0000		* RAM base address
+*		D0=C
+*		C=RSTK
+*		CD0EX
+
+* Han:	enough to check >= #40000 (?) since rom entries are < #40000
+*	only ftpr names are > #40000
+		LC(5)	#40000		* pc >= #40000
+
+		?A>=C	A		* pc >= ram
+		GOYES	ClrNextEntry	* yes - set NXTENTR to zero
+		GOSUB	FindNextEntry	* C[A]=next (possibly 00000)
+		GOTO	SetNextEntry
+ClrNextEntry	C=0	A
+SetNextEntry	A=R2.F	A
+		AD0EX
+		D0=(2)	dNXTENTR
+		DAT0=C	A
+		AD0EX
+		RTNSC
+
+GetNextEntry	A=R2.F	A
+		AD0EX
+		D0=(2)	dNXTENTR
+		C=DAT0	A
+		D0=A
+		RTNCC
+**********************************************************************
+* Find next label >= A[A]. Set carry if no more labels
+* Exit:		CC: C[A]=label
+*		CS: C[A]=label (00000)
+* Alters:	B[A] D[A]
+* Stack:	1
+**********************************************************************
+FindNextLabel	B=A	A		* B[A]=min (current)
+		D=0	A
+		D=D-1	A		* D[A]=max (FFFFF)
+
+		C=R1.F	A
+		CD0EX
+		RSTK=C			* RSTK=pc
+		D0=D0+	5
+		A=DAT0	A		* A[A]=$lablen
+		A=A-1	A		* For a carry test
+
+nxtlablp	D0=D0+	5
+		A=A-CON	A,5
+		GOC	picknxtlab	* Now check if max is valid label
+
+		C=DAT0	A
+		?C<B	A		* label < min ?
+		GOYES	nxtlablp	* yes - ignore it
+		?C>=D	A		* label >= max ?
+		GOYES	nxtlablp
+		D=C	A		* set new lower max
+		?C#B	A		* label # min?
+		GOYES	nxtlablp	* Continue if min hasn't been reached
+
+picknxtlab	C=RSTK			* Restore pc
+		D0=C
+		A=B	A		* A[A]=min
+		C=D	A
+		C=C+1	A
+		RTNC			* CS - label FFFFF to 00000
+		C=C-1	A		* Fix back
+		RTNCC			* CC - valid label
+**********************************************************************
+* Find next entry >= A[A]. Set carry if no more entries.
+* Exit:		CC: C[A]=entry
+*		CS: C[A]=entry (00000)
+* Alters:	B[A] C[W] D[A]
+* Stack:	3
+**********************************************************************
+FindNextEntry	C=R3
+		?C=0	A
+		RTNYES
+
+		CD0EX
+		D=C	A		* save D0 in D[A]
+		C=R3			* configure entries lib
+		GOSBVL	=CSRW5
+		GOSBVL	=CSRW5
+		?C=0	A
+		GOYES	+
+		GOSUB	nxtent_PC=C
++		C=D	A
+		RSTK=C			* save D0 onto RSTK
+		C=R3
+		D0=C			* D0 = >tab
+		GOSBVL	=CSRW5		* C[A] = ->dtab
+
+***
+*** old code for slow search
+***
+
+*		C=R3			* C[A]=->tab C[A1]=->dtab
+*		?C#0	A
+*		GOYES	nxtent_10
+*		C=0	A		* entry=00000
+*		RTNSC			* CS: no more entries
+
+*nxtent_10	CD0EX			* D0=->tab
+*		RSTK=C			* Save pc
+*		CSR	W
+*		CSR	W
+*		CSR	W
+*		CSR	W
+*		CSR	W		* C[A]=->dtab
+*		?C#0	A
+*		GOYES	nxtent_fast	* Use dtab for finding next one
+
+*		D0=D0+	5
+*		C=DAT0	A		* C[A]=tablen
+*		AD0EX
+*		C=C+A	A
+*		D=C	A		* D[A]=tabend
+
+*		LC(5)	RTAB_REL	#1E9
+*		A=A+C	A
+*		AD0EX			* D0=->1st entry
+*		B=0	A
+*		B=B-1	A		* B[A]=max (FFFFF)
+*		GOC	nxtent_30
+
+*nxtent_20	P=C	5
+*		D0=D0+	4
+*		CD0EX
+*		C+P+1
+*		C+P+1
+*		?C>=D	A		* reached end?
+*		GOYES	nxtent_40
+*		D0=C
+*nxtent_30	C=DAT0	6
+*		?C<A	A		* entry < min?
+*		GOYES	nxtent_20
+*		?C>=B	A		* entry >= max?
+*		GOYES	nxtent_20
+*		B=C	A		* set new max
+*		?A#C	A		* entry # max?
+*		GOYES	nxtent_20	* Then continue
+
+** Fall through if we found a match for the minimum value
+
+*nxtent_40	P=	0
+*		C=RSTK			* restore pc
+*		D0=C
+*		C=B	A
+*		C=C+1	A
+*		RTNC			* Return CS - 00000 label
+*		C=C-1	A		* Fix back
+*		RTNCC			* CC - found next one
+
+** Fast version uses the sorted DIS.TAB
+
+nxtent_fast	GOSUBL	entradrfast	* C[A]=next >= A[A] (or biggest)
+
+		D=C	A
+		GOSUBL	RestoreBanks
+		C=D	A
+
+		CD0EX			* Restore pc
+		C=RSTK
+		CD0EX
+		?C<A	A		* next < A[A] ?
+		GOYES	nxtent_no	* Return 00000 & CS
+		RTNCC			* CC - found entry >= A[A]
+nxtent_no	C=0	A
+		RTNSC
+		
+nxtent_PC=C	PC=C
+**********************************************************************

@@ -1,0 +1,170 @@
+**********************************************************************
+*		JAZZ	- View code for xDB
+**********************************************************************
+
+**********************************************************************
+* Entry:
+*	R0[A]	= ->font data for characters 32-127
+*	D0	= ->33-character buffer
+*	A[A]	= Offset of first column of row following last row of line
+* Exit:
+*	R0[A]	= unchanged
+*	D0	= first character following the buffer
+**********************************************************************
+viewline
+	GOSUB	GetViewGrob		D1 = ->display
+	CD1EX
+	C=C+A	A			Add our display offset
+	CD1EX
+* Setup character counter
+	LC(2)	33-1			33 characters
+	B=C	B
+
+--	A=0	A
+	A=DAT0	B			A[A] = char
+	D0=D0+	2
+	ST=0	9			Assume no inverse video
+	?ABIT=0	7
+	GOYES	+
+	ST=1	9			Set inverse video
++	ABIT=0	7			Drop video bit
+
+	LC(2)	2
+	?A=C	B
+	GOYES	viewhorchar
+	LC(2)	#1F			'..'
+	A=A-C	B			Only chars #20-#7F exist
+	GONC	+
+	A=0	B
+	A=A+1	B			Use blank for lower
++	C=R0.F	A			->font
+	A=A+A	A			2*char
+	C=C+A	A
+	C=C+A	A
+	C=C+A	A			->fontdata for char
+	CD1EX
+	A=DAT1	6
+	D1=C
+	?ST=0	9
+	GOYES	+
+	A=-A-1	W			Reverse video
++
+-	DAT1=A	P			Show character data
+	D1=D1+	16
+	D1=D1+	16
+	D1=D1+	2
+	P=P+1
+	?P#	6
+	GOYES	-
+	P=	0
+viewnext
+	D1=C
+	D1=D1+	1			Next display location
+	B=B-1	B			chars--
+	GONC	--
+	RTN
+
+viewhorchar
+	LAHEX	205
+	CD1EX
+	D1=C
+-	DAT1=A	XS
+	D1=D1+	16
+	D1=D1+	16
+	D1=D1+	2
+	A=A-1	B
+	GONC	-
+	GOC	viewnext	
+
+
+**********************************************************************
+* Entry:
+*	R0[A]	= ->font data for characters 32-127
+*	D0	= ->22-character buffer
+*	A[A]	= display start offset (top left of line)
+* Exit:
+*	R0[A]	= unchanged
+*	D0	= first character following the buffer
+**********************************************************************
+ViewLine
+	GOSUB	GetViewGrob		D1 = ->display
+	CD1EX
+	C=C+A	A			Add our dislay offset
+	CD1EX
+
+* Setup character counter
+
+	LC(2)	11-1			11 pairs
+	B=C	B
+
+--	GOSUB	GetChar6x8		C[W] = chardata1
+	R1=C				R1[W] = chardata1
+	GOSUB	GetChar6x8		C[W] = chardata2
+	A=R1				A[W] = chardata1
+
+	C=C+C	W
+	C=C+C	W
+	DAT1=A	P
+	D1=D1+	1
+	ASR	W
+	GONC	+
+-	D1=D1+	16
+	D1=D1+	16
+	DAT1=A	P
+	D1=D1+	1
+	P=P+1
++	A=A+C	P
+	DAT1=A	P
+	D1=D1+	1
+	P=P+1
+	DAT1=C	P
+	?P#	15
+	GOYES	-
+	P=	0
+	AD1EX
+	LC(5)	34*7-1			Advance 2 chars
+	A=A-C	A
+	AD1EX
+
+	B=B-1	B
+	GONC	--			Loop 11 pairs
+	RTN
+
+GetChar6x8
+	A=0	A
+	A=DAT0	B			A[A] = char
+	D0=D0+	2
+	ST=0	9			Assume no inverse video
+	?ABIT=0	7
+	GOYES	+
+	ST=1	9			Set inverse video
++	ABIT=0	7			Drop video bit
+
+	LC(2)	' '
+	A=A-C	B			Only chars #20-#7F exist
+	GONC	+
+	A=0	B			Use blank for lower
++
+	ASL	X			16*chr
+	C=R0.F	A			C[A] = ->font
+	A=A+C	A			A[A] = ->chrdata
+	AD0EX
+	C=DAT0	W			C[W] = chrdata
+	AD0EX
+	?ST=0	9
+	RTNYES				No reverse video
+	C=-C-1	W			Reverse
+	LAHEX	3F3F3F3F3F3F3F3F
+	C=C&A	W			Zero upper bits
+	RTN
+
+GetViewGrob
+	D1=(5)	=aADISP
+	C=DAT1	A
+	D1=C
+	C=DAT1	A
+	D1=C			D1 = display grob address
+	D1=D1+	10		Skip prolog & lenght
+	D1=D1+	10		Skip dimensions
+	RTN
+**********************************************************************

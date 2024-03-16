@@ -1,0 +1,276 @@
+**********************************************************************
+* Name:		SafeSkipOb
+* Desc:		Replacement for internal SAFESKIPOB which doesn't
+*		understand ACPTRs nor SRRP. This version also uses
+*		one stack level less and doesn't use any status flags.
+* Input:	D0 = ->ob
+* Output:	D0 = ->obtail
+* Uses:		A[A] C[A] D0 CRY
+* RSTK:		1 (Saved B[A])
+* Notes:	ROM 2.15 seems to have skip routines for all prolog'd
+*		objects now, so we theoretically could use the ROM
+*		routine to do the skipping if we don't care about
+*		RSTK or ST usage. -- Han
+**********************************************************************
+
+=SafeSkipOb	C=B	A
+		RSTK=C
+		P=	0
+		B=0	A
+
+skpob		C=DAT0	A		C[A] = prolog
+		D0=D0+	5
+		GOC	skpfail
+		CD0EX
+		A=DAT0	A
+		CD0EX
+		LC(5)	=PRLG		#028FC
+		?A=C	A
+		GOYES	skpprlg		Skip prologed object
+		LC(4)	(=SEMI)+5	#0312B+5
+		?A=C	A
+		GOYES	skpsemi
+skpcont		?B#0	A
+		GOYES	skpob
+* Skip succeeded, restore B[A] & CC
+skpok		C=RSTK
+		B=C	A
+		RTNCC
+* Skip SEMI
+skpsemi		B=B-1	A
+		GONC	skpcont
+		D0=D0-	5		Discard last SEMI & finish up
+		GONC	skpok
+* Skip failed, restore B[A] & SC
+skpfail		C=RSTK
+		B=C	A
+		RTNSC
+* Skip possible prologed object, if undefined object then fail!
+skpprlg		D0=D0-	5
+		A=DAT0	A		A[A] = prolog
+		D0=D0+	5
+		LC(3)	=DOROMP		#02E92
+		?A>C	A
+		GOYES	skpfail
+		LC(3)	=DOBINT		#02911
+		A=A-C	A
+*		GOC	skpfail
+		GONC	+
+		GOTO	cknewtypes
++
+
+* New objects on the HP50G that need skip routines:
+*	DOINT, DOLNGREAL, DOLNGCMP, DOMATRIX, DOFLASHP, DOAPLET,
+*	DOMINIFONT
+
+* Note: There are no occurrances of the 5 nibbles of =PRLG between
+*	DOBINT and DOROMP unless the address specifies an object
+*	Thus we have one of the HP48 objects to skip.
+*	SAFESKIPOB uses a 2*CON(5) table to dispatch to a substitute skipper.
+*	Following is a lot faster but depends heavily on the relative
+*	memory locations of the various objects.
+
+* A[A] = 00022 if prolog is =DOREAL
+
+		ASR	A
+		A=A+A	A
+		C=PC
+		A=A+C	A		2 nibbles	\
+		A=A+CON	A,12		6 nibbles	  12 nibbles
+		PC=A			4 nibbles	/
+
+* The following skp_xx labels aren't used, they just mark the offset
+* given by above calculations. Carry is always clear on entry
+*						HP48	- DOBINT
+skp_00	GOTO	skpbint		DOBINT		02911	0000
+skp_04	GOTO	skpreal		DOREAL		02933	0002
+skp_08	GOTO	skperel		DOEREL		02955	0004
+skp_0C	GOTO	skpcmp		DOCMP		02977	0006
+skp_10	GOTO	skpecmp		DOECMP		0299D	0008
+skp_14	GOTO	skpchar		DOCHAR		029BF	000A
+	RTNSC			2 nibs
+skp_1A	GOTO	skplen		DOARRY		029E8	000D
+skp_1E	GOTO	skplen		DOLNKARRY	02A0A	000F
+skp_22	GOTO	skplen		DOCSTR		02A2C	0011
+skp_26	GOTO	skplen		DOHSTR		02A4E	0013
+	RTNSC			2 nibs
+skp_2C	GOTO	skpcomp		DOLIST		02A74	0016
+skp_30	GOTO	skprrp		DORRP		02A96	0018
+skp_34	GOTO	skpcomp		DOSYMB		02AB8	001A
+skp_38	GOTO	skpcomp		DOEXT		02ADA	001C
+skp_3c	GOTO	skptag		DOTAG		02AFC	001E
+skp_40	GOTO	skplen		DOGROB		02B1E	0020
+skp_44	GOTO	skplen		DOLIB		02B40	0022
+	RTNSC			2 nibs
+skp_4a	GOTO	skplen		DOBAK		02B62	0025
+skp_4e	GOTO	skplen		DOEXT0		02B88	0027
+skp_52	GOTO	skpext1		DOEXT1/DOACPTR	02BAA	0029
+skp_56	GOTO	skplen		DOEXT2		02BCC	002B
+skp_5a	GOTO	skplen		DOEXT3		02BEE	002D
+*skp_5e	GOTO	skplen		DOEXT4		02C10
+* 50 free nibbles here
+skplen	C=DAT0	A		3 nibs	--> 3
+	C=C-CON	A,5		6 nibs	--> 9
+	GOC	failskp		3 nibs	--> 12
+	C=C+CON	A,5		6 nibs	--> 18
+	AD0EX			3 nibs	--> 21
+	C=C+A	A		2 nibs	--> 23
+	D0=C			3 nibs	--> 26
+	GONC	contskp		3 nibs	--> 29
+	GOC	failskp		3 nibs	--> 32
+skpcmp	D0=D0+	16		3 nibs	--> 35
+	GOC	failskp		3 nibs	--> 38
+skpreal	D0=D0+	16		3 nibs	--> 41
+	GOC	failskp		3 nibs	--> 44
+	GONC	contskp		3 nibs	--> 47
+	NOP3			3 nibs	--> 50
+skp_90	GONC	skpcomp		DOCOL
+	NOP3
+skp_96	GONC	skplen		DOCODE	--> 3
+skpcomp	B=B+1	A		2 nibs	--> 5
+	GOC	failskp		3 nibs	--> 8
+	GOTO	skpob		4 nibs	--> 12
+contskp	GOTO	skpcont		4 nibs	--> 16
+skp_a6	GOTO	skpidnt		DOIDNT
+skp_aa	GONC	skpidnt		DOLAM
+	NOP3
+skp_b0	D0=D0+	6		DOROMP
+	GONC	contskp
+failskp	GOTO	skpfail
+
+skpecmp	D0=D0+	16
+	GOC	failskp
+	D0=D0+	5
+	GOC	failskp
+skperel	D0=D0+	16
+	GOC	failskp
+skpbint	D0=D0+	5
+	GONC	contskp
+	GOC	failskp
+skpidnt	C=0	A
+	C=DAT0	B
+	C=C+C	A
+	AD0EX
+	C=C+A	A
+	D0=C
+	GOC	failskp
+skpchar	D0=D0+	2
+	GONC	contskp
+	GOC	failskp
+faiskp2	GOTO	skpfail
+skpext1	AD0EX
+	D0=(5)	=IRAM@
+	C=DAT0	1
+	D0=A
+	?CBIT=1	3
+	GOYES	skpacp
+	GOTO	skplen		EXT1
+skpacp	D0=D0+	10		ACPTR!
+	GOC	faiskp2
+	GOTO	skpcont
+skptag	C=0	A
+	C=DAT0	B
+skptg+	C=C+1	A
+	C=C+C	A
+	AD0EX
+	C=C+A	A
+	D0=C
+	GOC	faiskp2
+	GOTO	skpob
+skprrp	AD0EX
+*	D0=(5)	=aUSEROB
+*	C=DAT0	A
+*	D0=C
+	D0=(5)	=USEROB
+
+	C=DAT0	A		->userob
+	D0=A
+	A=A-CON	A,5
+	?A=C	A
+	GOYES	skpsrrp		Skip srrp
+
+skprrp+	D0=D0+	3		Skip attached lib
+	GOC	faiskp2
+	C=DAT0	A
+	?C#0	A
+	GOYES	skprrpl
+	GOTO	skpbint		Empty rrp, skip lastram-word offset only
+skprrpl	AD0EX
+	A=A+C	A
+	D0=A			->lastram-word
+	GOC	faiskp2
+	C=0	A
+	C=DAT0	B
+	?C=0	A
+	GOYES	skptg+		Skip nullnamed lastram-word
+	D0=D0+	2		Skip the 2nd lenght byte
+	GONC	skptg+
+	GOTO	skpfail
+* Skipping srrp is the same except the attached libs are skipped first
+* Each slot takes 13 = #8+4+1 nibbles
+skpsrrp	A=0	A
+	A=DAT0	X
+	C=A	A
+	CSL	A	#16*
+	C=C-A	A	#15*
+	C=C-A	A	#14*
+	C=C-A	A	#13*
+	AD0EX
+	A=A+C	A
+	D0=A
+	GONC	skprrp+
+failskp-
+	GOTO	skpfail
+
+* Han: new type dispatch routines added
+cknewtypes
+	D0=D0-	5
+	A=DAT0	A		A[A] = prolog
+	D0=D0+	5
+	LC(3)	=DOMINIFONT	#026FE
+	?A>C	A
+	GOYES	failskp-
+	LC(3)	=DOINT		#02614
+	A=A-C	A
+	GOC	failskp-	
+	ASR	A
+	A=A+A	A
+	C=PC
+	A=A+C	A		2 nibbles	\
+	A=A+CON	A,12		6 nibbles	  12 nibbles
+	PC=A			4 nibbles	/
+
+* dispatch table for new types; CC guaranteed here
+	GOTO	skplen		DOINT		#02614	00000
+	GOTO	skplngreal	DOLNGREAL       #0263A	00002
+	GOTO	skplngcmp	DOLNGCMP	#02660	00004
+	RTNSC			2 nibs
+	GOTO	skpcomp		DOMATRIX	#02686	00007
+	GOTO	skpflashp	DOFLASHP	#026AC	00009
+	RTNSC			2 nibs
+	GOTO	skplen		DOAPLET		#026D5	0000C
+	GOTO	skplen		DOMINIFONT	#026FE	0000E
+	
+skpflashp
+	D0=D0+	3+4
+	GOC	++
+	GOTO	skpcont
+skplngcmp
+	P=	16-4
+	GOTO	+
+skplngreal
+	P=	16-2
++
+-	C=DAT0	A
+	C=C-CON	A,5
+	GOC	++
+	C=C+CON	A,5
+	AD0EX
+	C=C+A	A
+	D0=C			skip real part mantissa, then exponent
+	GOC	++
+	P=P+1
+	GONC	-
+	GOTO	skpcont
+++	GOTO	skpfail
+	

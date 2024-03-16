@@ -1,0 +1,1444 @@
+**********************************************************************
+* Get value for symbol from symbol buffer
+* Input:	B[A] = chars-1
+*		D0   = ->symbol
+* Output:	CS:	Not defined in symbol buffer
+*		CC:	A[A] = ->type
+* Uses:		A[W] C[W] D[A]		IO: CRC
+* Stack:	1 (Saves D1)	(2 if local label)
+* Notes:
+*	Local label identification is done here as follows:
+*
+*	If +	then form label LCTYP+  &index		(next label)
+*	If ++	then form label LCTYP++ &index		(next label)
+*	If -	then form label LCTYP-  &index-1	(currently defined)
+*	If --	then form label LCTYP-- &index-1	(currently defined)
+**********************************************************************
+SymbolValue?	C=0	A		Check for 1-16 chars
+		LC(1)	15
+		?C<B	A
+		RTNYES			Too long, can't be in the buffer
+* Check if label generator, if so then form proper label for scanning
+		?ST=0	qASSEMBLE	Ignore label generators in RPL mode
+		GOYES	SymbGetNow
+		LC(1)	1
+		?B>C	A
+		GOYES	SymbGetNow	Too long to be generator
+		?B#0	P
+		GOYES	+		Try ++ and --
+		A=DAT0	B
+		LCASC	'-'
+		?A=C	B
+		GOYES	symbval-
+		LCASC	'+'
+		?A#C	B
+		GOYES	SymbGetNow
+symbval+	LC(3)	#000+(GENLAB+)	Sub zero from index
+		GOTO	SpecialValue
+symbval-	LC(3)	#100+(GENLAB-)	Sub one from index
+		GOTO	SpecialValue
++		A=DAT0	A
+		C=A	A
+		LCSTR	'--'
+		?A=C	A
+		GOYES	symbval--
+		LCSTR	'++'
+		?A#C	A
+		GOYES	SymbGetNow
+symbval++	LC(3)	#000+(GENLAB++)	Sub zero from index
+		GOTO	SpecialValue
+symbval--	LC(3)	#100+(GENLAB--)	Sub one from index
+		GOTO	SpecialValue
+
+* Now fetch symbol
+SymbGetNow	CD1EX
+		RSTK=C			Save ->pc
+* Calculate hash for symbol
+		C=B	P
+		P=C	0		chars
+		ST=0	15
+		D1=(5)	=CRC
+		A=0	A
+		DAT1=A	4
+		CD0EX			C[A] = ->symbol
+		D0=C
+		D1=C			->symbol
+		A=DAT1	WP
+		C+P+1
+		D1=C
+		A=DAT1	WP
+		P=	0
+		D1=(5)	=CRC
+		C=0	A
+		C=DAT1	B		256 hashes
+		ST=1	15
+		D=C	A		hash
+
+* Check if any symbols exist for that hash
+		A=R2.F	A
+		LC(5)	O_HASHEND
+		C=C+A	A
+		D1=C
+		A=DAT1	A		->bufend
+		D1=D1+	5
+		CD1EX			->hashes
+		C=C+D	A
+		D=D+D	A
+		D=D+D	A
+		C=C+D	A		->hashes + 5*hash
+		D1=C
+		C=RSTK			Now save pc in D[A]
+		D=C	A
+		C=DAT1	A		offset from bufend
+		A=A+C	A		CS since going to lower memory
+		GONC	symbnovalue	No symbols at all
+* The actual matching loop
+symbscanlp	D1=A			->node1
+* Compare symbols
+		D1=D1+	5		->symblen
+		C=DAT1	B
+		?B=C	P
+		GOYES	symbscanlen
+* Lenght different, go to next node
+		D1=D1-	5
+symbscannxt	C=DAT1	A		rel(5)
+		AD1EX
+		A=A+C	A
+		GOC	symbscanlp	The REL is always negative!
+* No more symbols, no value
+symbnovalue	C=D	A		Restore pc
+		D1=C
+		RTNSC			CS: No value
+* Compare chars for equal lenght symbols. C[0] = chars-1
+symbscanlen	D1=D1+	1
+		GOSUBL	CmpStrTok	CC if equal
+		GONC	symbyesvalue
+		D1=D1-	6
+		GONC	symbscannxt		
+* Got match, return ->type in A[A]
+symbyesvalue	C=B	P
+		P=C	0
+		CD1EX
+		C+P+1
+		C+P+1
+		A=C	A		->type
+		P=	0
+		C=D	A		Restore pc
+		D1=C
+		RTNCC
+
+* Entry to handle fetching values for generated labels
+* Entry:
+*	C[XS] = index offset
+*	C[B]  = index type
+*	D0 = ->label	B[A] = chars-1
+
+SpecialValue	A=R2.F	A
+		AD0EX
+		D0=(2)	(O_TEMPLAB)+6
+		DAT0=A	A		Save old D0
+		D0=(2)	(O_TEMPLAB)+11
+		CBEX	A		B[A] = offset,type
+		DAT0=C	A		Save B[A]
+		D0=(2)	O_GENLABS
+		A=0	A
+		A=B	B		type
+		CD0EX
+		C=C+A	A		->index
+		CD0EX
+		A=B	XS
+		ASR	A
+		ASR	A		offset
+		C=DAT0	A		index
+		C=C-A	A		index-offset
+* Don't worry about overflow, it would require #FFFF generated labels
+		D0=(2)	O_TEMPLAB
+		CSL	W
+		CSL	W
+		C=B	B		And type as char1
+		DAT0=C	6
+		C=0	A
+		LC(1)	3-1		Always 3 chars
+		B=C	A
+		GOSUB	SymbGetNow	CC: A[A]=->type
+		D0=(2)	(O_TEMPLAB)+11
+		C=DAT0	A
+		B=C	A		Restore chars-1
+		D0=(2)	(O_TEMPLAB)+6
+		C=DAT0	A
+		D0=C			Restore ->label
+		RTN			Return flag as usual
+
+**********************************************************************
+* Check if label is a generator and if so then increment the
+* corresponding index.
+* Entry:	D0 = ->label
+*		B[A] = chars-1
+* Exit:		CS if wasn't generator, CC if was (and index incremented)
+* Uses:		A[A] C[A]
+**********************************************************************
+CheckGenerator	C=0	A
+		LC(1)	1
+		?B>C	A
+		RTNYES			CS: Too long to be generator
+		?B#0	P
+		GOYES	+		Check if ++ or --
+		A=DAT0	B
+		LCASC	'+'
+		?A=C	B
+		GOYES	chkgen+
+		LCASC	'-'
+		?A#C	B
+		RTNYES			CS: Not generator
+chkgen-		LC(2)	GENLAB-
+		GONC	chkgentyp
+chkgen+		LC(2)	GENLAB+
+		GOC	chkgentyp
++		A=DAT0	A
+		C=A	A
+		LCSTR	'++'
+		?A=C	A
+		GOYES	chkgen++
+		LCSTR	'--'
+		?A#C	A
+		RTNYES			CS: Not generator
+chkgen--	LC(2)	GENLAB--
+		GONC	chkgentyp
+chkgen++	LC(2)	GENLAB++
+chkgentyp	A=0	A
+		A=C	B		type
+		C=R2.F	A
+		LC(2)	O_GENLABS
+		C=C+A	A		->index
+		CD0EX
+		A=DAT0	A
+		A=A+1	A
+		DAT0=A	A
+		CD0EX
+		RTNCC			CC: Was generator
+**********************************************************************
+* Add symbol to buffer.
+* Entry:	D[W] = value
+*		C[0] = type
+*		D0   = ->symbol
+*		B[A] = symblen (0-15 for 1-16)
+*	Special input if adding a ROMP:
+*		D[A] = address	( EXTERNAL must use 00000 !)
+*		D[S] = visible?		qXNAME if visible to ease hash making
+*		TEMPLAB = chars,hash	(if visible?)
+*		Command number is always set to 000. Fixed elsewhere
+*		If symbol already exist of same type then:
+*			If address == 0 then
+*				too late declaration
+*			Else
+*				If old address == 0 then
+*					Just change address, visible?, hash
+*				Else
+*					Duplicate romp
+*	Special input if adding a HASH:
+*		TEMPLAB = chars,hash
+*		Command number is always set to 000. Fixed elsewhere
+*		If symbol already exists it doesn't matter, duplicates
+*		are ok because the symbol is never scanned by name.
+*		In fact, the name is always a special whitespace character.
+*	Special input if adding a DEFINE:
+*		D[A]  = nibbles
+*		D[A1] = ->define string
+*	Special input if adding a MACRO:
+*		D[A]  = nibbles
+*		D[A1] = ->macro lines
+*		D[S]  = macroflag to indicate substitutions exist
+* Output:
+* Stack:	1
+* Exits:	GC exit if insufficient memory for adding
+*		Proper error exit if symbol already exists
+* Note:		DEFINE is ignored on pass2.
+*
+*	Local label identification is done here as follows:
+*
+*	If +	then form label LCTYP+  &index
+*	If ++	then form label LCTYP++ &index
+*	If -	then form label LCTYP-  &index
+*	If --	then form label LCTYP-- &index
+*
+*	Incrementing the indexes themselves is left to a separate
+*	subroutine for simplicity in the external calls which
+*	may ignore AddSymbol calls in pass2.
+*
+**********************************************************************
+AddSymbol
+
+* First check if we're adding a hash symbol
+		A=C	A		type
+		LC(1)	SYMB_HASH
+		?A#C	P
+		GOYES	+
+		GOLONG	AddHash
+
+* Ensure sufficient memory.
+* Maximum needed for normal types: = 5 + 1+32 + 2 + 1 + 16 = 57
+
++		LC(5)	100		Safe value to use
+		GOSUBL	Free-
+* Allocate extra if needed
+		LC(1)	SYMB_DEFINE
+		?A#C	P
+		GOYES	+
+		C=D	A		nibbles in define
+		GOSUBL	Free-
++		LC(1)	SYMB_MACRO
+		?A#C	P
+		GOYES	+
+		C=D	A		nibbles in macro
+		GOSUBL	Free-
++
+* Now check for label generators
+		?A=0	P
+		GOYES	+
+		GOTO	AddSymbNow	Not label, no duplicacy check
++		C=0	A
+		LC(1)	1
+		?B>C	A
+		GOYES	++		Too long to be generator
+		?B#0	P
+		GOYES	+		Try ++ and --
+		A=DAT0	B
+		LCASC	'-'
+		?A=C	B
+		GOYES	symbset-
+		LCASC	'+'
+		?A#C	B
+		GOYES	++
+symbset+	LC(2)	GENLAB+
+		GONC	SpecialSet
+symbset-	LC(2)	GENLAB-
+		GOC	SpecialSet
++		A=DAT0	A
+		C=A	A
+		LCSTR	'--'
+		?A=C	A
+		GOYES	symbset--
+		LCSTR	'++'
+		?A#C	A
+		GOYES	++
+symbset++	LC(2)	GENLAB++
+		GONC	SpecialSet
+symbset--	LC(2)	GENLAB--
+		GOC	SpecialSet
+++		GOTO	AddLabNow
+
+* Special entry to define label generators.
+* Entry:	C[B] = type
+*		B[A] = chars-1	D0 = ->symbol
+SpecialSet	A=R2.F	A
+		AD0EX
+		D0=(2)	(O_TEMPLAB)+6
+		DAT0=A	A		Save old D0
+		D0=(2)	(O_TEMPLAB)+11
+		CBEX	A		B[B] = type
+		DAT0=C	A		Save B[A]
+		D0=(2)	O_GENLABS
+		A=0	A
+		A=B	B		type
+		CD0EX
+		C=C+A	A		->index
+		CD0EX
+		C=DAT0	A		index
+		D0=(2)	O_TEMPLAB
+		CSL	W
+		CSL	W
+		C=B	B		And type as char1
+		DAT0=C	6
+		C=0	A
+		LC(1)	3-1		Always 3 chars
+		B=C	A
+		GOSUB	AddLabNow
+		D0=(2)	(O_TEMPLAB)+11
+		C=DAT0	A
+		B=C	A		Restore chars-1
+		D0=(2)	(O_TEMPLAB)+6
+		C=DAT0	A
+		D0=C			Restore ->label
+		RTN			Return asu usual
+
+**********************************************************************
+
+* Compute hash for symbol
+AddLabNow	A=0	A		SYMB_LABEL to fix damage from generat.
+AddSymbNow	C=A	A
+		RSTK=C			type
+
+		C=B	P
+		P=C	0		chars
+		ST=0	15
+		AD1EX			A[A] = pc
+		D1=(5)	=CRC
+		C=0	A
+		DAT1=C	4
+		C=DAT0	WP
+		CD0EX
+		C+P+1
+		D0=C
+		C=DAT0	WP
+		P=	0
+		C=0	A
+		C=DAT1	B		hash
+		D1=A			->pc
+		ST=1	15
+
+		AD0EX
+		A=A-B	A
+		A=A-1	A
+		AD0EX			->symbol
+
+* Now:		RSTK = type		D0 = ->symbol
+*		C[A] = hash		B[A] = symblen
+*		A[A] = pc		D1 = pc
+*		D[W] = value
+
+* Setup the scan loop
+
+		BSRC			B[S] = symblen
+		A=C	A		hash
+		C=RSTK			type
+		B=C	A		type
+		CD1EX			pc
+		CSL	W
+		CBEX	W
+		B=C	S
+		B=C	P		B[S]=symblen B[0]=type B[1-5]=pc
+
+* Now:		A[A] = hash		B[0]=type
+*		D0 = ->symbol		B[1-5]=pc
+*		B[S] = symblen		D[W]=value
+
+* Check if any symbols exist for that hash.
+			
+		D1=A			hash
+		A=R2.F	A
+		LC(5)	O_HASHEND
+		A=A+C	A
+		AD1EX			A[A] = hash
+		C=DAT1	A		->bufend
+		D1=D1+	5		->hashes
+		CD1EX
+		C=C+A	A
+		A=A+A	A
+		A=A+A	A
+		C=C+A	A		->hashes + 5*hash
+		CD1EX			C[A] = ->bufend
+		A=DAT1	A		offset
+		A=A+C	A		->node1
+		GOC	symbaddlp
+		GOTO	symbadd1st	First one for this hash!
+
+* Find the last node which to link to the new symbol.
+symbaddlp	D1=A			->node
+		D1=D1+	5		->slen
+		C=DAT1	S		slen
+		?B=C	S
+		GOYES	symbaddsame?
+		D1=D1-	5
+symbaddnxt	C=DAT1	A		rel(5)
+		AD1EX
+		A=A+C	A
+		GOC	symbaddlp	Loop until last node
+		GOTO	symbaddnow	Ok to add new symbol. A[A]=->linkfield
+* Possibly same symbol?
+symbaddsame?	C=DAT1	B		slen
+		D1=D1+	1
+		GOSUBL	CmpStrTok	CC if equal
+		GONC	symbaddsame	Already exists!
+		D1=D1-	6
+		GONC	symbaddnxt	Next one..
+
+**********************************************************************
+* Now we found the symbol to already exist. Check what we should do based
+* on the symbol type to add and the existing type.
+**********************************************************************
+symbaddsame	D1=D1-	1
+		C=DAT1	B		slen
+		D1=D1+	1
+		P=C	0
+		CD1EX			Skip name
+		C+P+1
+		C+P+1
+		D1=C			->type
+		P=	0
+		A=DAT1	B
+		?A=B	P
+		GOYES	symbsametype
+		GOTO	SymbTypeErr	Different types! Error!
+
+* Same type, check if same value.
+symbsametype	LC(1)	SYMB_DEFINE
+		?A=C	P
+		GOYES	symbsamedefine
+		LC(1)	SYMB_MACRO
+		?A=C	P
+		GOYES	symbsamemacro
+		LC(1)	SYMB_ROMP
+		?A=C	P
+		GOYES	gosymbsameromp
+		D1=D1+	1		->value lenght
+		C=DAT1	B
+		P=C	0		value lenght
+		D1=D1+	1
+		C=0	W
+		C=DAT1	WP		old value
+		?C#D	W
+		GOYES	symbolderr	Different value!
+symboldok	P=	0
+		C=B	W		Restore pc
+		CSR	W
+		D1=C
+		B=0	A		Restore symblen
+		BSLC
+		RTNCC			Done!
+* Trying to change symbol value! Check if it is allowed!
+symbolderr	C=D	W
+		DAT1=C	WP		Set new value anyway
+		P=	0
+		LC(1)	SYMB_=
+		?B=C	P
+		GOYES	symboldok	Ok to change = value
+		LC(1)	SYMB_PROP
+		?B=C	P
+		GOYES	symboldok	Ok to change PROP value
+		?B=0	P		SYMB_LABEL
+		GOYES	sberrLABEL	"Duplicate Label"
+		LERR	errValueChange	"Value Changed"
+gosymbsameromp	GOTO	symbsameromp
+
+* Redefining DEFINE is not allowed - always error
+symbsamedefine	LERR	errDefined	"Label Already Defined"
+* Redefining MACRO is not allowed - always error
+symbsamemacro	LERR	errMacrod	"Macro Already Exists"
+
+**********************************************************************
+* Tried to change symbol type. Error correspondingly
+* A[0] = old type	B[0] = wanted type
+**********************************************************************
+SymbTypeErr	LC(1)	SYMB_=
+		?A=C	P
+		GOYES	sberr=
+		LC(1)	SYMB_DEFINE
+		?A=C	P
+		GOYES	symbsamedefine
+		LC(1)	SYMB_MACRO
+		?A=C	P
+		GOYES	symbsamemacro
+		LC(1)	SYMB_ROMP
+		?A=C	P
+		GOYES	sberrROMP
+		LC(1)	SYMB_MACRO
+		?A<C	P
+		GOYES	sberrLABEL
+		P=	13		Internal error!
+		GOVLNG	=PWLseq
+sberrLABEL	LERR	errDuplicate	"Duplicate Label"
+sberr=		LERR	errRedefVal	"Cannot Redefine Value"
+sberrROMP	B=0	A
+		BSLC
+		CERR	errOldRomp	"Label Already Romp"
+**********************************************************************
+* Now we found the last node which we should link to the new slot
+* A[A] = ->linkfield (zero contents)
+**********************************************************************
+goaddromp	GOTO	symbaddromp
+goadddefine	GOTO	symbadddefine
+goaddmacro	GOTO	symbaddmacro
+
+symbaddnow	D1=A			->linkfield
+		LC(1)	SYMB_ROMP
+		?B=C	P
+		GOYES	goaddromp
+		LC(1)	SYMB_DEFINE
+		?B=C	P
+		GOYES	goadddefine
+		LC(1)	SYMB_MACRO
+		?B=C	P
+		GOYES	goaddmacro
+
+* Calculate memory required for LABEL | EQU | =
+
+		C=B	S		symblen
+		C=0	A		
+		CSLC			symblen in C[A]
+		C=C+C	A		2*(chars-1)
+* + 1 char + rel + 1 for symblen + type + valuelen + value(5)
+		C=C+CON	A,2+5+1+1+1+5
+		?B=0	P		SYMB_LABEL
+		GOYES	syadmem
+		C=C+1	A		Defalt for props
+		LA(1)	SYMB_PROP
+		?A=B	P
+		GOYES	syadmem
+		C=C+CON	A,16-6		16-nibble value for EQU and =
+syadmem		
+* Now calculate the node location and update NEXTNODE and the link
+
+		CD1EX			D1 = need
+		RSTK=C			->linkfield
+		A=R2.F	A
+		LC(5)	O_NEXTNODE
+		C=C+A	A
+		CD1EX			C[A] = need
+		A=DAT1	A		->nextnode
+		A=A-C	A
+		DAT1=A	A		->nextnode (new)
+		C=RSTK			->linkfield
+		D1=C			->linkfield
+		C=A-C	A		negative offset to new node
+		DAT1=C	A
+		D1=A			->node
+
+* Now add the definition itself, link first
+symbaddnode	C=0	A		0-link
+		DAT1=C	A
+		D1=D1+	5
+* Now symbol
+		C=B	S		symblen
+		DAT1=C	S
+		D1=D1+	1
+		P=C	15		symblen
+		A=DAT0	WP		copy symbol itself
+		DAT1=A	WP
+		CD0EX
+		C+P+1
+		CD1EX
+		C+P+1
+		D0=C
+		A=DAT1	WP
+		DAT0=A	WP
+		CD0EX
+		C+P+1
+		CD1EX
+		A=C	A		And fix ->symbol back to normal
+		C=0	A		
+		CPEX	0
+		A=A-C	A
+		A=A-1	A
+		D0=A
+* Now type
+		C=B	P
+		DAT1=C	B
+		D1=D1+	1
+* Now value
+		?B=0	P		SYMB_LABEL
+		GOYES	addslbvalue	Lenght 5 for labels
+		LC(1)	SYMB_PROP
+		?B=C	P
+		GOYES	addspropvalue	Lenght 6 for props
+		LC(1)	16-1
+		DAT1=C	B
+		D1=D1+	1
+		C=D	W
+		DAT1=C	16
+		GONC	addslbvalok
+
+addspropvalue	LC(1)	6-1
+		DAT1=C	B
+		D1=D1+	1
+		C=D	W
+		DAT1=C	6
+		GONC	addslbvalok
+
+addslbvalue	LC(1)	5-1
+		DAT1=C	B
+		D1=D1+	1
+		C=D	A
+		DAT1=C	A
+* Done adding, flag labels exist and restore things to normal
+addslbvalok
+		A=R2.F	A		Set labels exist
+		LC(5)	O_LABELS
+		A=A+C	A
+		AD0EX
+		LCHEX	1
+		DAT0=C	P
+		D0=A			->symbol
+
+		C=B	W		Restore variables
+		CSR	W
+		D1=C			->pc
+		B=0	A
+		BSLC			toklen
+		RTNCC
+
+**********************************************************************
+* Add new symbol, first one for its hash!
+* On entry:	D1   = ->hash storage	D0 = ->symbol	B[1-5] = pc
+*					B[S] = symblen	D[W] = value
+*					B[0] = type
+**********************************************************************
+goadd1stromp	GOTO	add1stromp
+goadd1stdefine	GOTO	add1stdefine
+goadd1stmacro	GOTO	add1stmacro
+
+symbadd1st	LC(1)	SYMB_ROMP
+		?B=C	P
+		GOYES	goadd1stromp
+		LC(1)	SYMB_DEFINE
+		?B=C	P
+		GOYES	goadd1stdefine
+		LC(1)	SYMB_MACRO
+		?B=C	P
+		GOYES	goadd1stmacro
+
+* Calculate memory required by the new node for LABEL | EQU | =
+
+		C=B	S		symblen
+		C=0	A		
+		CSLC			symblen in C[A]
+		C=C+C	A		2*(chars-1)
+		C=C+CON	A,2+5+1+1+1+5
+		?B=0	P		SYMB_LABEL
+		GOYES	synewmem
+		C=C+1	A		Default for props (lenght is 6)
+		LA(1)	SYMB_PROP
+		?A=B	P
+		GOYES	synewmem
+		C=C+CON	A,16-6		16-nibble value for EQU and =
+synewmem
+
+* And set the offset in the hash table, relative to ->bufend
+
+		CD1EX			D1 = need
+		RSTK=C			->hash storage
+		A=R2.F	A
+		LC(5)	O_NEXTNODE
+		A=A+C	A
+		AD1EX			A[A] = need
+		C=DAT1	A
+		C=C-A	A		nextnode (new)
+		DAT1=C	A
+		D1=D1+	5		O_HASHEND
+		A=DAT1	A		->bufend
+		A=A-C	A		bufend - nextnode (new)
+		A=-A	A		link for the hash
+		D1=C			->nextnode (new)
+		C=RSTK			->hash storage
+		CD1EX
+		DAT1=A	A		And set the offset for the hash
+		D1=C			->node
+		GOTO	symbaddnode	And fill the node with wanted data
+
+**********************************************************************
+* Now we found the last node which we should link to the new slot
+* A[A] = ->linkfield (zero contents)
+**********************************************************************
+symbadddefine
+
+* Calculate memory required for DEFINE
+
+		C=B	S		symblen
+		C=0	A		
+		CSLC			symblen in C[A]
+		C=C+C	A		2*(chars-1)
+
+* + 2 for 1 char to fill name		\
+* + 5 for the slot size field (REL)
+* + 1 for symblen			  = 29
+* + 1 for type
+* + 10 for prolog/length
+* + 10 for trailer			/
+* + nibbles for define
+
+		C=C+CON	A,16
+		C=C+CON	A,13
+		C=C+D	A
+		
+* Now calculate the node location and update NEXTNODE and the link
+
+		CD1EX			D1 = need
+		RSTK=C			->linkfield
+		A=R2.F	A
+		LC(5)	O_NEXTNODE
+		C=C+A	A
+		CD1EX			C[A] = need
+		A=DAT1	A		->nextnode
+		A=A-C	A
+		DAT1=A	A		->nextnode (new)
+		C=RSTK			->linkfield
+		D1=C			->linkfield
+		C=A-C	A		negative offset to new node
+		DAT1=C	A
+		D1=A			->node
+
+* Now add the definition itself, link first
+symbadddefnode	C=0	A		0-link
+		DAT1=C	A
+		D1=D1+	5
+* Now symbol
+		C=B	S		symblen
+		DAT1=C	S
+		D1=D1+	1
+		P=C	15		symblen
+		A=DAT0	WP		copy symbol itself
+		DAT1=A	WP
+		CD0EX
+		C+P+1
+		CD1EX
+		C+P+1
+		CD1EX
+		D0=C
+		A=DAT0	WP
+		DAT1=A	WP
+		CD1EX
+		C+P+1
+		D1=C
+		AD0EX			And fix ->symbol back to normal
+		C=0	A
+		CPEX	0		
+		A=A-C	A
+		A=A-1	A
+		D0=A
+* Now type
+		C=B	P
+		DAT1=C	B
+		D1=D1+	1
+* Now the definition itself
+		LC(5)	=DOCSTR		prolog
+		DAT1=C	A
+		D1=D1+	5
+		C=D	A		nibbles in definition
+		C=C+CON	A,5
+		DAT1=C	A
+		D1=D1+	5
+		C=D	W
+		GOSBVL	=CSRW5		->define
+		CD0EX			C[A] = ->symbol
+		CDEX	A		C[A] = nibbles, D[A] = ->symbol
+		GOSBVL	=MOVEDOWN
+* Now the trailer for GC
+		LC(5)	=DOCSTR		prolog (any sized object will do)
+		DAT1=C	A
+		D1=D1+	5
+		A=R2.F	A
+		LC(5)	O_HASHEND
+		A=A+C	A
+		AD1EX
+		C=DAT1	A		buffer end address
+		D1=A
+		C=C-A	A		offset from the trailer
+		DAT1=C	A		and set it
+
+* Done adding, flag DEFINE exists
+
+		A=R2.F	A		Flag DEFINE exists
+		LC(5)	O_DEFINES
+		A=A+C	A
+		D0=A
+		LCHEX	1
+		DAT0=C	P
+
+* Restore things to normal
+
+		C=D	A
+		D0=C			->symbol
+		C=B	W
+		CSR	W
+		D1=C			->pc
+		B=0	A
+		BSLC			toklen
+		RTNCC
+
+**********************************************************************
+* Add new define, first one for its hash!
+* On entry:	D1   = ->hash storage	D0 = ->symbol	B[1-5] = pc
+*		D[A] = nibbles		B[S] = symblen
+*		D[A1] = ->define string	B[0] = type
+**********************************************************************
+add1stdefine
+
+* Calculate memory required for DEFINE
+
+		C=B	S		symblen
+		C=0	A		
+		CSLC			symblen in C[A]
+		C=C+C	A		2*(chars-1)
+
+* + 2 for 1 char to fill name		\
+* + 5 for the slot size field (REL)
+* + 1 for symblen			  = 29
+* + 1 for type
+* + 10 for prolog/length
+* + 10 for trailer			/
+* + nibbles for define
+
+		C=C+CON	A,16
+		C=C+CON	A,13
+		C=C+D	A
+
+* And set the offset in the hash table, relative to ->bufend
+
+		CD1EX			D1 = need
+		RSTK=C			->hash storage
+		A=R2.F	A
+		LC(5)	O_NEXTNODE
+		A=A+C	A
+		AD1EX			A[A] = need
+		C=DAT1	A
+		C=C-A	A		nextnode (new)
+		DAT1=C	A
+		D1=D1+	5		O_HASHEND
+		A=DAT1	A		->bufend
+		A=A-C	A		bufend - nextnode (new)
+		A=-A	A		link for the hash
+		D1=C			->nextnode (new)
+		C=RSTK			->hash storage
+		CD1EX
+		DAT1=A	A		And set the offset for the hash
+		D1=C			->node
+		GOTO	symbadddefnode	And fill the node with define data
+**********************************************************************
+* Now we found the last node which we should link to the new slot
+* A[A] = ->linkfield (zero contents)
+**********************************************************************
+symbaddmacro
+
+* Calculate memory required for MACRO
+
+		C=B	S		symblen
+		C=0	A		
+		CSLC			symblen in C[A]
+		C=C+C	A		2*(chars-1)
+
+* + 2 for 1 char to fill name		\
+* + 5 for the slot size field (REL)
+* + 1 for symblen			  = 30
+* + 1 for type
+* + 1 for macroflag
+* + 10 for prolog/length
+* + 10 for trailer			/
+* + nibbles for define
+
+		C=C+CON	A,16
+		C=C+CON	A,14
+		C=C+D	A
+		
+* Now calculate the node location and update NEXTNODE and the link
+
+		CD1EX			D1 = need
+		RSTK=C			->linkfield
+		A=R2.F	A
+		LC(5)	O_NEXTNODE
+		C=C+A	A
+		CD1EX			C[A] = need
+		A=DAT1	A		->nextnode
+		A=A-C	A
+		DAT1=A	A		->nextnode (new)
+		C=RSTK			->linkfield
+		D1=C			->linkfield
+		C=A-C	A		negative offset to new node
+		DAT1=C	A
+		D1=A			->node
+
+* Now add the definition itself, link first
+symbaddmacnode	C=0	A		0-link
+		DAT1=C	A
+		D1=D1+	5
+* Now symbol
+		C=B	S		symblen
+		DAT1=C	S
+		D1=D1+	1
+		P=C	15		symblen
+		A=DAT0	WP		copy symbol itself
+		DAT1=A	WP
+		CD0EX
+		C+P+1
+		CD1EX
+		C+P+1
+		CD1EX
+		D0=C
+		A=DAT0	WP
+		DAT1=A	WP
+		CD1EX
+		C+P+1
+		D1=C
+		AD0EX			And fix ->symbol back to normal
+		C=0	A
+		CPEX	0		
+		A=A-C	A
+		A=A-1	A
+		D0=A
+* Now type
+		C=B	P
+		DAT1=C	B
+		D1=D1+	1
+* Now macroflag
+		C=D	S
+		DAT1=C	S
+		D1=D1+	1
+* Now the macro itself
+		LC(5)	=DOCSTR		prolog
+		DAT1=C	A
+		D1=D1+	5
+		C=D	A		nibbles in definition
+		C=C+CON	A,5
+		DAT1=C	A
+		D1=D1+	5
+		C=D	W
+		GOSBVL	=CSRW5		->macro
+		CD0EX			C[A] = ->symbol
+		CDEX	A		C[A] = nibbles, D[A] = ->symbol
+		GOSBVL	=MOVEDOWN
+* Now the trailer for GC
+		LC(5)	=DOCSTR		prolog (any sized object will do)
+		DAT1=C	A
+		D1=D1+	5
+		A=R2.F	A
+		LC(5)	O_HASHEND
+		A=A+C	A
+		AD1EX
+		C=DAT1	A		buffer end address
+		D1=A
+		C=C-A	A		offset from the trailer
+		DAT1=C	A		and set it
+
+* Done adding, flag MACRO exists
+
+		A=R2.F	A		Flag MACRO exists
+		LC(5)	O_MACROS
+		A=A+C	A
+		D0=A
+		LCHEX	1
+		DAT0=C	P
+
+* Restore things to normal
+
+		C=D	A
+		D0=C			->symbol
+		C=B	W
+		CSR	W
+		D1=C			->pc
+		B=0	A
+		BSLC			toklen
+		RTNCC
+
+**********************************************************************
+* Add new macro, first one for its hash!
+* On entry:	D1   = ->hash storage	D0 = ->symbol	B[1-5] = pc
+*		D[A] = nibbles		B[S] = symblen
+*		D[A1] = ->macro string	B[0] = type
+*		D[S]  = macroflag
+**********************************************************************
+add1stmacro
+
+* Calculate memory required for MACRO
+
+		C=B	S		symblen
+		C=0	A		
+		CSLC			symblen in C[A]
+		C=C+C	A		2*(chars-1)
+
+* + 2 for 1 char to fill name		\
+* + 5 for the slot size field (REL)
+* + 1 for symblen			  = 30
+* + 1 for type
+* + 1 for macroflag
+* + 10 for prolog/length
+* + 10 for trailer			/
+* + nibbles for define
+
+		C=C+CON	A,16
+		C=C+CON	A,14
+		C=C+D	A
+
+* And set the offset in the hash table, relative to ->bufend
+
+		CD1EX			D1 = need
+		RSTK=C			->hash storage
+		A=R2.F	A
+		LC(5)	O_NEXTNODE
+		A=A+C	A
+		AD1EX			A[A] = need
+		C=DAT1	A
+		C=C-A	A		nextnode (new)
+		DAT1=C	A
+		D1=D1+	5		O_HASHEND
+		A=DAT1	A		->bufend
+		A=A-C	A		bufend - nextnode (new)
+		A=-A	A		link for the hash
+		D1=C			->nextnode (new)
+		C=RSTK			->hash storage
+		CD1EX
+		DAT1=A	A		And set the offset for the hash
+		D1=C			->node
+		GOTO	symbaddmacnode	And fill the node with define data
+
+**********************************************************************
+* Redefining ROMP is allowed after EXTERNAL.
+* See entry docs for error condition explanations.
+**********************************************************************
+symbsameromp	
+		D1=D1+	1		->address
+		?D=0	A		address == 0
+		GOYES	latedecla	Too late EXTERNAL
+		C=DAT1	A		old address
+		?C#0	A
+		GOYES	dupliromp	Duplicate NAME
+* EXTERNAL --> NAME occurred, fix data in node (address,visible?,hash)
+		C=D	A
+		DAT1=C	A		change address
+		D1=D1+	5+3		Skip address,cmdnum
+		C=D	S		visible?
+		DAT1=C	S
+		D1=D1+	1
+* Now choose how to set the hash
+		?D=0	S
+		GOYES	mknohsh		No hash at all
+		?ST=0	qXNAME
+		GOYES	mkhashtmp	Not xname, copy from TEMPLAB
+		CD0EX
+		D0=C			->xlabel
+		D0=D0+	2		->label
+		A=B	W
+		ASLC			A[0]=xchars-1
+		A=A-1	A		chars-1
+		GONC	+
+mkhashtmp	C=R2.F	A
+		CD0EX			C[A] = ->label
+		D0=(2)	O_TEMPLAB
+		A=DAT0	B
+		D0=D0+	1
++		DAT1=A	B
+		D1=D1+	1
+		A=DAT0	W
+		DAT1=A	W
+		D0=D0+	16
+		D1=D1+	16
+		A=DAT0	W
+		DAT1=A	W
+		D0=C			->label
+mknohsh		GOTO	symboldok
+
+latedecla	B=0	A		Restore toklen
+		BSLC
+		CERRL	errDeclaration	"Used Before Declaration"
+dupliromp	B=0	A		Restore toklen
+		BSLC
+		CERRL	errDupName	"Duplicate Name"
+
+**********************************************************************
+* Now we found the last node which we should link to the new slot
+* A[A] = ->linkfield (zero contents)
+**********************************************************************
+symbaddromp
+
+* Calculate memory required for ROMP slot
+
+		C=B	S		symblen
+		C=0	A		
+		CSLC			symblen in C[A]
+		C=C+1	A		chars in label
+		C=C+C	A		nibbles in label
+* +5 for rel, +1 for symblen, +1 for type
+		C=C+CON	A,5+1+1
+* +5 for address, +3 for cmdnum, +1 for visible?, +1 for hashname lenght
+		C=C+CON	A,5+3+1+1
+* 2*16 for hashname
+		C=C+CON	A,16
+		C=C+CON	A,16
+
+* Now calculate the node location and update NEXTNODE and the link
+
+		CD1EX			D1 = need
+		RSTK=C			->linkfield
+		A=R2.F	A
+		LC(5)	O_NEXTNODE
+		C=C+A	A
+		CD1EX			C[A] = need
+		A=DAT1	A		->nextnode
+		A=A-C	A
+		DAT1=A	A		->nextnode (new)
+		C=RSTK			->linkfield
+		D1=C			->linkfield
+		C=A-C	A		negative offset to new node
+		DAT1=C	A
+		D1=A			->node
+
+* Now add the definition itself, link first
+symbrompnode	C=0	A		0-link
+		DAT1=C	A
+		D1=D1+	5
+* Now symblen and label
+		C=B	S		symblen
+		DAT1=C	S
+		D1=D1+	1
+		P=C	15		symblen
+		A=DAT0	WP		copy symbol itself
+		DAT1=A	WP
+		CD0EX
+		C+P+1
+		CD1EX
+		C+P+1
+		D0=C
+		A=DAT1	WP
+		DAT0=A	WP
+		CD0EX
+		C+P+1
+		CD1EX
+		A=C	A		And fix ->symbol back to normal
+		C=0	A
+		CPEX	0		
+		A=A-C	A
+		A=A-1	A
+		D0=A
+* Now type
+		C=B	A		SYMB_ROMP
+		DAT1=C	B
+		D1=D1+	1
+* Now address
+		C=D	A
+		DAT1=C	A
+		D1=D1+	5
+* Now cmdnum
+		C=0	A
+		DAT1=C	X
+		D1=D1+	3
+* Now visible?
+		C=D	S
+		DAT1=C	S
+		D1=D1+	1
+		?D=0	S
+		GOYES	nonewhshcpy	No need if not visible
+* Choose how to add the visible hash name
+		?ST=0	qXNAME
+		GOYES	+		Not xname, copy from TEMPLAB
+		CD0EX
+		D0=C			->xlabel
+		D0=D0+	2		->label
+		A=B	W
+		ASLC			A[0]=xchars-1
+		A=A-1	A		chars-1
+		GONC	++
++		C=R2.F	A
+		CD0EX			C[A] = ->label
+		D0=(2)	O_TEMPLAB
+		A=DAT0	B
+		D0=D0+	1
+++		DAT1=A	B
+		D1=D1+	1
+		A=DAT0	W
+		DAT1=A	W
+		D0=D0+	16
+		D1=D1+	16
+		A=DAT0	W
+		DAT1=A	W
+		D0=C			->label
+nonewhshcpy
+* Now increment number of total different declarations. Note that
+* if a previous symbol was found (eg EXTERNAL) then no increment is done
+		C=R2.F	A
+		D1=C
+		D1=(2)	O_ROMPS
+		C=DAT1	X
+		C=C+1	X
+		DAT1=C	X
+* And restore variables
+		C=B	W
+		CSR	W
+		D1=C			->pc
+		B=0	A
+		BSLC			toklen
+		RTNCC
+**********************************************************************
+* Add new romp, first one for its hash!
+* On entry:	D1   = ->hash storage	D0 = ->symbol	B[1-5] = pc
+*		D[A] = address		B[S] = symblen
+*		D[S] = visible?		B[0] = type
+**********************************************************************
+add1stromp
+
+* Calculate memory required for ROMP slot
+
+		C=B	S		symblen
+		C=0	A		
+		CSLC			symblen in C[A]
+		C=C+1	A		chars in label
+		C=C+C	A		nibbles in label
+* +5 for rel, +1 for symblen, +1 for type
+		C=C+CON	A,5+1+1
+* +5 for address, +3 for cmdnum, +1 for visible?, +1 for hashname len
+		C=C+CON	A,5+3+1+1
+* +2*16 for hashname itself
+		C=C+CON	A,16
+		C=C+CON	A,16
+
+* And set the offset in the hash table, relative to ->bufend
+
+		CD1EX			D1 = need
+		RSTK=C			->hash storage
+		A=R2.F	A
+		LC(5)	O_NEXTNODE
+		A=A+C	A
+		AD1EX			A[A] = need
+		C=DAT1	A
+		C=C-A	A		nextnode (new)
+		DAT1=C	A
+		D1=D1+	5		O_HASHEND
+		A=DAT1	A		->bufend
+		A=A-C	A		bufend - nextnode (new)
+		A=-A	A		link for the hash
+		D1=C			->nextnode (new)
+		C=RSTK			->hash storage
+		CD1EX
+		DAT1=A	A		And set the offset for the hash
+		D1=C			->node
+		GOTO	symbrompnode	And fill the node with romp data
+**********************************************************************
+
+
+**********************************************************************
+* Add new secondary hash.
+* On entry:	D0   = ->label
+*		B[A] = chars-1
+*		TEMPLAB = chars, hash
+*		Command number is always set to 000. Fixed elsewhere
+*		If symbol already exists it doesn't matter, duplicates
+*		are ok because the symbol is never scanned by name, simply
+*		because the node is not hashed.
+* Hash node:
+*	CON(5)	0	No offset to next - never hashed
+*	CON(1)	symblen
+*	NIBASC	\label\
+*	CON(1)	type
+*	CON(3)	cmdnum
+*	CON(1)	hashlen
+*	NIBASC	\hash\
+**********************************************************************
+AddHash	
+* Calculate required memory
+		A=R2	A
+		AD0EX
+		D0=(2)	O_TEMPLAB
+		C=0	A
+		C=DAT0	1		hchars-1
+		D0=A
+		C=C+C	A		2(hchars-1)
+		C=C+B	A
+		C=C+B	A		2(hchars-1)+2(chars-1)
+* REL(5) LEN(1) CHR+ TYPE(1) CMDNUM(3) LEN(1) CHR+
+		C=C+CON	A,5+1+2+1+3+1+2
+		RSTK=C			Need
+* Get location for the node
+		A=R2	A
+		LC(5)	O_NEXTNODE
+		C=C+A	A
+		CD1EX
+		D=C	A		->pc
+		C=RSTK			need
+		A=DAT1	A		->nextnode
+		A=A-C	A		->nextnode (new)
+		DAT1=A	A
+		D1=A			->node
+		C=0	A
+		DAT1=C	A		link
+		D1=D1+	5
+		C=B	A
+		DAT1=C	B		len
+		D1=D1+	1
+		P=C	0		chars-1
+		A=DAT0	WP		Copy label to node
+		DAT1=A	WP
+		CD0EX
+		C+P+1
+		CD1EX
+		C+P+1
+		D0=C
+		A=DAT1	WP
+		DAT0=A	WP
+		CD0EX
+		C+P+1
+		CD1EX
+		C=C-B	A
+		C=C-1	A
+		D0=C			->label
+		P=	0
+		LC(N)	1+3		Add type and cmdnum
+		CON(1)	SYMB_HASH
+		CON(3)	0
+		DAT1=C	A
+		D1=D1+	4
+		A=R2	A		Copy hash to node
+		AD0EX
+		D0=(2)	O_TEMPLAB
+		C=DAT0	B
+		DAT1=C	B
+		D0=D0+	1
+		D1=D1+	1
+		P=C	0
+		C=DAT0	WP
+		DAT1=C	WP
+		CD0EX
+		C+P+1
+		CD1EX
+		C+P+1
+		D0=C
+		C=DAT1	WP
+		DAT0=C	WP
+		P=	0
+		D0=A			->label
+		C=D	A
+		D1=C			->pc
+		RTN
+
+**********************************************************************
+* Skip rest of node
+* Entry:	D0   = ->type
+* Exit:		D0   = ->next node
+*		C[A] = ->next node
+*		P= 0
+* Uses:		A[A] C[A] D0 P
+**********************************************************************
+SkipNode	A=DAT0	B		type
+		D0=D0+	1		Skip type
+		P=	0
+		LC(1)	SYMB_HASH
+		?A=C	P
+		GOYES	skpHASH
+		LC(1)	SYMB_ROMP
+		?A=C	P
+		GOYES	skpROMP
+		LC(1)	SYMB_DEFINE
+		?A=C	P
+		GOYES	skpDEFINE
+		LC(1)	SYMB_MACRO
+		?A=C	P
+		GOYES	skpMACRO
+		C=DAT0	B		valuelen
+		P=C	0
+		CD0EX
+		C+P+1
+		C=C+1	A
+		D0=C
+		P=	0
+		RTNCC
+skpHASH		D0=D0+	3		Skip cmdnum
+		C=DAT0	B		chars-1 in hash
+		P=C	0
+		CD0EX
+		C+P+1
+		C+P+1
+		C=C+1	A
+		D0=C
+		P=	0
+		RTNCC
+skpROMP		LC(5)	5+3+1+1+2*16	address, cmdnum, visible?, chars, hash
+		AD0EX
+		C=C+A	A
+		D0=C
+		RTNCC
+skpMACRO	D0=D0+	1		Skip macroflag
+skpDEFINE	D0=D0+	5		Skip DOCSTR
+		A=DAT0	A		$len
+		CD0EX
+		C=C+A	A		->$define tail
+		C=C+CON	A,10		->slot tail
+		D0=C
+		RTNCC
+**********************************************************************
+
+

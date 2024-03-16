@@ -1,0 +1,1262 @@
+**********************************************************************
+*		JAZZ	- Stepping code for xDB
+**********************************************************************
+
+* Save [A] of R0-R3 in gSAVER0_R3
+
+SaveR0R3	DADDR	gSAVER0_R3,C
+		D0=C
+		C=R0
+		GOSUB	+
+		C=R1
+		GOSUB	+
+		C=R2
+		GOSUB	+
+		C=R3
++		DAT0=C	A
+		D0=D0+	5
+		RTN
+
+* Restore [A] of R0-R3 from gSAVER0_R3
+
+RestR0R3	DADDR	gSAVER0_R3,C
+		D0=C
+		GOSUB	+
+		R0=C
+		GOSUB	+
+		R1=C
+		GOSUB	+
+		R2=C
+		GOSUB	+
+		R3=C
+		RTN
++		C=DAT0	A
+		D0=D0+	5
+		RTN
+
+* Put R0[W] to R4[W] in their DB Rn slots
+
+* Set C[A] and D1 = ->REG_R0
+
+ADDR_R0	MACRO
+	DADDR	REG_R0,C
+	D1=C
+ADDR_R0	ENDM
+
+STWC	MACRO
+	DAT1=C	W
+	D1=D1+	16
+STWC	ENDM
+
+
+* Get R0[W] to R4[W] from their DB Rn slots.
+* The in-line coding is to assert that only one RSTK level is used.
+
+LDWC	MACRO
+	C=DAT1	W
+	D1=D1+	16
+LDWC	ENDM
+
+loadscratch	ADDR_R0
+		LDWC
+		R0=C
+		LDWC
+		R1=C
+		LDWC	
+		R2=C
+		LDWC
+		R3=C
+		LDWC
+		R4=C
+		RTNCC
+
+** Store CPU state except the PC and RSTK in their slots. This is called
+** after executing a general instruction.
+
+* D0 = ->REG_RSTK
+* C[A] gets trashed.
+
+GETRSTK	MACRO
+	C=A	A
+	RSTK=C
+	DADDR	REG_RSTK,C
+	D0=C
+	C=RSTK
+	A=C	A
+GETRSTK	ENDM
+
+sp_getrstk
+		GETRSTK
+		RTNCC
+
+** Store registers in memory. This routine assumes that registers
+** A, C, D, D0, R4.A, P, Carry, and HEX/DEX mode, have previously been
+** stored in the IEXEC buffer.
+**
+** In:
+**	D0 = &SREG_HST
+**
+** Out:
+**	R4.A = address of DB data area.
+**
+**
+** For details on the IEXEC pad save order, see the db_instr_pad code,
+** which is added to the IEXEC buffer by the CatchThis routine.
+**
+
+Recollect	CD0EX
+		D=C	A			D[A] = saved D0
+		GOSUBL	FindDBPAR		D0 = R4[A] = ->DBBUF
+		C=D	A
+		D0=C				Restore D0
+
+		DADDR	REG_D1,C		C[A] = ->REG_D1
+		CD1EX
+		DAT1=C	A			REG_D1 = DB D1
+		D1=D1+	(REG_MODE)-(REG_D1)
+		D0=D0-	(SREG_HST)-(SREG_MODE)
+		A=DAT0	1			A[0] = saved DEC/HEX mode
+		DAT1=A	1			REG_MODE = saved DEC/HEX mode
+		DADDR	REG_P,C			C[A] = ->REG_P
+		D1=C
+		D0=D0-	(SREG_MODE)-(SREG_P)
+		A=DAT0	1			A[0] = saved P
+		DAT1=A	1			REG_P = saved P
+
+* Save registers A-D
+
+		LSUB	(SREG_P)-(SREG_A),D0
+		D1=D1+	(REG_A)-(REG_P)
+		A=DAT0	8			A.8 = saved A.8
+		DAT1=A	W			REG_A = DB A[W]
+
+		D1=D1+	(REG_B)-(REG_A)
+		BCEX	W
+		DAT1=C	W			REG_B = DB B[W]
+
+		D1=D1+	(REG_C)-(REG_B)
+		D0=D0-	(SREG_A)-(SREG_C)
+		C=B	W
+		C=DAT0	8			C.8 = saved C.8
+		DAT1=C	W			REG_C = DB C[W]
+
+		D1=D1+	(REG_D)-(REG_C)
+		D0=D0+	(SREG_D)-(SREG_C)
+		C=D	W			C[W] = D[W] except low 5 digits
+		C=DAT0	A			C[A] = saved D[A]
+		DAT1=C	W			REG_D = DB D[W]
+
+* Save carry
+
+		LSUB	(SREG_D)-(SREG_CRY),D0
+		DADDR	REG_CRY,D1
+		C=DAT0	1			C[0] = saved CRY (0/1)
+		DAT1=C	1			REG_CRY = saved CRY
+
+* Save D0 ST HST
+
+		DADDR	REG_D0,D1		D1 = ->REG_D0
+		D0=D0-	(SREG_CRY)-(SREG_D0)	D0 = ->SREG_D0
+		C=DAT0	A			C[A] = saved D0
+		DAT1=C	A			REG_D0 = save D0
+
+		D1=D1+	(REG_ST)-(REG_D0)
+		C=ST				C[X] = ST[X]
+		DAT1=C	X			REG_ST = ST[X]
+
+		D1=D1+	(REG_HST)-(REG_ST)
+		LADD	(SREG_HST)-(SREG_D0),D0
+		C=DAT0	1			C[0] = saved HST
+		DAT1=C	1			REG_HST = saved HST
+
+* Save R0-R4
+
+		LSUB	(REG_HST)-(REG_R4),D1
+		D0=D0-	(SREG_HST)-(SREG_R4)
+		C=R4			C[W] = R4[W] (except low 5 nibbles)
+		C=DAT0	A		C[A] = saved R4[A]
+		DAT1=C	W		Save R4[W]
+		ADDR_R0
+		C=R0
+		STWC
+		C=R1
+		STWC
+		C=R2
+		STWC
+		C=R3
+		STWC
+		RTNCC
+
+** Load DB registers from stored set and jump. The transfer address is
+** passed in A.A. Uses 3 levels of RSTK.
+
+* D0 = &REG_A
+* C.A gets trashed.
+
+emugetar	C=A	A
+		RSTK=C
+		DADDR	REG_A,C
+		D0=C
+		C=RSTK
+		A=C	A
+		RTNCC
+
+Trigger		C=A	A
+		RSTK=C			Push transfer address
+
+		C=R4.F	A		Save R4[A] in D[A] across call
+		D=C	A
+		GOSUB	loadscratch	Load DB R0-R4
+		C=D	A
+		CR4EX.F	A		Swap loaded R4[A] and saved R4[A]
+		D=C	A
+		DADDR	REG_A,C
+		D0=C			D0 = ->REG_A
+		C=D	A
+		R4=C.F	A		Load R4[A]
+
+* From here on, R4.A no longer points to the data area* use D0
+* exclusively, for accessing the load data.
+
+		A=DAT0	W		A[W] = DB A
+
+		D0=D0+	(REG_B)-(REG_A)
+		C=DAT0	W
+		B=C	W		B[W] = DB B
+
+		LADD	(REG_D)-(REG_B),D0
+		C=DAT0	W
+		D=C	W		D[W] = DB D
+
+		D0=D0-	(REG_D)-(REG_C)
+		C=DAT0	W		C[W] = DB C
+		RSTK=C			Push DB C[A]
+
+		LC(5)	(REG_D0)-(REG_C)
+		AD0EX
+		A=A+C	A
+		AD0EX			D0 = ->REG_D0
+		C=DAT0	A
+		RSTK=C			Push DB D0
+
+		D0=D0+	(REG_D1)-(REG_D0)
+		C=DAT0	A
+		D1=C			D1 = DB D1
+
+		D0=D0+	(REG_ST)-(REG_D1)
+		C=DAT0	3
+		ST=C			ST[X] = DB ST[X]
+
+		D0=D0+	(REG_MODE)-(REG_ST)
+		SETHEX			Assume HEX
+		C=0	B
+		C=DAT0	1		C[B] = hex(0) or dec(1)
+		D0=D0-	1		D0 = ->REG_HST
+		?C=0	B
+		GOYES	+		Hex - continue
+		SETDEC			Set mode to dec
++		C=DAT0	1		C[0] = HST
+		CSRB.F	P
+		SB=0
+		CSRB.F	P		Update HST:SB
+
+		LSUB	(REG_HST)-(REG_P),D0
+
+		C=DAT0	1
+		P=C	0		P = DB P
+
+		D0=D0-	(REG_P)-(REG_CRY)
+		C=0	B
+		C=DAT0	1		C[B] = DB C-bit
+		?C#0	B
+		GOYES	+		Set DB CRY
++		C=RSTK
+		D0=C			D0 = DB D0
+		C=RSTK			C[A] = DB C[A]
+		RTN
+
+** Save ST[X] in gSTEPST
+
+getstsave	DADDR	gSTEPST,D0
+		C=DAT0	X		C[X] = gSTEPST
+		RTNCC
+
+emusavest	GOSUB	getstsave	D0 = ->gSTEPST
+		C=ST
+		DAT0=C	X		gSTEPST = ST
+		RTNCC
+
+** Restore ST[X] from gSTEPST
+
+emurestorest	GOSUB	getstsave	C[X] = gSTEPST
+		ST=C
+		RTNCC
+
+**********************************************************************
+** General instruction step. We copy the opcode to gIEXEC and pad it
+** with a RET instruction. We then load all registers and transfer
+** control to it. When it returns, we store all registers back and jump
+** to step_next to advance to the next instruction. Step_shallow is
+** identical to step_single, except CALLs call without stepping.
+**
+** NOTE: the sense of gSTEPSTeep is backwards. This needs to be
+** fixed.
+**********************************************************************
+
+DbgSingle+	ST=0	sSTEPDEEP	Unflag deep step
+		GOTO	sp_step+
+DbgShallow+	ST=1	sSTEPDEEP	Flag deep
+
+sp_step+	ST=1	sSTEPDISP	Flag display
+		GOSUBL	Argument?	Check if we have an argument
+		GOC	sp_step		Got arg, continue
+		LC(5)	#FFFFF		Set ARG = #FFFFF
+		DAT0=C	A
+		D0=D0-	(gARG)-(gARG?)
+		DAT0=C	1
+		GOTO	sp_step
+
+DbgSingle	ST=0	sSTEPDEEP	Unflag deep step
+		GOTO	sp_step-
+DbgShallow	ST=1	sSTEPDEEP	Flag deep step
+
+sp_step-	ST=0	sSTEPDISP	Unflag display	
+
+sp_step		GOSBVL	=FlushAttn	Flush pending ATTN
+		ST=0	sSTEPARG	Assume we have no ARG
+		GOSUBL	Argument?	Check if we have an argument
+		GONC	++		No - just step
+		ST=1	sSTEPARG	Indicate we have ARG
+		?C#0	A
+		GOYES	+		Nonzero - step
+		GOLONG	DbgMain		Zero - back to main loop
++		GOSUB	emusavest	Save away ST[X] in gSTEPST
+		GOSUBL	db_ctopict	Swicth to PICT unless disabled
+		GOTO	emuagain
+++		GOSUB	emusavest	Save away ST[X] in gSTEPST
+
+* Step one more instruction. This entry is used to loop multiple
+* steps, while step_step above is the joint entry point for both [+]
+* and [-].
+
+emuagain
+*		GOSUBL	GetTerminator	C[A] = ->Terminator
+*		C=C+CON	A,10		C[A] = ->first instr in Terminator
+*		GOSUBL	GetPC		A[A] = DB PC
+*		?A#C	A
+*		GOYES	+		Not trying to step Terminator
+*		GOLONG	db_done		Done - return from MLDB
+
++		GOSUBL	NewInstr	Span current instruction
+
+		GOSUBL	emurestorest	ST[X] = DB flags
+		?ST=0	sSTEPDISP
+		GOYES	+
+		?ST=0	sSTEPARG
+		GOYES	+
+		GOSUBL	DbgRedraw	Display if ARG & requested
+
++		GOSUBL	GetFlags
+
+f_dbg4		IF fDBGSERVER
+		?ST=0	gSERVER?	Local mode - check fro ATTN
+		GOYES	stp113
+
+*		GOSBVL	=POPUART	Any character?
+		GOSUBL	POPUART
+		GOC	stp119		No - continue
+		GONC	stp117		Yes - clear counter and stop
+f_dbg4		ENDIF		
+
+stp113		GOSBVL	=chk_attn	ATTN?
+		GOC	+		Yes - interrupt
+		GOSBVL	=CINRTN		This is needed if interrupts are off
+		?CBIT=0	15
+		GOYES	stp119
++		GOSBVL	=FlushAttn	Yes - clear counter and stop
+		GOSUB	MsgDelay
+		CSTRING	'Stopped'
+stp117		GOLONG	DbgNew
+
+stp119		GOSUB	emurestorest	Restore ST from gSTEPST
+		GOSUBL	GetPC		A[A] = DB PC
+
+		C=A	A		C[A] = DB PC
+		GOSUBL	db_bpt_p	Do we have a breakpoint here?
+		GONC	stp129		No - ignore
+
+		D0=D0+	(BPTSIZE)-2	Advance D0 to BPT counter
+		C=DAT0	B		C[B] = counter
+		C=C+1	B		Inc counter
+		DAT0=C	B		Write back counter
+		?ST=0	sSTEPARG
+		GOYES	stp129		No argument - don't stop
+		?CBIT=1	7
+		GOYES	stp129		Counter is negative - more to go
+
+*		GOSUBL	GetFlags
+*		?ST=0	dbBEEP?
+*		GOYES	stp123		No BPT beep
+*		LC(2)	#A4
+*		GOSBVL	=RCKBp		Beep	(DOES INTOFF/INTON!)
+stp123		GOSUB	MsgDelay
+		CSTRING	'Breakpoint Stop'
+		GOLONG	DbgNew
+
+
+stp129		GOSUBL	GetPC
+		D0=A			D0 = DB PC
+		GOSUBL	GetISize	D1 = ->gISIZE
+		C=DAT1	B		C[B] = opcode size
+		?C#0	B
+		GOYES	+
+		GOLONG	DbgMain		Return if opcode is zero
+
++		D1=D1+	(gIST)-(gISIZE)	D1 = ->gIST
+		A=DAT1	3		A[X] = IB_xxx bits
+		?ABIT=0	ib_emul
+		GOYES	+		No emulate, execute via buffer
+		GOTO	step_emul	Emulate
+
++		R0=C
+		DADDR	gIEXEC,C
+		B=C	A		B[A] = ->gIEXEC
+		D1=C			D1 = ->gIEXEC
+		C=R0
+
+		?CBIT=0	4		Opcode size < 16 nibbles
+		GOYES	+		Yes
+		A=DAT0	W		No - A[W] = first 16 nibbles
+		DAT1=A	W		Copy to buffer
+		D0=D0+	16		Advance opcode ptr
+		D1=D1+	16		Advance buffer ptr
+		CBIT=0	4
++		P=	0
+		?C=0	P
+		GOYES	+		Nothing left
+		P=C	0
+		P=P-1
+		A=DAT0	WP		Copy remaining opcode
+		DAT1=A	WP
+		CD1EX
+		C+P+1			Advance buffer ptr
+		D1=C
+		P=	0
+
++		A=B	A
+		R0=A			R0[A] = IEXEC address
+		GOSUBL	CatchThis	Add state-saving code to IEXEC
+		ADDR	stpcont,C	Continue at stpcont when done
+		GOSUBL	CatchMe		Add GOVLNG stpcont
+
+		A=R0			A[A] = ->gIEXEC
+		GOTO	Trigger		Load registers and PC=A
+
+stpcont		GOSUB	Recollect	Recollect and store CPU state
+		GOTO	emunext		Advance PC to next instruction
+
+ind_a		PC=A
+
+* Instruction emulator. We enter here to emulate all instructions that
+* affect the PC or the return stack, such as PUSH, CALL, and BRCC.  We
+* accomplish this by looking up the opcode in the emulator opcode
+* switch table, sp_emswitch, and dispatch to the opcode specific
+* emulator code. Upon entry,
+*
+*	D1 = &gIST
+*	A.X= IB_xxx emulator bits
+*	D0 = DB PC
+*	C.B= opcode size
+*
+* Note that the table must end with a catch-all.
+
+step_emul	B=C	B		B[B] = opcode size
+		C=A	X
+		D=C	X		D[X] = IB_xxx bits
+		ADDR	sp_emswitch,D1
+
+emu100		C=DAT1	1		Get mask/data size - 1
+		P=C	0		P = size - 1
+		D1=D1+	1		Advance to mask
+		A=DAT0	WP		A[WP] = opcode
+		C=DAT1	WP		C[WP] = mask
+		C=C&A	WP		C[WP] = mask & opcode
+		CD1EX
+		C+P+1			Advance to data
+		CD1EX
+		A=DAT1	WP		A[WP] = data pattern
+		CD1EX
+		C+P+1			Advance to offset
+		CD1EX
+		D1=D1+	3		Advance to next entry
+		?A#C	WP
+		GOYES	emu100		Loop until we have a match
+
+		D1=D1-	3		Back down to offset
+		P=	0
+		A=0	A
+		A=DAT1	3		A[A] = offset
+		CD1EX			C[A] = address of offset
+		C=C+A	A		C[A] = driver address
+		PC=C			Dispatch
+
+* 
+* Emulator switch table. Each entry consists of a mask, data, and
+* 3-nybble offset. Only opcode marked IB_EMUL in the main table ever
+* gets dispatched here, so we only make sure the entires are mutually
+* exclusive. Register contents upon entry:
+*
+*	D0  = DB PC
+*	B.B = opcode size
+*	D.X = instruction IB_xxx emulator bits
+*	ST:8= set if deep trace, clear if shallow
+*
+
+EMENT	MACRO $nnib $mask $data $offs
+	CON(1)	($1)-1
+	CON($1)	$2
+	CON($1)	$3
+	POS3	$4
+EMENT	ENDM
+
+sp_emswitch	EMENT	2,#FF,#0,EmuRTNSXM
+		EMENT	2,#FF,#10,EmuRTN
+		EMENT	2,#FF,#20,EmuRTNSC
+		EMENT	2,#FF,#30,EmuRTNCC
+		EMENT	2,#FF,#60,EmuRSTK=C
+		EMENT	2,#FF,#70,EmuC=RSTK
+		EMENT	2,#FF,#F0,EmuRTI
+		EMENT	1,#F,#4,EmuGOC
+		EMENT	1,#F,#5,EmuGONC
+		EMENT	1,#F,#6,EmuGOTO
+		EMENT	2,#FF,#C8,EmuGOLONG
+		EMENT	1,#F,#7,EmuGOSUB
+		EMENT	2,#FF,#E8,EmuGOSUBL
+		EMENT	2,#FF,#D8,EmuGOVLNG
+		EMENT	2,#FF,#F8,EmuGOSBVL
+		EMENT	4,#FFFF,#C808,EmuPC=@A
+		EMENT	4,#FFFF,#E808,EmuPC=@C
+		EMENT	4,#FFFF,#6808,Emu?BIT
+		EMENT	4,#FFFF,#7808,Emu?BIT
+		EMENT	4,#FFFF,#A808,Emu?BIT
+		EMENT	4,#FFFF,#B808,Emu?BIT
+		EMENT	4,#FFFF,#2B18,EmuPC=A
+		EMENT	4,#FFFF,#3B18,EmuPC=C
+		EMENT	4,#FFFF,#4B18,EmuA=PC
+		EMENT	4,#FFFF,#5B18,EmuC=PC
+		EMENT	4,#FFFF,#6B18,EmuAPCEX
+		EMENT	4,#FFFF,#7B18,EmuCPCEX
+		EMENT	2,#FF,#38,EmuTEST	?HST=x
+		EMENT	2,#FF,#68,EmuTEST	?ST=0
+		EMENT	2,#FF,#78,EmuTEST	?ST=1
+		EMENT	2,#FF,#88,EmuTEST	?P#
+		EMENT	2,#FF,#98,EmuTEST	?P=
+		EMENT	2,#FF,#A8,EmuTEST
+		EMENT	2,#FF,#B8,EmuTEST
+		EMENT	1,#F,#9,EmuTEST
+		EMENT	5,#FFFFF,#38B08,Emu?HS1
+		EMENT	1,#0,#0,EmuREFUSE
+
+* Set PC to C[A]. Trashes D[A]
+
+SetPC		D=C	A
+		DADDR	REG_PC,D0		D0 = ->REG_PC
+		C=D	A
+		DAT0=C	A			Update PC
+		RTNCC
+
+* Set CRY = C[0]
+
+SetCRY		D0=C
+		C=R4.F	A
+		CD0EX
+		D0=D0+	REG_CRY
+		DAT0=C	1			DB CRY = C[0]
+		RTNCC
+
+**********************************************************************
+** RTI
+**********************************************************************
+-		RTI
+
+EmuRTI		GOSUB	-
+		GOTO	EmuRTN
+**********************************************************************
+** RTNSXM
+**********************************************************************
+-		RTNSXM
+EmuRTNSXM	GOSUB	-
+**********************************************************************
+** RTN
+**********************************************************************
+EmuRTN		GOSUB	loadrstk	Load RSTK 0-7
+		C=RSTK			C[A] = return address
+		GOSUB	SetPC		Set PC to it
+		ST=1	2		Continue with step_this
+		ST=0	3		use current DB PC
+		GOTO	saverstk	Write back RSTK 0-7 and continue
+
+**********************************************************************
+** RTNCS
+**********************************************************************
+EmuRTNSC	C=0	P
+		C=C+1	P
+		GOSUB	SetCRY	Set CRY = C[0]
+		GONC	EmuRTN		Perform RTN
+**********************************************************************
+** RTNCC
+**********************************************************************
+EmuRTNCC	C=0	P
+		GOSUB	SetCRY		Set CRY = C[0]
+		GONC	EmuRTN		Perform RTN
+**********************************************************************
+** RSTK=C
+**********************************************************************
+EmuRSTK=C	GOSUB	loadc[a]	C[A] = DB C[A]
+		R0=C			R0[A] = DB C[A]
+		GOSUB	loadrstk	Load DB RSTK 0-7
+		C=R0
+		RSTK=C			Push DB C[A]
+		ST=0	2		Continue with step_next
+		ST=0	3		Use current DB PC
+		GOTO	saverstk	Write back RSTK 0-7
+
+loadc[a]	GOSUB	emugetar	D0 = ->REG_A
+		D0=D0+	16
+		D0=D0+	16		D0 = ->REG_C
+		C=DAT0	A		C[A] = DB C[A]
+		RTNCC
+**********************************************************************
+** C=RSTK
+**********************************************************************
+EmuC=RSTK	GOSUB	loadc[a]	D0 = ->REG_C
+		CD0EX
+		R0=C			R0 = ->REG_C
+		GOSUB	loadrstk	Load DB RSTK 0-7, go step_next
+		C=RSTK			Pop off C
+		A=R0
+		D0=A			D0 = ->db-r_c
+		DAT0=C	A		DB C[A] = DB RSTK0
+		ST=0	2		Continue with step_next
+		ST=0	3		Use current DB PC
+		GOTO	saverstk	Write back RSTK 0-7, go step_next
+
+**********************************************************************
+** JUMP C, MOVE C, PC
+**********************************************************************
+EmuPC=C		GOSUB	loadc[a]	C[A] = DB C[A]
+
+emuthispc	GOSUB	SetPC		DB PC = DB C[A]
+
+**********************************************************************
+* If we have ARG, continue stepping at current DB PC (step_step). If
+* no ARG we stop at the current PC (DbgNew).
+**********************************************************************
+emuthis		GOSUB	emucycles	ZZZ
+		GOSUBL	Argument?	C[A]=ARG D0=->ARG
+		GONC	sthi10		No ARG
+		C=C-1	A		ARG--
+		GOC	sthi10		ARG was 0
+		?C=0	A
+		GOYES	sthi10		ARG was 1
+		DAT0=C	A		Write back ARG
+		GOTO	emuagain	Continue stepping
+sthi10		GOLONG	DbgNew		Continue
+
+**********************************************************************
+* Continue stepping at next instruction if we have ARG. Otherwise halt
+* at next instruction (DbgNext). 
+**********************************************************************
+emunext		GOSUB	emucycles	Update cycles
+		GOSUBL	InitWatch	Update RPL watchpoints
+		GOSUBL	Argument?	C[A]=ARG D0=->ARG
+		GONC	spnx17		No ARG
+		C=C-1	A		ARG--
+		GOC	spnx17		ARG was 0
+		?C=0	A
+		GOYES	spnx17		ARG was 1
+		DAT0=C	A		Write back ARG
+*		GOSUBL	NewInstr	Span current instruction
+		GOSUBL	db_advance	Advance to next
+		GOTO	emuagain	Single step next instruction
+spnx17		GOSUBL	ArgReset	Remove ARG
+		GOLONG	DbgNext		Continue with main loop
+
+**********************************************************************
+** ZZZ - Update cycle variables
+**********************************************************************
+emucycles	DADDR	gICYCLES,C
+		D0=C			D0 = ->gICYCLES
+		A=0	W
+		A=DAT0	X		A[B] = cycles
+		?ABIT=0	11
+		GOYES	addcy		No fix needed
+		ABIT=0	11
+		C=R4.F	A
+		D0=C
+		D0=D0+	REG_CRY
+		C=DAT0	1
+		?ABIT=1	10
+		GOYES	+
+		?C=0	P
+		GOYES	addcy		CC: No fix
+		GONC	addcfix
++		?C#0	P
+		GOYES	addcy		CS: No fix
+addcfix		A=A+CON	B,10		Increase cycles by 20
+		A=A+CON	B,10
+addcy		A=0	XS		Clear flags
+		LC(5)	(gTOT_CYCLES)-(DBBUF)
+		AR4EX.F	A
+		C=C+A	A
+		AR4EX.F	A
+		D0=C
+		C=DAT0	cyc_size
+		C=C+A	W		Fix total cycles
+		DAT0=C	cyc_size
+		D0=D0+	(gCUR_CYCLES)-(gTOT_CYCLES)
+		C=DAT0	cyc_size
+		C=C+A	W		Fix current cycles
+		DAT0=C	cyc_size
+		RTN
+
+**********************************************************************
+** PC=A
+**********************************************************************
+EmuPC=A		GOSUB	emugetar		D0 = ->REG_A
+		C=DAT0	A			C[A] = DB A[A]
+		GOTO	emuthispc		DB PC = DB A[A]
+
+**********************************************************************
+** PC=(C)
+**********************************************************************
+EmuPC=@C	GOSUB	loadc[a]		C[A] = DB C[A]
+		D0=C				D0 = DB C[A]
+		C=DAT0	A			C[A] = @DB C[A]
+		GOTO	emuthispc		DB PC = @DB C[A], continue
+
+**********************************************************************
+** PC=(A)
+**********************************************************************
+EmuPC=@A	GOSUB	emugetar		D0 = ->REG_A
+		C=DAT0	A			C[A] = DB A[A]
+		D0=C				D0 = DB A[A]
+		C=DAT0	A			C[A] = @DB A[A]
+		GOTO	emuthispc		DB PC = @DB A[A], continue
+
+**********************************************************************
+** GOVLNG
+**********************************************************************
+EmuGOVLNG	D0=D0+	2			Advance to address
+		C=DAT0	A			C[A] = new PC
+		GOTO	emuthispc		DB PC = C[A], continue
+
+**********************************************************************
+** GOLONG
+**********************************************************************
+EmuGOLONG	D0=D0+	2			Advance to offset
+		CD0EX
+		D0=C
+		R0=C				R0 = DB PC + 2
+		C=0	W
+		C=DAT0	4			C[A] = offset
+		GOSUB	signextend4		Sign-extend C.4 --> C[W]
+		A=R0
+		C=C+A	A			C[A] = DB PC --> C[W]
+		GOTO	emuthispc		DB PC = C[A], continue
+
+**********************************************************************
+** GOTO
+**********************************************************************
+EmuGOTO		D0=D0+	1			Advance to offset
+		CD0EX
+		D0=C
+		R0=C				R0 = DB PC + 1
+		C=0	W
+		C=DAT0	3			C[A] = offset
+		GOSUB	signextend3		Sign-extend C.3 --> C[W]
+		A=R0
+		C=C+A	A			C[A] = DB PC 0 offset + 1
+		GOTO	emuthispc		DB PC = C[A], continue
+
+**********************************************************************
+** GOSBVL, with special checks for SxDbg and GxDbg
+**********************************************************************
+EmuGOSBVL	D0=D0+	2			Advance to address
+		C=DAT0	A			C[A] = new DB PC
+		LA(5)	DBADDRGX
+		?A=C	A
+		GOYES	+
+*		LA(5)	DBADDRSX
+*		?A#C	A
+*		GOYES	emucall
+		GONC	emucall
+
++		D0=D0+	5			Simply skip the debugger call
+		CD0EX
+		GOTO	emuthispc		DB PC = C[A], continue
+
+** Emulate call to address in C[A], if bit ST:1 is clear, otherwise
+** make a CALL. To accomplish this, we push the address to IEXEC as
+** the return address. We transfer to the destination, which will
+** return to IEXEC, where the catch code has previously been stored.
+** The catch code saves all registers and jumps to emca21
+
+emucall		R3=C.F	A			R3[A] = transfer address
+* Don't step over : GOSUB + |  .... | + C=RSTK
+                D1=C
+                A=DAT1  B
+                LC(2)   #70                      C=RSTK
+                ?A=C    B
+                GOYES   +
+		GOSUB	emurestorest		ST[X] = gSTEPST
+		?ST=1	1
+		GOYES	emucallshallow		Shallow
++		GOTO	emucalldeep		Steep
+
+* Shallow
+
+emucallshallow	GOSUBL	db_ctopict		Switch to PICT before free run
+		GOSUBL	GetPC			A[A] = DB PC
+		C=A	A
+		GOSUBL	db_pushc		Push old DB PC
+
+		DADDR	gIEXEC,C		C[A] = ->IEXEC
+		RSTK=C				Push ->IEXEC
+		D1=C				D1 = ->IEXEC
+
+		GOSUBL	CatchThis		Put state-saving code in IEXEC
+		ADDR	emca20,C		Continue at emca20 when done
+		GOSUBL	CatchMe			Add GOVLNG emca20 to IEXEC
+
+		GOSUBL	putbreaks		Put BPTs in program
+		C=RSTK				C[A] = ->IEXEC
+		R0=C				Save ->IEXEC in R0
+		GOSUB	loadrstk		Load RSTK
+		C=R0
+		RSTK=C				Set RSTK0 to ->IEXEC
+		A=R3				A[A] = transfer address
+		GOTO	Trigger			Load CPU stae and go
+
+emca20		GOSUBL	Recollect		Recollect and store CPU state
+		C=RSTK
+		R0=C				Save away top 3 RSTK levels
+		C=RSTK
+		R1=C
+		C=RSTK
+		R2=C
+		GOSUBL	removebreaks		Remove BPTs from program
+		C=R2				Restore top 3 RSTK levels
+		RSTK=C
+		C=R1
+		RSTK=C
+		C=R0
+		RSTK=C
+		ST=0	2			Continue with step_next
+		ST=1	3			Pick up old DB PC from DB stack
+		GOTO	saverstk			Store RSTK and continue
+
+* Deep
+
+emucalldeep	C=R3				C[A] = new DB PC
+		GOSUB	SetPC			DB PC = new DB PC
+		GOSUBL	GetISize		D1 = ->gISIZE
+		D1=D1+	(gINEXT)-(gISIZE)	D1 = ->gINEXT
+		C=DAT1	A			C[A] = return address
+		R0=C				R0 = return address
+		GOSUB	loadrstk		Load RSTK 0-7
+		C=R0				Get return address
+		RSTK=C				Put it on the stack
+		ST=1	2			Continue with step_this
+		ST=0	3			Use current DB PC
+		GOTO	saverstk		Store back SRTK 0-7, continue
+
+**********************************************************************
+** GOSUBL
+**********************************************************************
+EmuGOSUBL	D0=D0+	2			Advance to address
+		CD0EX
+		D0=C
+		R0=C				R0 = PC+2
+		C=0	W
+		C=DAT0	4			C[W] = offset
+		GOSUB	signextend4		Sign-extend C.4 --> C[W]
+		A=R0				A[A] = DB PC + 2
+		A=A+CON	A,4
+		C=C+A	A			C[A] = DB PC + 6 + offset
+		GOTO	emucall			Emulate call to C[A]
+
+**********************************************************************
+** GOSUB
+**********************************************************************
+EmuGOSUB	D0=D0+	1			Advane to address
+		CD0EX
+		D0=C
+		R0=C				R0 = PC+1
+		C=0	W
+		C=DAT0	3			C[W] = offset
+		GOSUB	signextend3		Sign-extend C.3 --> C[W]
+		A=R0				A[A] = DB PC + 1
+		A=A+CON	A,3			A[A] = DB PC + 4
+		C=C+A	A			C[A] = DB PC + 4 + offset
+		GOTO	emucall			Emulate call to C[A]
+**********************************************************************
+** A=PC
+**********************************************************************
+EmuA=PC		GOSUBL	GetISize		D1 = ->gISIZE
+		D1=D1+	(gINEXT)-(gISIZE)	D1 = ->gINEXT
+		GOSUBL	emugetar		D0 = ->REG_A
+		C=DAT1	A			C[A] = next DB PC
+		DAT0=C	A			DB A = next DB PC
+		GOTO	emunext			Continue
+**********************************************************************
+** C=PC
+**********************************************************************
+EmuC=PC		GOSUBL	GetISize		D1 = ->gISIZE
+		D1=D1+	(gINEXT)-(gISIZE)	D1 = ->gINEXT
+		GOSUBL	emugetar		D0 = ->REG_A
+		LADD	(REG_C)-(REG_A),D0	D0 = ->REG_C
+		C=DAT1	A			C[A] = next DB PC
+		DAT0=C	A			DB C = next DB PC
+		GOTO	emunext			Continue
+**********************************************************************
+** APCEX
+**********************************************************************
+EmuAPCEX	GOSUBL	GetISize		D1 = ->gISIZE
+		D1=D1+	(gINEXT)-(gISIZE)	D1 = ->gINEXT
+		GOSUBL	emugetar		D0 = ->REG_A
+-		C=DAT1	A			C[A] = next DB PC
+		A=DAT0	A			A[A] = DB A
+		DAT1=A	A			DB PC = DB A
+		DAT0=C	A			DB A = prev DB PC
+		GOTO	emuthis
+
+**********************************************************************
+** CPCEX
+**********************************************************************
+EmuCPCEX	GOSUBL	GetISize		D1 = ->gISIZE
+		D1=D1+	(gINEXT)-(gISIZE)	D1 = ->gINEXT
+		GOSUBL	emugetar		D0 = ->REG_A
+		LADD	(REG_C)-(REG_A),D0	D0 = ->REG_C
+		GONC	-			swap @D1, @D0, continue
+
+**********************************************************************
+** GOC
+**********************************************************************
+EmuGOC		ST=1	3			Declare conditin CS
+		GOTO	+
+**********************************************************************
+** GONC
+**********************************************************************
+EmuGONC		ST=0	3			Declare condition CC
+
++		D0=D0+	1			Advance to offset
+		C=0	W
+		C=DAT0	B			C[B] = offset
+		R3=C				Save offset
+		GOSUB	signextend2			Sign-extend
+		AD0EX				A[A] = DB PC + 1
+		C=C+A	A			C[A] = DB PC + 1 + offset
+		RSTK=C
+		GOSUBL	GetData			D0 = ->DBBUF
+		D0=D0+	(REG_CRY)-(DBBUF)	D0 = ->REG_CRY
+		C=DAT0	1			C[0] = DB CRY
+
+		?ST=1	3
+		GOYES	+			Do CS test
+		?C=0	P
+		GOYES	++			CC: True
+-		GOTO	emunext			False - go for next instruction
++		?C=0	P
+		GOYES	-			CS: False
+
+++		C=R3				C[B] = offset
+		?C#0	B
+		GOYES	+			Not zero - do jump
+		GOTO	EmuRTN			Zero - perform RTN
+
++		C=RSTK				C[A] = new DB PC
+		GOSUB	SetPC			DB PC = C[A]
+		GOTO	emuthis			Continue with this instruction
+
+**********************************************************************
+* Copy instruction. It assumes the opcode size is in gISIZE and that
+* D0 points to the opcode. The instruction is copied to gIEXEC and
+* padded with a RTN instruction. D1 set to point to the last two
+* nybbles of the instruction. R2[A] is set to the address of gIEXEC.
+* C[A] and A[W] are used.
+**********************************************************************
+emuicopy	DADDR	gIEXEC,C
+		D1=C			D1 = ->gIEXEC
+		R2=C			R2[A] = ->gIEXEC
+		DADDR	gISIZE,C
+		CD0EX			D0 = ->gISIZE
+		A=DAT0	B		A[B] = opcode size
+		CD0EX
+		C=A	B		C[B] = opcode size
+
+		?CBIT=0	4
+		GOYES	+		Less than 16 nibbles
+		A=DAT0	W		Copy first 16 nibbles
+		DAT1=A	W
+		D0=D0+	16
+		D1=D1+	16
++		?C=0	P
+		GOYES	+		Nothing left
+		P=C	0		Copy remaining nibbles
+		P=P-1
+		A=DAT0	WP
+		DAT1=A	WP
+		CD1EX
+		C+P+1
+		CD1EX
+		P=	0
++		LC(2)	#10		C[B] = RTN opcode
+		DAT1=C	B		Pad with RTN
+		D1=D1-	2		Back D1 to last two opcode nibbles
+		RTNCC
+
+**********************************************************************
+** 5-nibble branch instructions with +3 branch offsets
+**********************************************************************
+EmuTEST		ST=0	4			Use +3 branch offset
+		GOTO	emubranch
+
+**********************************************************************
+** 7-nibble branch instructions with +5 branch offsets
+**********************************************************************
+Emu?BIT		ST=1	4			Use +5 branch offset
+
+* Most branch instructions end up here. If ST:4 is set, then the
+* branch offset is +5, otherwise it's +3.
+
+* We copy the branch instrution with the RTN pad, push the address of
+* embch9 on RSTK and catch the carry upon return. We do not go via the
+* more awkard and quite unnecessary load-save cycle. No registers
+* will change, so we never need to save anything upon return.
+
+emubranch
+
+* The next call won't change D0 since the opcode
+* will always be less than 16 nibbles
+
+		GOSUB	emuicopy		Copy instruction to gIEXEC
+
+		ST=0	3			Assume not return instruction
+		C=0	A
+		C=DAT1	B
+		R3=C				R3[A] = branch offset
+		?C#0	B
+		GOYES	+			Not return - continue
+		ST=1	3			Return - mark as return
++		C=0	B			Use offset 0 for RTNxx
+		DAT1=C	B			Plug in
+
+		C=ST
+		R1=C				Save ST[X] in R1
+		GOSUBL	SaveR0R3		Save R0-R3
+
+		C=R4
+		RSTK=C				Save R4[A] on the RSTK
+		ADDR	embch9,C
+		RSTK=C				Set up return address to embch9
+
+		A=R2				A[A] = ->gIEXEC
+		GOLONG	Trigger			Load regs and execute.
+* Above will trash R4[A], which is why we save it on the RSTK
+
+embch9		SETHEX				Get back into hex mode
+		P=	0
+		C=0	P
+		GONC	embch11			CRY not set, use 0
+		C=C+1	P			CRY set, use 1
+embch11		A=C	P			Save carry state in A[0]
+		C=RSTK
+		R4=C				Restore R4[A]
+		ACEX	P
+		RSTK=C				Save carry state on RSTK
+
+		GOSUBL	RestR0R3		Restore R0-R3
+		C=R1
+		ST=C				Restore ST[X] from R1[X]
+
+		GOSUBL	GetData			D0 = ->DBBUF
+		D0=D0+	REG_CRY			D0 = ->REG_CRY
+		C=RSTK				C[0] = carry state
+		DAT0=C	1			Update DB CRY
+		?C#0	P
+		GOYES	embch17			Branch/return was succesful
+		GOTO	emunext			Failed - process next instr
+
+embch17		C=R3				C[A] = offset
+		?C#0	A
+		GOYES	embch19			Branch
+		GOTO	EmuRTN			Rtn - do RTN
+
+embch19		GOSUB	signextend2		Sign-extend to C[W]
+		R1=C
+		GOSUBL	GetPC			A[A] = DB PC
+		C=R1
+		C=C+A	A			C[A] = DB PC + offset
+
+		C=C+CON	A,3			C[A] = DB PC + 3 + offset
+		?ST=0	4			Use + 3 branch offset
+		GOYES	embch28
+		C=C+1	A			C[A] = DB PC + 5 + offset
+		C=C+1	A
+embch28		GOSUB	SetPC			DB PC = C[A]
+		GOTO	emuthis			Continue with this instruction
+
+**********************************************************************
+* Duplicate of emubranch, but with +6 offset branch
+* TODO: 	figure out what other flags are unused; add second
+*		flag to EmuTEST and remove this subroutine
+**********************************************************************
+Emu?HS1		GOSUB	emuicopy		Copy instruction to gIEXEC
+
+		ST=0	3			Assume not return instruction
+		C=0	A
+		C=DAT1	B
+		R3=C				R3[A] = branch offset
+		?C#0	B
+		GOYES	+			Not return - continue
+		ST=1	3			Return - mark as return
++		C=0	B			Use offset 0 for RTNxx
+		DAT1=C	B			Plug in
+
+		C=ST
+		R1=C				Save ST[X] in R1
+		GOSUBL	SaveR0R3		Save R0-R3
+
+		C=R4
+		RSTK=C				Save R4[A] on the RSTK
+		ADDR	embch9hs1,C
+		RSTK=C				Set up return address to embch9hs1
+
+		A=R2				A[A] = ->gIEXEC
+		GOLONG	Trigger			Load regs and execute.
+* Above will trash R4[A], which is why we save it on the RSTK
+
+embch9hs1	SETHEX				Get back into hex mode
+		P=	0
+		C=0	P
+		GONC	embch11hs1		CRY not set, use 0
+		C=C+1	P			CRY set, use 1
+embch11hs1	A=C	P			Save carry state in A[0]
+		C=RSTK
+		R4=C				Restore R4[A]
+		ACEX	P
+		RSTK=C				Save carry state on RSTK
+
+		GOSUBL	RestR0R3		Restore R0-R3
+		C=R1
+		ST=C				Restore ST[X] from R1[X]
+
+		GOSUBL	GetData			D0 = ->DBBUF
+		D0=D0+	REG_CRY			D0 = ->REG_CRY
+		C=RSTK				C[0] = carry state
+		DAT0=C	1			Update DB CRY
+		?C#0	P
+		GOYES	embch17hs1		Branch/return was succesful
+		GOTO	emunext			Failed - process next instr
+
+embch17hs1	C=R3				C[A] = offset
+		?C#0	A
+		GOYES	embch19hs1		Branch
+		GOTO	EmuRTN			Rtn - do RTN
+
+embch19hs1	GOSUB	signextend2		Sign-extend to C[W]
+		R1=C
+		GOSUBL	GetPC			A[A] = DB PC
+		C=R1
+		C=C+A	A			C[A] = DB PC + offset
+
+		C=C+CON	A,6			C[A] = DB PC + 6 + offset
+		GOSUB	SetPC			DB PC = C[A]
+		GOTO	emuthis			Continue with this instruction
+
+**********************************************************************
+* Undefined emulator entries are simply supposed to be dummy IB_NSST
+* entries, and simply block.
+**********************************************************************
+EmuREFUSE	GOLONG	DbgNew
+
+**********************************************************************
+* Sign-extend field of C --> C[W]
+**********************************************************************
+signextend4	P=P+1
+signextend3	P=P+1
+signextend2	P=P+1
+		ACEX	W		A[W] = word
+		LC(1)	8		C[P] = 8
+		?C>A	P
+		GOYES	+		A[P] is 7 or less, leave it as is
+		C=0	W
+		C=-C-1	W		C[W] = 0xFFFFFFFFFFFF
+		ACEX	W
+		A=C	WP		A[WP] = C[WP], rest is all 1s
++		C=A	W
+		P=	0
+		RTN
+
+**********************************************************************
+* Overwrite RSTK top with DB RSTK entry and back to previous
+
+* Load RSTK 0-7 from DB RSTK 0-7
+
+LDRSTK1	MACRO
+	C=DAT0	A		C[A] = DB RSTK
+	RSTK=C			RSTK = DB RSTK
+	D0=D0-	5		Back to previous
+LDRSTK1	ENDM
+
+loadrstk	DADDR	(REG_RSTK)+7*5,C
+		D0=C			D0 = ->db RSTK7
+		C=RSTK
+		A=C	A		A[A] = return address
+		LDRSTK1
+		LDRSTK1
+		LDRSTK1
+		LDRSTK1
+		LDRSTK1
+		LDRSTK1
+		LDRSTK1
+		LDRSTK1
+		PC=A			Return
+
+** Save RSTK 0-7 in DB RSTK 0-7 and continue with main loop.  If ST:2
+** is set, we continue with step_this, otherwise we continue with
+** step_next. We in-line code the ADDR calculation instead of calling
+** a function to keep all 8 levels of stack intact. We also in-line
+** code the store of DB RSTK0. In addition, if ST:3 is set, we restore
+** the DB PC from the DB stack.
+
+saverstk_pop1	C=RSTK
+		A=C	A		A[A] = our return address
+		C=RSTK			C[A] = DB RSTK
+		DAT0=C	A		Store away the DB RSTK level
+		D0=D0+	5		Advance to next DB RSTK
+		PC=A			Return
+
+saverstk	DADDR	REG_RSTK,C
+		D0=C			D0 = ->REG_RSTK
+		C=RSTK			C = DB RSTK0
+		DAT0=C	A		Store DB RSTK0
+		D0=D0+	5		Advance to RSTK1
+		GOSUB	saverstk_pop1	RSTK2
+		GOSUB	saverstk_pop1	RSTK3
+		GOSUB	saverstk_pop1	RSTK4
+		GOSUB	saverstk_pop1	RSTK5
+		GOSUB	saverstk_pop1	RSTK6
+		GOSUB	saverstk_pop1	RSTK7
+		GOSUB	saverstk_pop1	RSTK8
+		?ST=0	3
+		GOYES	spsr734		Use current DB PC
+		GOSUBL	db_popc		Pop C from DB stack
+		GOSUB	SetPC		DB PC = popped DB PC
+spsr734		?ST=1	2		Continue as requested
+		GOYES	spsr791
+		GOTO	emunext
+spsr791		GOTO	emuthis
+
+**********************************************************************

@@ -1,0 +1,392 @@
+**********************************************************************
+*		Error Handling
+**********************************************************************
+* Han:	main error traps are either SysErrorTrap or #0B318 (from the
+*	fptr handler)
+
+
+**********************************************************************
+* Error Routine.
+* Input:
+*	C.B = error number	00 --> ABORT
+*	C.XS = error type
+*
+* Error types:
+*
+ERR_X	EQU #000	* 0 - XError	; No source line displayed
+ERR_B	EQU #100	* 1 - BError	; Display srcloc - restored nexttok
+ERR_C	EQU #200	* 2 - CError	; Display srcloc - nexttok
+ERR_D	EQU #300	* 3 - DError	; Display srcloc - src
+ERR_L	EQU #400	* 4 - LError	; Display srcloc - lineend
+*
+**********************************************************************
+
+Error
+		P=	0		* Just making sure..
+		SETHEX
+		GOSBVL	=AllowIntr
+
+		D=C	A		* D.A = error
+		C=C-1	B		* Set carry if ABORT
+
+* Set error number to ERRN, use 00000 if ABORT
+
+		LC(5)	(ROMID#)*256
+		C=D	B
+		GONC	ErrNumOK
+		C=0	A		* Set ABORT
+ErrNumOK
+*		D1=(5)	=aERROR
+*		A=DAT1	A
+*		D1=A
+		D1=(5)	=ERROR
+
+		DAT1=C	A
+
+* Now check if we do ABORT
+
+		D=D-1	B
+		GONC	DoAssError
+		GOTO	Abort
+
+DoAssError	A=PC
+		LC(5)	(xxMESSAGE)-(*)
+		A=A+C	A
+		D1=A			* D1 = ->errmsg array
+		D1=D1+	15
+		D1=D1+	10		* Skip to 1st element
+
+ErrFindLp	D=D-1	B		* errnum--
+		GOC	Err$OK		* Found $message
+		C=DAT1	A
+		AD1EX
+		A=A+C	A
+		AD1EX
+		GONC	ErrFindLp
+
+Err$OK		CD1EX			* Save $message to RSTK
+		RSTK=C
+
+* Now dispatch error handler
+
+		D=D-1	XS
+		GOC	rXerr
+		D=D-1	XS
+		GOC	BError
+		D=D-1	XS
+		GOC	CError
+		D=D-1	XS
+		GOC	DError
+		D=D-1	XS
+		GOC	LError
+rXerr		GOTO	XError		* Default just in case
+
+**********************************************************************
+* Do LError
+* Displays error message in return stack on line1.
+* Displays srcloc - lineend in line2.
+* Used by the ml assembler to display the faulty line.
+**********************************************************************
+LError		C=R2
+		GOSBVL	=CSRW5		* C.A = lineend
+		R0=C			* srcmed = lineend
+		GOTO	DError
+
+**********************************************************************
+* Do BError.
+* Displays error message in return stack on line1.
+* Displays srcloc - nexttok on line2.
+* Assumes last parser left an invalid D0 and uses srcmed + NextTok to
+* fetch end of the failing token.
+**********************************************************************
+
+BError		A=R0			* Back to srcmed
+		D0=A
+		GOSUBL	NextTokHere	
+
+* Fall through
+
+**********************************************************************
+* Do CError.
+* Displays error message in return stack on line1.
+* Displays srcloc - nexttok on line2
+* Assumes B.A indicates lenght of the next token to include.
+**********************************************************************
+
+CError		GOSUBL	Source+		* Update srcmed & D0
+
+**********************************************************************
+* Do DError.
+* Displays error message in return stack on line1.
+* Displays srcloc - src on line2
+**********************************************************************
+
+DError		GOSUB	AssErrJmp	* Emulate ERRJMP
+		GOC	ShowErrMsg	* SysErrorTrap - show message
+		A=DAT0	10		* Also show message if trap starts
+		C=A	W		* with a NOP !!!
+		LC(N)	10
+		CON(5)	=DOCOL
+		CON(5)	=NOP
+		?A#C	W
+*		GOYES	NoErrDisp
+		GOYES	DoFptrCheck
+
+* Han:	SysErrorTrap only if no command line active; otherwise the
+*	error trap is likely the fptr handler
+
+ShowErrMsg	GOSUBL	ClearStat	* Clear lines 1 & 2
+		GOSUBL	GetDisp1	* D1 = ->display
+
+		C=RSTK			* Display message
+		GOSUBL	DispErr$
+		GOSUBL	GetDisp2
+		C=R0			* C.A = srcmed
+		A=R1			* A.A = srcloc
+		D0=A
+		C=C-A	A
+		CSRB.F	A		* C.A = chars
+		GOSUBL	Disp$		* Display the source line
+		GOSUB	DispSrcLoc	* Display source line/location
+		GOTO	ErrExit		* Emulate SysErrorTrap
+
+DoFptrCheck	GOSUB	CheckFptrTrap
+		GOC	ShowErrMsg
+NoErrDisp	GOVLNG	=GETPTRLOOP	* User ERRTRAP
+
+**********************************************************************
+* Do XError.
+* Displays error message in return stack on line1
+**********************************************************************
+
+XError		GOSUB	AssErrJmp	* Emulate ERRJMP
+		GOC	+
+		A=DAT0	10
+		C=A	W
+		LC(N)	10
+		CON(5)	=DOCOL
+		CON(5)	=NOP
+*		?A#C	W
+*		GOYES	NoErrDisp	* Ignore display if not doped ERRTRAP
+
+		?A=C	W
+		GOYES	+
+		GOSUB	CheckFptrTrap
+		GONC	NoErrDisp
+		
++		GOSUBL	ClearStat	* Clear lines 1 & 2
+		GOSUBL	GetDisp1	* D1 = ->display
+		C=RSTK			* Display error message
+		GOSUBL	DispErr$
+		GOTO	XErrExit
+
+**********************************************************************
+* Display source location causing the error.
+* Input:
+*	stk1 = $source
+*	R1.A = ->srcloc
+* Output:
+*	B.A = ->font
+**********************************************************************
+DispSrcLoc	GOSBVL	=D1=DSKTOP
+		A=DAT1	A
+		A=A+CON	A,10		* Skip prolog & len
+		C=R1	
+		D=C	A		* D.A = ->srcloc
+		C=C-A	A
+		CSRB.F	A		* C.A = location in chars
+		R0=C			* R0 = srcloc in chars
+		D1=A
+		B=0	A
+		B=B+1	A		* Init line to 0
+
+DsrLineLp	LCASC	'\n'
+		A=DAT1	B
+		?A#C	B
+		GOYES	DsrNonNL
+		B=B+1	A		* line++
+DsrNonNL	D1=D1+	2
+		CD1EX
+		D1=C
+		?C<D	A
+		GOYES	DsrLineLp
+
+		A=0	W
+		A=B	A
+		GOSBVL	=HXDCW		* A.W = B.W = C.W = %line
+		CR0EX			* R0.A = %line  C.A = #location
+		A=0	W
+		A=C	A
+		GOSBVL	=HXDCW		* A.W = B.W = C.W = %loc
+		SETHEX			* Resume HEX mode set by HXDCW
+		GOSBVL	=CSLW5		* C.A1 = %loc
+		CR0EX			* R0.A1 = %loc  C.A = %line
+		R0=C.F	A		* R0.A = %line
+		GOSUBL	GetDisp1
+		D1=D1+	16
+		D1=D1+	6		* Skip 22 chars
+
+* Now remove leading zeros from the line number
+
+		A=R0
+		P=	4
+RmLinHeadLp	?A#0	P
+		GOYES	DspLinNow
+		D1=D1+	1		* Skip 1 char
+		P=P-1
+		GONC	RmLinHeadLp
+		P=	0		* Minimum 1 digit
+DspLinNow	GOSUBL	DispHxsN
+		LCASC	'/'
+		GOSUBL	DispChrC
+
+* Then display location
+
+		A=R0
+		GOSBVL	=ASRW5		
+		GOLONG	DispHxs5	* Always display %loc with 5 digits
+
+**********************************************************************
+* Emulate SysErrorTrap, or pass control to doped errortrap
+**********************************************************************
+
+ErrExit		GOSBVL	=GETPTR
+		A=DAT1	A		* Calculate error position
+		A=A+CON	A,10		* Skip prolog & len
+		C=R1
+		C=C-A	A
+		CSRB.F	A		* Loc in chars
+		R0=C
+
+		A=DAT0	A		* Decide exit method
+		LC(5)	=SysErrorTrap
+		?A=C	A
+		GOYES	RegularTrap
+
+* Abnormal trap, drop ASS internal variables and pass error location
+
+		GOSBVL	=PUSH#
+		A=PC
+		LC(5)	(errex3)-(*)
+		A=A+C	A
+		PC=(A)
+
+* Regular SysErrorTrap
+
+RegularTrap	C=R0
+		?C=0	A
+		GOYES	+		* Ignore loc if loc == 0
+		R0=C
+		GOSBVL	=PUSH#
+		D0=D0+	5		* Skip SysErrorTrap
+		A=PC
+		LC(5)	(errex1)-(*)
+		A=A+C	A
+		PC=(A)
+
+XErrExit	GOSBVL	=GETPTR
+		A=DAT0	A
+		LC(5)	=SysErrorTrap
+		?A#C	A
+		GOYES	ErrExit		* Use ErrExit instead
++		D0=D0+	5		* Skip SysErrorTrap
+		A=PC
+		LC(5)	(errex2)-(*)
+		A=A+C	A
+		PC=(A)
+
+* This one leaves error position on stk1
+errex1		CON(5)	=DOCOL
+		CON(5)	=1LAMBIND
+
+errex2		CON(5)	=DOCOL
+		CON(5)	=ERRBEEP
+		CON(5)	=FixStk&Menu
+		CON(5)	=SysErrFixUI
+		CON(5)	=TOADISP
+		CON(5)	=UnScroll
+*		CON(5)	=ZEROZERO
+*		CON(5)	=WINDOWXY
+		CON(5)	=SetDA1Temp
+		CON(5)	=SEMI
+
+		CON(5)	=1GETABND
+		CON(5)	=UNCOERCE
+		CON(5)	=AtUserStack
+		CON(5)	=SEMI
+
+* Abnormal exit
+errex3		CON(5)	=DOCOL		( #cfg #tab $status $buffer $src #pos )
+		CON(5)	=6UNROLL
+		CON(5)	=6UNROLL
+		CON(5)	=4DROP		( $src #pos )
+		CON(5)	=SEMI
+
+**********************************************************************
+* Emulate ABORT.
+**********************************************************************
+
+Abort		GOSUB	AssErrJmp	* Find ERRTRAP
+		GOC	AbortSys	* System abort
+		GOVLNG	=Loop		* User ERRTRAP
+AbortSys	D0=D0+	5		* Skip SysErrorTrap
+		A=PC
+		A=A+CON	A,10
+		PC=(A)
+
+		CON(5)	=DOCOL
+		CON(5)	=FixStk&Menu
+		CON(5)	=SysErrFixUI
+		CON(5)	=SEMI
+
+* Falls through to the code after the SysErrorTrap
+
+**********************************************************************
+* Emulate ERRJMP
+**********************************************************************
+*gotoFIXENV	A=PC
+*		LC(5)	(FIXENV)-(*)
+*		A=A+C	A
+*		PC=A
+
+AssErrJmp	GOSBVL	=GETPTR
+		GOSBVL	=FIXENV
+		LC(5)	=ERRTRAP
+		GONC	SeekTrap	* Always jump
+TrapLoop	A=B	A		* Drop current stream
+		D0=A
+		D0=D0-	5
+		A=DAT0	A
+		D=D+1	A
+		?A#0	A
+		GOYES	TrapIs
+		P=	13		* WSLOG: No Errortrap
+		GOVLNG	=PWLseq
+TrapIs		AD0EX
+		B=A	A
+SeekTrap	A=DAT0	A
+		?A#C	A
+		GOYES	TrapLoop
+		D0=D0+	5		* Skip ERRTRAP
+
+* Now check if found SysErrorTrap
+
+		GOSBVL	=SAVPTR
+		GOSBVL	=GETPTR
+		A=DAT0	A
+		LC(5)	=SysErrorTrap
+		?A=C	A
+		RTNYES
+		RTN
+
+* Han:	ROM 2.15 of HP50G executes the command line differently;
+*	so check if the fptr handler is active.
+**********************************************************************
+CheckFptrTrap
+		LC(N)	10
+		CON(5)	#0B318
+		CON(5)	#0B334
+		?A=C	W
+		RTNYES
+		RTN
+		

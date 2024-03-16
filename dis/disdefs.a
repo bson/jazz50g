@@ -1,0 +1,110 @@
+**********************************************************************
+*		Disassembler Definitions
+**********************************************************************
+
+*TABMAGIC	EQU #0A00	RPL.TAB magic constant
+*DTABMAGIC	EQU #0B00	DIS.TAB magic constant
+
+MINBUFMEM	EQU 50	* Minimum memory left to UI when expanding $buffer
+
+* Next determine which arguments for Dn=(2) and Dn=(4) might point to
+* IO page or IRAM variables. Any arg bigger than the next is output
+* just as an address.
+
+IOPGAREA	EQU #38		*    =TIMER2	
+* IRAMPGSX	EQU #07D9	* SX =ROMPTAB
+* IRAMPGGX	EQU #809A3 	* GX =ROMPTAB
+IRAMPGGX	EQU #8611D	* 50G (FIRSTPROC)+5
+
+STKDIS1MIN	EQU 33		* Minimum chars for 1 stack line
+
+**********************************************************************
+*		Disassembler Status Flags
+**********************************************************************
+
+* Short term status flags:
+
+sTEMP		EQU 0	* Temporary
+sTEMP1		EQU 1	* Temporary
+sLIST		EQU 0	* Composite is list
+sGLOBENTR	EQU 0	* Disass as '=entry' or 'entry'
+
+* Disassembly type:
+
+sDISOB		EQU 2	* Disassembling object right now
+sSPECIAL	EQU 3	* Special mode?
+
+* Subtypes:
+
+sDISRPL		EQU 4	* Decompile rpl / ml
+sDISSTK		EQU 5	* Decompile for stack display
+
+* Machine language status flags:
+
+sBRANCH		EQU 7	* GOYES expected?
+
+* Options:
+
+sCODEOK		EQU 8	* Decompile CODE as machine language or nibbles?
+sGUESS		EQU 9	* Make guesses?
+sTABU		EQU 10	* Use tabulator in ml disassembly?
+sLBPACK		EQU 11	* Labels on separate rows?
+
+* Special disassembly modes:
+
+typNORMAL	EQU 0
+typDISXY	EQU 1
+typDISPCO	EQU 2
+typDISN		EQU 3
+typDISRRP	EQU 4
+typDISLIB	EQU 5
+
+* How modes work:
+
+* If sDISOB is set then were are disassembling an object
+*	sSPECIAL might be set or not
+*	If sDISRPL then rpl loop
+*	Else code loop
+* Else sSPECIAL is set and DISMODE determines where to go
+*
+**********************************************************************
+*		Disassembler Status Buffer
+**********************************************************************
+* Han:	original Jazz 6.8 uses #80100 area in RAM for temp variables
+*	we should keep the old scheme but remove the 48SX code
+
+	ABASE	0
+DISBUF	ALLOC	0
+
+dMODES		ALLOC	5	* Status flags ( ST[0-11] + 2 free nibbles )
+dCURADDR	ALLOC	5	* Current addres
+dENDADDR	ALLOC	5	* End address
+dDISPOS		ALLOC	5	* Position in buffer
+dCODEND		ALLOC	5	* Code end address
+dINDLEV		ALLOC	5	* Indent level
+dSEMISTR	ALLOC	16	* SEMI stream
+dNXTLAB		ALLOC	5	* Next label expected at..
+dNXTENTR	ALLOC	5	* Next entry expected at..
+dGLOBEND	ALLOC	5	* Global end address for DISXY
+dPCODIS		ALLOC	5	* Storage for PCO disassembly
+dDISMODE	ALLOC	2	* Special disassembly mode
+dDISMODESAVE	ALLOC	2	* Save old mode in rrp disassembly
+dENDADDRSAVE	ALLOC	5	* Save endaddr
+dRRPDEPTH	ALLOC	5	* rrp depth
+dRRPSTART	ALLOC	5	* address of the offset field to lastramword
+dRRPEND		ALLOC	5	* end address of current rrp
+dROMPLIST	ALLOC	5	* address of list of romp names
+
+DISBUFEND	ALLOC	0
+DISBUFSIZE	EQU	(DISBUFEND)-(DISBUF)
+
+* Han:	IRAMBUFFSIZE = 537 on HP50G; just make sure to change D0=(2)
+* 	statements as appropriate if we decide to use a larger buffer
+
+tstiram	IFNEG	#F1-(DISBUFEND)
+tstiram1   IFPASS1
+		MESSAGE IRAM Buffer Overflow!
+tstiram1   ENDIF
+tstiram	ENDIF
+
+**********************************************************************

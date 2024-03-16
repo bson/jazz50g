@@ -1,0 +1,374 @@
+**********************************************************************
+*		JAZZ - Main Display Subroutines
+**********************************************************************
+
+**********************************************************************
+* Display following message until \0 at given location
+* Continues ML after that message.
+* Input:	RSTK = ->message	C.X = XY-location
+* Output:	D1 = ->next display location
+* Uses:		A.A C.A D.A D0 D1
+**********************************************************************
+DispMsgXY	GOSUB	GetDispLoc
+DispMsg		C=RSTK
+		D0=C		* D0 = ->message
+DispMsgLp	C=DAT0	B
+		D0=D0+	2
+		?C=0	B
+		GOYES	DispMsgEnd
+		GOSUB	DispChrC
+		GONC	DispMsgLp
+DispMsgEnd	CD0EX
+		PC=C
+**********************************************************************
+* Display message of given lenght (chars)
+* Input:	D0 = ->message		C.X = XY	B.B = lenght
+* Output:	D1 = ->next disploc	D0 = ->nextchar
+* Uses:		A.A B.B C.A D.A D0 D1
+**********************************************************************
+DispStrXY	GOSUB	GetDispLoc
+DispStr		B=B-1	B		* chars--
+		RTNC
+		C=DAT0	B
+		D0=D0+	2
+		GOSUB	DispChrC
+		GONC	DispStr
+
+**********************************************************************
+* Display string body
+* Input:	C.A = ->$len	D1 = ->disploc
+* Output:	D1 = ->next disploc
+* Uses:		A.A B.A C.A D.A D0 D1
+**********************************************************************
+DispErr$	D0=C			* D0 = ->msg
+		C=DAT0	A
+		C=C-CON	A,5
+		CSRB.F	A		* C.A = chars
+		D0=D0+	5		* D0 = ->$
+**********************************************************************
+* Display message of given lenght (chars), maximum 33 chars
+* Input:	D0 = ->message		D1 = ->disploc	C.A = chars
+* Output:	D1 = ->next disploc	D0 = ->nextchar
+* Uses:		A.A B.A C.A D.A D0 D1
+**********************************************************************
+Disp$		B=C	A
+		LC(5)	33
+		?C>=B	A
+		GOYES	DispStr
+		B=C	A		* Set chars = 33
+		GONC	DispStr
+**********************************************************************
+* Display reverse hex string in A.WP at XY
+* Input:	A.W = hex	P = size	C.X = XY-location
+* Output:	D1 = ->next disploc
+* Uses:		A.A B.W C.A D.A D1 C.S
+**********************************************************************
+DispHxsNXY	GOSUB	GetDispLoc
+DispHxsN	B=A	WP
+		C=P	15		* C.S = size
+DspHxsRollLp	P=P+1
+		GOC	DspHxs16Lp
+		BSL	W		* Shift number to upper register
+		GONC	DspHxsRollLp
+**********************************************************************
+* Display reverse hex string of size 16 at XY
+* Input:	A.W = hex	C.X = XY-location
+* Output:	D1 = ->next disploc
+* Uses:		A.A B.W C.A D.A D1 C.S
+**********************************************************************
+DispHxs16XY	GOSUB	GetDispLoc
+DispHxs16	B=A	W
+		C=0	S		* Init digit counter
+		C=C-1	S
+DspHxs16Lp	BSLC
+		A=B	P
+		GOSUB	DispNib
+		C=C-1	S
+		GONC	DspHxs16Lp
+		RTN
+**********************************************************************
+* Display hex string of size 16 at XY
+* Input:	A.W = hex	C.X = XY
+* Output:	D1 = ->next disploc
+* Uses:		A.A B.W C.A D.A D1 C.S
+**********************************************************************
+DispHstr16XY	GOSUB	GetDispLoc
+DispHstr16	B=A	W
+		C=0	S		* Init digit counter
+DspHstrLp	A=B	P
+		BSR	W
+		GOSUB	DispNib
+		C=C+1	S
+		GONC	DspHstrLp
+		RTN
+**********************************************************************
+* Display char string of size 8 at XY
+* Input:	A.W = str	C.X = XY
+* Output:	D1 = ->next disploc
+* Uses:		A.A B.W C.A D.A D1 C.S
+**********************************************************************
+DispCstr8XY	GOSUB	GetDispLoc
+DispCstr8	B=A	W
+		P=	15		* Init char counter
+		LC(1)	16-8
+		P=	0
+DspCstrLp	C=B	B
+		BSR	W
+		BSR	W
+		GOSUB	DispChrC
+		C=C+1	S
+		GONC	DspCstrLp
+		RTN
+**********************************************************************
+* Display reverse hex address at XY
+* Input:	A.A = hex	C.X = XY-location
+* Output:	D1 = ->next disploc
+* Uses:		A.A B.A C.A D.A D1 C.S
+**********************************************************************
+DispHxs5XY	GOSUB	GetDispLoc
+DispHxs5	C=A	A
+		CPEX	0		* Reverse digits
+		CPEX	4
+		CPEX	0
+		CPEX	1
+		CPEX	3
+		CPEX	1
+		B=C	A
+		P=	5-1		* Init counter to C.S
+		C=P	15
+		P=	0
+DspHxs5Lp	A=B	P
+		BSR	A
+		GOSUB	DispNib
+		C=C-1	S
+		GONC	DspHxs5Lp
+		RTN
+
+**********************************************************************
+* Erase N characters at given location
+* Input:	P = chars	C.X = XY
+**********************************************************************
+DispSpcNXY	GOSUB	GetDispLoc
+DispSpcN	C=P	15
+		D=C	S
+		P=	0
+DspSpcLp	GOSUB	DispSpc
+		D=D-1	S
+		GONC	DspSpcLp
+		RTNCC
+**********************************************************************
+* Erase character at given location
+* Input:	C.X = XY
+**********************************************************************
+DispSpcXY	GOSUB	GetDispLoc
+DispSpc		LCASC	' '
+		GOTO	DispChrC
+**********************************************************************
+* Draw character ':' at given location
+**********************************************************************
+DispColonXY	GOSUB	GetDispLoc
+DispColon	LCASC	':'
+		GOTO	DispChrC
+**********************************************************************
+* Draw character at given location
+* Input:	A.B = chr	C.X = XY
+**********************************************************************
+DispChrXY	GOSUB	GetDispLoc
+DispChrA	C=A	B		* C.A = chr
+		GOTO	DispChrC
+
+**********************************************************************
+* Draw nibble at given location
+* Input:	A.0 = nibble	C.X = XY
+**********************************************************************
+DispNibXY	GOSUB	GetDispLoc
+
+**********************************************************************
+* Draw hex nibble to display
+* Input:	A.0 = nibble	D1 = ->disploc
+* Output:	D1 = ->nextloc
+* Uses:		A.A C.A D.A D1 P
+**********************************************************************
+DispNib		LCASC	'9'		* #39
+		?A<=C	P
+		GOYES	DispHC.1
+		C=A	P
+		C=C+CON	B,7		* Fix to 'A'-'F'
+		GONC	DispChrC
+DispHC.1	C=A	P		* '0'-'9'
+
+**********************************************************************
+* Draw character to display
+* Input:	C[B] = char	D1 = ->disploc
+* Output:	D1 = ->nextloc	CC
+* Uses:		A[5-0] C[A] D[A] D1 P	( no longer needs D[A] )
+**********************************************************************
+* Han:	We can actually display all chars using =MINI_FONT
+*	and even save a few registers
+DispChrC
+		P=	0
+		A=0	A
+		A=C	B
+		C=A	A
+		A=A+A	A		* 2*chr
+		A=A+C	A		* 3*chr
+		A=A+A	A		* 6*chr
+		LC(5)	=MINI_FONT	* C[A] = ->font
+		C=C+A	A		* C[A] = ->chardat
+
+* continue with old code
+		CD1EX			* Display 1st datanibble
+		A=DAT1	6
+		D1=C			* C[A] = ->disploc
+-		DAT1=A	P
+		D1=D1+	16
+		D1=D1+	16
+		D1=D1+	2
+		P=P+1
+		?P#	6
+		GOYES	-
+		P=	0
+		D1=C			D1 = ->disploc
+		D1=D1+	1
+		RTNCC
+
+**********************************************************************
+* Invert N characters at XY
+* Input:	P = N	C.X = XY
+* Output:	D1 = ->nextchar
+* Uses:		A.B C.A D.A D1
+**********************************************************************
+DispInvXY	GOSUB	GetDispLoc
+DispInv		C=P	15
+
+DspInvLP	P=	16-6
+DspInvLp	A=DAT1	1
+		A=-A-1	B
+		DAT1=A	1
+		D1=D1+	16
+		D1=D1+	16
+		D1=D1+	2
+		P=P+1
+		GONC	DspInvLp
+		AD1EX			* Back to start of next char
+		LC(5)	6*34-1
+		A=A-C	A
+		AD1EX
+		C=C-1	S
+		GONC	DspInvLP
+		RTN
+
+**********************************************************************
+* Calculate address for XY location on display
+* Input:	C.XS = Y	C.B = X
+* Output:	D1 = ->disploc	CC
+* Modifies:	C.A D.A D1
+* Note:		P has no effect
+**********************************************************************
+GetDispLoc	RSTK=C			* Save X
+		D=0	A
+		D=C	XS		* D.XS = y
+		DSR	X
+		D=C	XS		* D.X = 16*17*y
+		C=D	B
+		CSRB.F	X		* 8*17*y
+		CSRB.F	X		* 4*17*y
+		D=D-C	X		* 12*17*y = 6*34*y
+		C=RSTK
+		C=0	XS		* C.X = x
+		D=D+C	X		* D.A = 6*34*y+x
+GetAdisp.1	D1=(5)	=aADISP
+		C=DAT1	A
+		D1=C
+		C=DAT1	A		* C.A = ->ADISP
+		C=C+D	A
+		D1=C
+		D1=D1+	5		* Skip prolog
+		D1=D1+	15		* Skip size fields
+		RTNCC
+**********************************************************************
+* Get row 1 to D1
+**********************************************************************
+GetDisp1	D=0	A
+		GOTO	GetAdisp.1
+**********************************************************************
+* Get row 2 to D1
+**********************************************************************
+GetDisp2	LC(5)	6*34+34
+		D=C	A
+		GOTO	GetAdisp.1
+**********************************************************************
+* Advance ->display when crossing the right border
+**********************************************************************
+DispRot+	AD1EX
+		LC(5)	6*34-34+1
+		A=A+C	A
+		AD1EX
+		RTN
+**********************************************************************
+* Draw a vertical line the size of 1 character to current disp loc
+**********************************************************************
+DispVerLin	LC(1)	#2
+		P=	16-6
+DspVerLinLp	DAT1=C	1
+		D1=D1+	16
+		D1=D1+	16
+		D1=D1+	2
+		P=P+1
+		GONC	DspVerLinLp
+		AD1EX
+		LC(5)	6*34-1
+		A=A-C	A
+		AD1EX
+		RTNCC
+**********************************************************************
+* Draw hortical blank line to current display location in D1
+**********************************************************************
+DispHorSpc	A=0	W
+		GOTO	DispHor
+**********************************************************************
+* Draw hortical line to current display location in D1
+**********************************************************************
+DispHorLin	A=0	W
+		A=-A-1	W
+DispHor		DAT1=A	W
+		D1=D1+	16
+		DAT1=A	W
+		D1=D1+	16
+		DAT1=A	B
+		D1=D1+	2
+		RTNCC
+**********************************************************************
+
+**********************************************************************
+* Clear status line 1
+**********************************************************************
+ClearLine1	GOSUB	GetDisp1
+		LC(2)	6
+		GOSUB	ClearLinC
+		GOTO	GetDisp1
+**********************************************************************
+* Clear status line 2
+**********************************************************************
+ClearLine2	GOSUB	GetDisp2
+		LC(2)	6
+		GOSUB	ClearLinC
+		GOTO	GetDisp2
+
+**********************************************************************
+* Clear status area.
+**********************************************************************
+ClearStat	GOSUB	GetDisp1
+		LC(2)	13		* 14 lines (divider remains)
+ClearLinC	D=C	B
+		A=0	W
+ClrLinesLp	DAT1=A	W
+		D1=D1+	16
+		DAT1=A	W
+		D1=D1+	16
+		DAT1=A	B
+		D1=D1+	2
+		D=D-1	B
+		GONC	ClrLinesLp
+		RTN
+**********************************************************************

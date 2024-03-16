@@ -1,0 +1,2480 @@
+**********************************************************************
+*		CODE Disassembler
+**********************************************************************
+
+**********************************************************************
+* Add label/entry field if NXTENTR/NXTLAB = pc
+* Does not update either one!!!
+**********************************************************************
+
+DisEntr/Lab	GOSUBL	GetNextEntry	* C[A]=next entry A[A]=pc
+		?A#C	A
+		GOYES	DisLab		* Not entry - try next label
+
+		LC(5)	#40000
+		?A>=C	A
+		GOYES	DisLab
+
+* A[A] = pc so we don't have to save it
+
+		GOSUBL	EntryAddr?
+		B=A	A		* B[A]=pc
+
+*		A=DAT0	X
+*		ASR	X
+		D0=D0+	2
+		A=DAT0	B
+		D0=D0-	2
+		LCASC	'^'		* don't output fptr labels
+		?A=C	B
+		GOYES	+
+		LCASC	'~'		* don't output romptr labels
+		?A=C	B
+		GOYES	+
+
+		GOSUBL	DIchr=
+		C=0	A		* Found name, copy it to buffer
+		C=DAT0	B
+		D0=D0+	2
+		C=C+C	A
+		GOSBVL	=MOVEDOWN
+
+		GOSUBL	RestoreBanks
+
+		A=B	A		* Restore pc
+		D0=A
+* Always put entries on their own lines
+		GOTO	indnew
+
++		GOSUBL	RestoreBanks
+		LCASC	'\t'
+		DAT1=C	B
+		D1=D1+	2
+		A=B	A
+		D0=A
+		RTNCC
+
+****************************************
+
+DisLab		GOSUBL	GetNextLabel	* C[A]=next label A[A]=pc
+		?A#C	A
+		GOYES	indfree
+		GOSUBL	DIlabel		* Output A[A] as 'Lhhhhh'
+
+* Indent labelled instruction
+indlab		?ST=1	sLBPACK		* Add newline?
+		GOYES	indnew		* Same result this way
+		?ST=1	sTABU
+		GOYES	indtabu
+		LCASC	' '
+		GONC	indchr
+
+* Start new line, then indent instruction
+indnew		LCASC	'\n'
+		DAT1=C	B
+		D1=D1+	2
+* Indent instruction without label field
+indfree		?ST=0	sTABU
+		GOYES	indfree01
+indtabu		LCASC	'\t'
+indchr		DAT1=C	B
+		D1=D1+	2
+		RTNCC
+indfree01	?ST=0	sLBPACK
+		GOYES	indspc7
+indspc2		LCSTR	'  '
+		DAT1=C	4
+		D1=D1+	4
+		RTNCC
+indspc7		LCSTR	'       '
+		DAT1=C	14
+		D1=D1+	14
+		RTNCC
+
+**********************************************************************
+* Disassemble 1 line of machine language
+**********************************************************************
+
+DisLine		GOSUB	DisEntr/Lab
+
+*		GOTO	DisInstr
+
+**********************************************************************
+* Disassemble 1 ml instruction.
+* If sBRANCH is set a GOYES/RTNYES is to be disassembled
+* Entry:	D0 = ->instr	D1 = ->output	R3 = tabs
+*		sBRANCH sTABU
+* Exit:		D0 = ->next	D1 = ->tail
+* Notes:
+*	By default each instruction field takes 7 chars (?ABIT=0)
+*	Followed by spaces to fill up to argument field.
+**********************************************************************
+
+DisInstr	P=	0		* Just assurance
+		SETHEX
+
+		?ST=0	sBRANCH
+		GOYES	DInormal
+		GOLONG	DIrtn/goy
+
+**********************************************************************
+* Disassemble normal instruction
+**********************************************************************
+DInormal	GOSUBL	ITYPE		* C[B] = type
+		A=0	A
+		A=C	B		* A[A] = type
+		GOSUB	DIpasstab
+
+		CON(3)	(DItyp00)-(*)
+		CON(3)	(DItyp01)-(*)
+		CON(3)	(DItyp02)-(*)
+		CON(3)	(DItyp03)-(*)
+		CON(3)	(DItyp04)-(*)
+		CON(3)	(DItyp05)-(*)
+		CON(3)	(DItyp06)-(*)
+		CON(3)	(DItyp07)-(*)
+		CON(3)	(DItyp08)-(*)
+		CON(3)	(DItyp09)-(*)
+		CON(3)	(DItyp0A)-(*)
+		CON(3)	(DItyp0B)-(*)
+		CON(3)	(DItyp0C)-(*)
+		CON(3)	(DItyp0D)-(*)
+		CON(3)	(DItyp0E)-(*)
+		CON(3)	(DItyp0F)-(*)
+		CON(3)	(DItyp10)-(*)
+		CON(3)	(DItyp11)-(*)
+		CON(3)	(DItyp12)-(*)
+		CON(3)	(DItyp13)-(*)
+		CON(3)	(DItyp14)-(*)
+		CON(3)	(DItyp15)-(*)
+		CON(3)	(DItyp16)-(*)
+		CON(3)	(DItyp17)-(*)
+		CON(3)	(DItyp18)-(*)
+		CON(3)	(DItyp19)-(*)
+		CON(3)	(DItyp1A)-(*)
+		CON(3)	(DItyp1B)-(*)
+		CON(3)	(DItyp1C)-(*)
+		CON(3)	(DItyp1D)-(*)
+		CON(3)	(DItyp1E)-(*)
+		CON(3)	(DItyp1F)-(*)
+		CON(3)	(DItyp20)-(*)
+		CON(3)	(DItyp21)-(*)
+		CON(3)	(DItyp22)-(*)
+		CON(3)	(DItyp23)-(*)
+		CON(3)	(DItyp24)-(*)
+		CON(3)	(DItyp25)-(*)
+		CON(3)	(DItyp26)-(*)
+		CON(3)	(DItyp27)-(*)
+		CON(3)	(DItyp28)-(*)
+		CON(3)	(DItyp29)-(*)
+		CON(3)	(DItyp2A)-(*)
+		CON(3)	(DItyp2B)-(*)
+		CON(3)	(DItyp2C)-(*)
+		CON(3)	(DItyp2D)-(*)
+		CON(3)	(DItyp2E)-(*)
+		CON(3)	(DItyp2F)-(*)
+		CON(3)	(DItyp30)-(*)
+		CON(3)	(DItyp31)-(*)
+		CON(3)	(DItyp32)-(*)
+		CON(3)	(DItyp33)-(*)
+		CON(3)	(DItyp34)-(*)
+		CON(3)	(DItyp35)-(*)
+		CON(3)	(DItyp36)-(*)
+		CON(3)	(DItyp37)-(*)
+		CON(3)	(DItyp38)-(*)
+		CON(3)	(DItyp39)-(*)
+		CON(3)	(DItyp3A)-(*)
+		CON(3)	(DItyp3B)-(*)
+		CON(3)	(DItyp3C)-(*)
+		CON(3)	(DItyp3D)-(*)
+		CON(3)	(DItyp3E)-(*)
+		CON(3)	(DItyp3F)-(*)
+		CON(3)	(DItyp40)-(*)
+		CON(3)	(DItyp41)-(*)
+		CON(3)	(DItyp42)-(*)
+		CON(3)	(DItyp43)-(*)
+		CON(3)	(DItyp44)-(*)
+		CON(3)	(DItyp45)-(*)
+		CON(3)	(DItyp46)-(*)
+		CON(3)	(DItyp47)-(*)
+		CON(3)	(DItyp48)-(*)
+		CON(3)	(DItyp49)-(*)
+		CON(3)	(DItyp4A)-(*)
+		CON(3)	(DItyp4B)-(*)
+		CON(3)	(DItyp4C)-(*)
+		CON(3)	(DItyp4D)-(*)
+		CON(3)	(DItyp4E)-(*)
+		CON(3)	(DItyp4F)-(*)
+		CON(3)	(DItyp50)-(*)
+		CON(3)	(DItyp51)-(*)
+		CON(3)	(DItyp52)-(*)
+		CON(3)	(DItyp53)-(*)
+		CON(3)	(DItyp54)-(*)
+		CON(3)	(DItyp55)-(*)
+		CON(3)	(DItyp56)-(*)
+		CON(3)	(DItyp57)-(*)
+
+DIpasstab	C=RSTK
+		C=C+A	A
+		C=C+A	A
+		A=A+C	A		* tab + 3*typ3
+		AD0EX
+		C=0	A
+		C=DAT0	X		* C[A] = offset to subroutine
+		AD0EX
+		C=C+A	A		* Positive offs --> CC
+		A=DAT0	A		* Get next 5 nibs ready
+		PC=C			* Jump to type disassembler
+**********************************************************************
+
+**********************************************************************
+*		ITYPE DISASSEMBLER SUBROUTINES
+**********************************************************************
+
+**********************************************************************
+* 	Simple instructions packed in the start
+**********************************************************************
+
+INSGO	MACRO		* chars name
+	GONC	DIwr$1
+	NIBASC	'$2'
+INSGO	ENDM
+
+DItyp01		INSGO	3,RTN		01	01|
+DItyp0F		INSGO	3,RTI		0F	0F|
+DIwr3		P=	2*3-1
+		GOTO	DIwrP
+DItyp09		INSGO	4,C=ST		09	09|
+DItyp0A		INSGO	4,ST=C		0A	0A|
+DItyp28		INSGO	4,A=IN		802	802|
+DItyp29		INSGO	4,C=IN		803	803|
+DItyp2C		INSGO	4,C=ID		806	806|
+DIwr4		P=	2*4-1
+		GOTO	DIwrP
+DItyp02		INSGO	5,RTNSC		02	02|
+DItyp03		INSGO	5,RTNCC		03	03|
+DItyp08		INSGO	5,CLRST		08	08|
+DItyp0B		INSGO	5,CSTEX		0B	0B|
+DItyp0C		INSGO	5,P=P+1		0C	0C|
+DItyp0D		INSGO	5,P=P-1		0D	0D|
+DItyp27		INSGO	5,OUT=C		801	801|
+DIwr5		P=	2*5-1
+		GOTO	DIwrP
+DItyp2E		INSGO	5,C+P+1		809	809|
+DItyp2F		INSGO	5,RESET		80A	80A|
+* Han:	create new dispatches for 80B; see disnewops.a
+* DItyp30		INSGO	5,BUSCC		80B	80B|
+DItyp30		GOLONG	DItyp30_
+DItyp33		INSGO	5,SREQ?		80E	80E|
+DItyp35		INSGO	5,INTON		8080	8080|
+DItyp38		INSGO	5,BUSCB		8083	8083|
+DItyp3B		INSGO	5,BUSCD		808D	808D|
+DItyp00		INSGO	6,RTNSXM	00	00|
+DItyp04		INSGO	6,SETHEX	04	04|
+DItyp05		INSGO	6,SETDEC	05	05|
+DItyp06		INSGO	6,RSTK=C	06	06|
+DItyp07		INSGO	6,C=RSTK	07	07|
+DItyp26		INSGO	6,OUT=CS	800	800|
+DIwr6		P=	2*6-1
+DIwrP		CD1EX
+		D1=D1+	3		* Skip GONC
+		A=DAT1	WP		* Read instr name
+		CD1EX
+		DAT1=A	WP		* Write instr name
+		CD1EX			* Skip instr name
+		C+P+1
+		CD1EX
+		P=	0
+		RTN			* Done
+DItyp2A		INSGO	6,UNCNFG	804	804|
+DItyp2B		INSGO	6,CONFIG	805	805|
+DItyp2D		INSGO	6,SHUTDN	807	807|
+DItyp3A		INSGO	6,PC=(A)	808C	808C|
+DItyp3C		INSGO	6,PC=(C)	808E	808E|
+DItyp3D		INSGO	6,INTOFF	808F	808F|
+
+**********************************************************************
+* 	Instructions needing further dispatching
+**********************************************************************
+
+**********************************************************************
+*		GENERAL INSTRUCTIONS
+**********************************************************************
+
+**********************************************************************
+* RSI		8081|n			A[0]=n
+**********************************************************************
+DItyp36		?A#0	P
+		GOYES	DItyp36_1	* Invalid instruction!!
+		D0=D0+	1		* Skip |n
+		LCSTR	'RSI'
+		DAT1=C	6
+		D1=D1+	6
+		RTNCC
+
+DItyp36_1	D0=D0-	4		* Back to start of instr
+		P=	5-1
+		GOLONG	DIfail		* NIBHEX 8081x
+**********************************************************************
+* PC=A		81B|2	-> 000	0	A[0]=t
+* PC=C		81B|3	-> 001	1
+* A=PC		81B|4	-> 010	2
+* C=PC		81B|5	-> 011	3
+* APCEX		81B|6	-> 100	4
+* CPCEX		81B|7	-> 101	5
+**********************************************************************
+DItyp42		D0=D0+	1		* Skip |t
+		LC(1)	7
+		?A>C	P
+		GOYES	DIpcfail	* Unsupported ARM overwrite
+		LC(1)	2
+		A=A-C	P
+		GOC	DIpcfail	* Unsupported ARM overwrite
+
+		?A<C	P
+		GOYES	DItyp42_1	* No r yet
+		GOSUBL	DIac0		* A/C
+DItyp42_1	?ABIT=0	1
+		GOYES	DItyp42_2
+		GOSUBL	DIchr=
+DItyp42_2	LCSTR	'PC'
+		DAT1=C	4
+		D1=D1+	4
+		?ABIT=1	1
+		RTNYES			* 'r=PC' done
+		LC(1)	2
+		?A>=C	P
+		GOYES	DItyp42_3
+		GOSUBL	DIchr=
+		GOLONG	DIac0		* 'PC=r' done
+DItyp42_3	GOTO	DIex
+
+**********************************************************************
+* Lots of ARM overwrites occur in ROM 2.15; we dissasemble them
+* here and in disnewops.a for disassembly readability, as well as
+* to enable DB to debug them. There are no plans to enable assembly
+* of these ARM overwrites. A few are documented below.
+*
+* See also skipml.s
+**********************************************************************
+* Han:		opcode	ROM	source			replacement
+*		------	------	----------------------	--------------
+* 		81B|1	=Loop
+*			142	A=DAT0			142 -> 81B
+*			164	D0=D0+	5
+*			808C	PC=(A)
+*
+*		81B|D	=SEMI
+*			03130	CON(5)	(*)+5
+*			D9	C=B	A		D9136 -> 81BD6
+*			136	CD0EX
+*			184	D0=D0-	5
+*
+*		81B|E	GB1RC	( GB once, RTN via C )
+*			427	GOC	#02E15		427D9 -> 81BE9
+*			D9	C=B	A
+*
+* 		81B|A	=SKIPOB	( save D1 and B[A] )
+*			841	ST=0	1
+*			137	CD1EX			13706 -> 81BA6
+*			06	RSTK=C
+*				...
+*		81B|8	L0302E	( checks if =PRLG )
+*			142	A=DAT0	A		142164 -> 81B864
+*			164	D0=D0+	5
+*			131	D1=A
+*				...
+*		81B|9	L03061	( more obs to skip? )
+*			8AD	?B#0	A		8ADAC -> 81B9C
+*			AC	GOYES	L0302E
+*                               ...
+*		81B|B	L0309A
+*			146	C=DAT0	A		146132- -> 81BB32
+*			132	AD0EX
+*				...
+*		81B|C	L030A8
+*			D2	C=0	A		D214E -> B1BCE
+*			14E	C=DAT0	B
+**********************************************************************
+DIpcfail
+*		D0=D0-	4
+*		P=	4-1
+*		GOLONG	DIfail
+
+		D0=D0-	1		* D0 -> t
+		A=DAT0	A
+		LC(2)	#61
+		?A=C	B
+		GOYES	diarmloop
+		LC(2)	#6D
+		?A=C	B
+		GOYES	diarmsemi
+		LC(2)	#9E
+		?A=C	B
+		GOYES	diarmgc1r
+		LC(3)	#23B
+		?A=C	X
+		GOYES	fail81b6
+		LC(3)	#468
+		?A#C	X
+		GOYES	fail81b
+
+fail81b6	D0=D0-	3		* assume 81Bxxx
+		P=	6-1
+		GOLONG	DIfail		
+
+fail81b		D0=D0-	3
+		P=	5-1		* assume 81Bxx
+		GOLONG	DIfail
+
+diarmd0+	D0=D0+	2
+diarmwr16	DAT1=C	W
+		D1=D1+	16
+		RTN
+
+diarmloop	LCSTR	'ARM_LOOP'
+		D0=D0+	5		* skip rest to save mem on DIS
+		GONC	diarmd0+
+
+diarmsemi	LCSTR	'ARM_SEMI'
+		GOC	diarmd0+
+
+diarmgc1r	LCSTR	'ARM_GC1R'
+		GOC	diarmd0+
+
+**********************************************************************
+* r=r&s fs	0E|ft			A[0]=f
+* r=r!s	fs	0E|ft			A[1]=t
+**********************************************************************
+DItyp0E		B=A	P		* B[0] = flda
+		ASR	A		* A[0] = t
+		GOSUBL	DIreg		* ABCDBCAC
+		GOSUBL	DIchr=		* '='
+		GOSUBL	DIreg		* ABCDBCAC
+		LCASC	'&'		* #26
+		?ABIT=0	3
+		GOYES	DItyp0Et
+		LC(1)	'!'		* #21
+DItyp0Et	DAT1=C	B
+		D1=D1+	2
+		GOSUBL	DIba		* BCACABCD
+		D0=D0+	2		* Skip |ft
+		P=	7-5
+		GOLONG	DIspcflda
+**********************************************************************
+* Dn		13|t			A[0]=t
+* 0 D0=A	4 D0=C		5 D0=AS		9 D0=CS
+* 1 D1=A	5 D1=C		6 D1=AS		A D1=CS
+* 2 AD0EX	6 CD0EX		7 AD0XS		B CD0XS
+* 3 AD1EX	7 CD1EX		8 AD1XS		C CD1XS
+**********************************************************************
+DItyp13		D0=D0+	1		* Skip t
+		?ABIT=0	1
+		GOYES	DItyp13_1	* Dn comes first
+		GOSUBL	DIac2
+
+DItyp13_1	LCASC	'D'		* 'D'
+		DAT1=C	B
+		D1=D1+	2
+		GOSUBL	DInib0/1	* 0/1
+
+		?ABIT=0	1
+		GOYES	DItyp13_2	* Not swap instruction
+
+		?ABIT=1	3		* 'EX' ?
+		GOYES	DItyp13_xs
+		GOTO	DIex
+
+DItyp13_xs	LCSTR	'XS'
+		DAT1=C	4
+		D1=D1+	4
+		RTNCC
+
+DItyp13_2	GOSUBL	DIchr=		* '=r'
+		GOSUBL	DIac2
+		?ABIT=0	3
+		RTNYES
+		LCASC	'S'		* '=rS'
+		DAT1=C	B
+		D1=D1+	2
+		RTNCC
+**********************************************************************
+* DATn A/B	14|t			A[0]=t
+* 0 DAT0=A	4 DAT0=C	If 0<=t<=7 field A
+* 1 DAT1=A	5 DAT1=C	If 8<=t<=F field B
+* 2 A=DAT0	6 C=DAT0
+* 3 A=DAT1	7 C=DAT1
+**********************************************************************
+DItyp14		ST=1	sTEMP		* Mark A/B field
+		GONC	DItyp15_1
+**********************************************************************
+* DATn fs	15|tf			A[0]=t	A[1]=f/n
+* 0 DAT0=A	4 DAT0=C	If 0<=t<=7 field fs
+* 1 DAT1=A	5 DAT1=C	If 8<=t<=F field N
+* 2 A=DAT0	6 C=DAT0
+* 3 A=DAT1	7 C=DAT1
+**********************************************************************
+DItyp15		ST=0	sTEMP		* No A/B field
+
+DItyp15_1	D0=D0+	1		* Skip |t
+		?ABIT=0	1
+		GOYES	DItyp15_2	* DATn comes first
+		GOSUBL	DIac2		* A/C comes first
+		GOSUBL	DIchr=
+DItyp15_2	LCSTR	'DAT'
+		DAT1=C	6
+		D1=D1+	6
+		GOSUBL	DInib0/1	* '0/1'
+		?ABIT=1	1
+		GOYES	DItyp15_3	* A/C already there
+		GOSUBL	DIchr=
+		GOSUBL	DIac2
+DItyp15_3	P=	7-6
+		GOSUBL	DIspaces
+		?ST=0	sTEMP
+		GOYES	DItyp15_5	* Standard DATn field
+		?ABIT=1	3
+		GOYES	DItyp15_4
+		GOLONG	DIchra		* Field 'A'
+DItyp15_4	GOLONG	DIchrb		* Field 'B'
+
+DItyp15_5	D0=D0+	1		* Skip f
+		?ABIT=1	3
+		GOYES	DItyp15_6	* Write N field
+		ASR	B
+		B=A	P
+*		GOLONG	DIfld		* Write fs
+		GOLONG	DIflda
+DItyp15_6	ASR	B
+		GOLONG	DInib1-16
+**********************************************************************
+* rSLC		81|t			A[0]=t
+* rSRC		81|t
+* rSRB		81|t
+**********************************************************************
+DItyp3E		D0=D0+	1		* Skip |t
+		GOSUBL	DIabcd
+		?ABIT=1	3
+		GOYES	DIsrb
+		?ABIT=1	2
+		GOYES	DIsrc
+DIslc		LCSTR	'SLC'
+DIslc_put	DAT1=C	6
+		D1=D1+	6
+		RTNCC
+DIsrc		LCSTR	'SRC'
+		GOC	DIslc_put
+DIsrb		LCSTR	'SRB'
+		GOC	DIslc_put
+**********************************************************************
+* rSRB.F fs	819|fs			* A[0]=f A[1]=s
+**********************************************************************
+DItyp40		D0=D0+	2		* Skip |fs
+		B=A	P		* B[0]=flda
+		ASR	B
+		GOSUBL	DIabcd
+		LCSTR	'SRB.F'
+		DAT1=C	10
+		D1=D1+	10
+		P=	7-6
+		GOLONG	DIspcflda
+**********************************************************************
+
+**********************************************************************
+*		NIBBLE FIELD INSTRUCTIONS
+**********************************************************************
+
+**********************************************************************
+* D0=D0+ n	16|n		A[0]=n
+**********************************************************************
+DItyp16		LCSTR	'D0+'
+		GONC	DItyp1C_1
+**********************************************************************
+* D1=D1+ n	17|n		A[0]=n
+**********************************************************************
+DItyp17		LCSTR	'D1+'
+		GONC	DItyp1C_1
+**********************************************************************
+* D0=D0- n	18|n		A[0]=n
+**********************************************************************
+DItyp18		LCSTR	'D0-'
+		GONC	DItyp1C_1
+**********************************************************************
+* D1=D1- n	1C|n		A[0]=n
+**********************************************************************
+DItyp1C		LCSTR	'D1-'
+
+DItyp1C_1	D0=D0+	1		* Skip |n
+		DAT1=C	4		* Write 'Dn'
+		D1=D1+	4
+		GOSUBL	DIchr=		* Write '='
+		LCASC	'D'		* Restore 'D'
+		DAT1=C	6		* Write 'Dn+'
+		D1=D1+	6
+		P=	7-6
+		GOSUBL	DIspaces
+		GOLONG	DInib1-16	* A[0] as decimal
+
+**********************************************************************
+* P= n		2|n			A[0]=n
+**********************************************************************
+DItyp20		LCSTR	'P='
+		DAT1=C	4
+		D1=D1+	4
+		P=	7-2
+		GONC	DItyp32_2
+**********************************************************************
+* C=P n		80C|n			A[0]=n
+**********************************************************************
+DItyp31		LCSTR	'C=P'
+		GONC	DItyp32_1
+**********************************************************************
+* P=C n		80D|n			A[0]=n
+**********************************************************************
+DItyp32		LCSTR	'P=C'
+DItyp32_1	DAT1=C	6
+		D1=D1+	6
+		P=	7-3
+DItyp32_2	D0=D0+	1		* Skip |n
+		GOLONG	DIspc0-15	* A[0] as decimal
+**********************************************************************
+* CPEX n	80F|n			A[0]=n
+**********************************************************************
+DItyp34		LCSTR	'CPEX'
+		DAT1=C	8
+		D1=D1+	8
+		P=	7-4
+		GONC	DItyp32_2
+**********************************************************************
+
+**********************************************************************
+*		SCRATCH REGISTER INSTRUCTIONS
+**********************************************************************
+
+**********************************************************************
+* Rn=r		10|t			A[0]=t
+**********************************************************************
+DItyp10		D0=D0+	1		* Skip |t
+DIrn=r		GOSUBL	DIrn		* Write 'Rn'
+		GOSUBL	DIchr=
+		GOLONG	DIac3		* Bit 3 chooses A/C
+**********************************************************************
+* r=Rn		11|t			A[0]=t
+**********************************************************************
+DItyp11		D0=D0+	1		* Skip |t
+DIr=rn		GOSUBL	DIac3		* Bit 3 chooses A/C
+		GOSUBL	DIchr=
+		GOLONG	DIrn		* Write 'Rn'
+**********************************************************************
+* rRnEX		12|t			A[0]=t
+**********************************************************************
+DItyp12		D0=D0+	1		* Skip |t
+DIrrnex		GOSUBL	DIac3		* Bit 3 chooses A/C
+		GOSUBL	DIrn		* Write 'Rn'
+DIex		LCSTR	'EX'
+		DAT1=C	4
+		D1=D1+	4
+		RTNCC
+**********************************************************************
+* Rn=r.F  fs	81A|f0t			A[0]=f A[1]=s A[2]=t
+* r=Rn.F  fs	81A|f1t
+* rRnEX.F fs	81A|f2t
+**********************************************************************
+DItyp41		D0=D0+	3		* Skip |fst
+		B=A	P		* B[0]=f
+		ASR	X		* A[0]=s A[1]=t
+		C=A	P		* C[0]=s
+		ASR	B		* A[0]=t
+		C=C-1	P
+		GOC	DIrn=r.F
+		C=C-1	P
+		GOC	DIr=rn.F
+		C=C-1	P
+		GOC	DIrrnex.F
+		D0=D0-	6		* Invalid instruction
+		P=	6-1
+		GOLONG	DIfail		* NIBHEX 81Afst
+DIrn=r.F	GOSUB	DIrn=r
+		GONC	DI_typ41_1
+DIr=rn.F	GOSUB	DIr=rn
+DI_typ41_1	P=	7-6
+		GONC	DI_typ41_2
+DIrrnex.F	GOSUB	DIrrnex
+		P=	7-7
+DI_typ41_2	C=P	15
+		P=	0
+		LCSTR	'.F'
+		DAT1=C	4
+		D1=D1+	4
+		P=C	15
+		GOLONG	DIspcflda
+
+**********************************************************************
+* [?]rBIT=n n	808|4n - 808|Bn		A[0]=4-8 A[1]=n
+**********************************************************************
+DItyp39		D0=D0+	2		* Skip |tn
+		?ABIT=0	1
+		GOYES	DItyp39_1
+		GOSUBL	DIbranch	* Write '?' and set sBRANCH
+DItyp39_1	GOSUBL	DIac3		* A/C
+		LCSTR	'BIT='
+		DAT1=C	8
+		D1=D1+	8
+		GOSUBL	DInib0/1	* '0/1'
+		ASR	B		* A[0]=n
+		P=	7-6
+		?ST=0	sBRANCH
+		GOYES	DItyp39_2
+		P=	7-7
+DItyp39_2	GOLONG	DIspc0-15
+**********************************************************************
+* r=r+CON fs,n	818|fsn			A[0]=f A[1]=s A[2]=n
+* r=r-CON fs,n	818|fsn
+**********************************************************************
+DItyp3F		D0=D0+	2		* Skip |fs
+		B=A	P		* B[0]=f
+		ASR	X		* A[0]=s A[1]=n
+		GOSUBL	DIabcd
+		GOSUBL	DIchr=
+		GOSUBL	DIabcd
+		LCASC	'+'		* '+'=#2B  '-'=#2D
+		?ABIT=0	3
+		GOYES	DItyp3F_1
+		LC(1)	'-'
+DItyp3F_1	DAT1=C	B
+		D1=D1+	2
+		LCSTR	'CON'
+		DAT1=C	6
+		D1=D1+	6
+		P=	7-7
+		GOSUBL	DIspcflda
+		LCASC	','
+		DAT1=C	B
+		D1=D1+	2
+		A=DAT0	1		* n
+		D0=D0+	1		* Skip n
+		GOLONG	DInib1-16
+**********************************************************************
+* HS=0 n	82|n			A[0]=n
+* CLRHST	82|f
+**********************************************************************
+DItyp43		D0=D0+	1		* Skip |n
+		A=A+1	P
+		A=A-1	P		* CS if CLRHST
+		GONC	DItyp43_1
+		LCSTR	'CLRHST'
+		DAT1=C	12
+		D1=D1+	12
+		RTNCC
+DItyp43_1	GOSUB	DItyphst?
+		GOC	DItyp43_2
+		LCSTR	'HS=0'
+		DAT1=C	8
+		D1=D1+	8
+		P=	7-4
+		?ST=0	sBRANCH
+		GOYES	+
+		P=	7-5
++		GOLONG	DIspc0-15
+DItyp43_2	CSR	A
+		DAT1=C	4
+		D1=D1+	4
+		LCSTR	'=0'
+		DAT1=C	4
+		D1=D1+	4
+		RTNCC
+
+LCHST	MACRO
+	LC(N)	5
+	CON(1)	$1
+	NIBASC	'$2'
+LCHST	ENDM
+
+
+DItyphst?	LCHST	1,XM
+		?A=C	P
+		RTNYES
+		LCHST	2,SB
+		?A=C	P
+		RTNYES
+		LCHST	4,SR
+		?A=C	P
+		RTNYES
+		LCHST	8,MP
+		?A=C	P
+		RTNYES
+		RTN
+
+**********************************************************************
+* ?HS=0 n	83|n			A[0]=n
+**********************************************************************
+DItyp44		ST=1	sBRANCH
+		D0=D0+	1		* Skip |n
+		LCASC	'?'
+		DAT1=C	B
+		D1=D1+	2
+		GOTO	DItyp43_1	* Add the rest
+**********************************************************************
+* ST=0 n	84|n			A[0]=n
+**********************************************************************
+DItyp45		LCSTR	'ST=0'
+		GONC	DItyp46_1
+**********************************************************************
+* ST=1 n	85|n			A[0]=n
+**********************************************************************
+DItyp46		LCSTR	'ST=1'
+DItyp46_1	DAT1=C	8
+		D1=D1+	8
+		P=	7-4
+DItyp46_2	D0=D0+	1		* Skip |n
+		GOLONG	DIspc0-15
+**********************************************************************
+* ?ST=0 n	86|n			A[0]=n
+**********************************************************************
+DItyp47		LCSTR	'?ST=0'
+		GONC	DItyp48_1
+**********************************************************************
+* ?ST=1 n	87|n			A[0]=n
+**********************************************************************
+DItyp48		LCSTR	'?ST=1'
+DItyp48_1	DAT1=C	10
+		D1=D1+	10
+		ST=1	sBRANCH
+		P=	7-5
+		GONC	DItyp46_2
+**********************************************************************
+* ?P# n		88|n			A[0]=n
+**********************************************************************
+DItyp49		LCSTR	'?P#'
+		GONC	DItyp4A_1
+**********************************************************************
+* ?P= n		89|n			A[0]=n
+**********************************************************************
+DItyp4A		LCSTR	'?P='
+DItyp4A_1	DAT1=C	6
+		D1=D1+	6
+		D0=D0+	1		* Skip |n
+		ST=1	sBRANCH
+		P=	7-3
+		GOLONG	DIspc0-15
+
+**********************************************************************
+*		REGISTER TEST INSTRUCTIONS
+**********************************************************************
+
+**********************************************************************
+* ?XXX fs	9|ft			A[0]=f A[1]=t
+**********************************************************************
+DItyp51		B=A	P		* B[0]=f
+		D0=D0+	1		* Skip f
+		ASR	B
+		B=B+B	P		* Set carry if fs bit 3 is set
+		BSRB.F	P		* Also clear bit3
+		GONC	DItyp4B_1
+		GOC	DItyp4C_1
+**********************************************************************
+* ?XXX A	8A|t			A[0]=t		Test type 1
+* 	0 ?A=B		4 ?A#B		8 ?A=0		C ?A#0
+* 	1 ?B=C		5 ?B#C		9 ?B=0		D ?B#0
+* 	2 ?C=A		6 ?C#A		A ?C=0		E ?C#0
+* 	3 ?D=C		7 ?D#C		B ?D=0		F ?D#0
+**********************************************************************
+DItyp4B		B=0	P
+		B=B-1	P		* Set 'A' field
+DItyp4B_1	D0=D0+	1		* Skip t
+		GOSUB	DIbranch	* Set sBRANCH, output '?'
+		GOSUB	DIabcd
+		LCASC	'='		* #3D
+		?ABIT=0	2
+		GOYES	DItest1_1
+		LCASC	'#'		* #23
+DItest1_1	DAT1=C	B
+		D1=D1+	2
+		?ABIT=1	3
+		GOYES	DItest1_2
+		GOSUB	DIbcac
+		GONC	DItest1_3
+DItest1_2	LCASC	'0'
+		DAT1=C	B
+		D1=D1+	2
+DItest1_3	P=	7-4
+DItyp4B_2	GOTO	DIspcflda
+**********************************************************************
+* ?XXX A	8B|t			A[0]=t		Test type 2
+* 	0 ?A>B		4 ?A<B		8 ?A>=B		C ?A<=B
+* 	1 ?B>C		5 ?B<C		9 ?B>=C		D ?B<=C
+* 	2 ?C>A		6 ?C<A		A ?C>=A		E ?C<=A
+* 	3 ?D>C		7 ?D<C		B ?D>=C		F ?D<=C
+**********************************************************************
+DItyp4C		B=0	P
+		B=B-1	P		* Set 'A' field
+DItyp4C_1	D0=D0+	1		* Skip t
+		GOSUB	DIbranch	* Set sBRANCH, output '?'
+		GOSUB	DIabcd
+		LCASC	'>'		* #3E
+		?ABIT=0	2
+		GOYES	DItest2_1
+		LC(1)	'<'		* #3D
+DItest2_1	DAT1=C	B
+		D1=D1+	2
+		?ABIT=0	3
+		GOYES	DItest2_2
+		GOSUB	DIchr=		* Also equality check
+DItest2_2	GOSUB	DIbcac
+		P=	7-4		* '?r>r' or '?r<r'
+		?ABIT=0	3
+		GOYES	DItyp4B_2
+		P=	7-5		* '?r>=r' or '?r<=r'
+		GONC	DItyp4B_2
+
+**********************************************************************
+*		ARITHMETIC INSTRUCTIONS
+**********************************************************************
+
+**********************************************************************
+* r=r+s fs	A|ft			A[0]=f A[1]=t
+* Chooses arithmetic type 1/2 according to fs bit 2
+**********************************************************************
+DItyp52		B=A	P		* B[0]=fs
+		ASR	B		* A[0]=t
+		D0=D0+	1		* Skip f
+		B=B+B	P
+		BSRB.F	P
+		GOC	DIarit2_f
+		GONC	DIarit1_f
+**********************************************************************
+* r=r+s A	C|t			A[0]=t
+**********************************************************************
+DItyp54		B=0	P
+		B=B-1	P		* Set 'A' field
+DIarit1_f	GOSUB	DIarit1
+		P=	7-5
+		GOTO	DIspcflda
+**********************************************************************
+* r=0 A		D|t			A[0]=t
+**********************************************************************
+DItyp55		B=0	P
+		B=B-1	P		* Set 'A' field
+DIarit2_f	GOSUB	DIarit2
+		P=	7-3
+		?ABIT=0	3
+		GOYES	DItyp55_1
+		?ABIT=0	2
+		GOYES	DItyp55_1
+		P=	7-4
+DItyp55_1	GOTO	DIspcflda
+**********************************************************************
+* r=r-s fs	B|ft			A[0]=f A[1]=t
+* Chooses arithmetic type 3/4 according to fs bit 3.
+**********************************************************************
+DItyp53		B=A	P		* B[0] = fs
+		ASR	B		* A[0]=t	
+		D0=D0+	1		* Skip f
+		B=B+B	P
+		BSRB.F	P		* Set CRY if bit3 is set
+		GOC	DIarit4_f
+		GONC	DIarit3_f
+**********************************************************************
+* r=r-s A	E|t			A[0]=t
+**********************************************************************
+DItyp56		B=0	P
+		B=B-1	P		* Set 'A' field
+DIarit3_f	GOSUB	DIarit3
+		P=	7-5
+		GOTO	DIspcflda
+**********************************************************************
+* rSL A		F|t			A[0]=t
+**********************************************************************
+DItyp57		B=0	P
+		B=B-1	P		* Set 'A' field
+DIarit4_f	GOSUB	DIarit4
+		P=	7-3
+		?ABIT=0	3
+		GOYES	DItyp57_1
+		P=	7-4
+		?ABIT=0	2
+		GOYES	DItyp57_1
+		P=	7-6
+DItyp57_1	GOTO	DIspcflda
+**********************************************************************
+* Write arithmetic operation, type 1, according to nib A[0]
+*	0 A=A+B		4 A=A+A		8 B=B+A 	C A=A-1
+*	1 B=B+C		5 B=B+B		9 C=C+B		D B=B-1
+*	2 C=C+A		6 C=C+C		A A=A+C		E C=C-1
+*	3 D=D+C		7 D=D+D		B C=C+D		F D=D-1
+**********************************************************************
+DIarit1		D0=D0+	1		* Skip nib
+		GOSUB	DIaaba
+		GOSUB	DIchr=
+		GOSUB	DIaaba		* Same reg again
+		LCASC	'+'		* #2B
+		?ABIT=1	3
+		GOYES	DIarit1_1
+		DAT1=C	B		'+'
+		D1=D1+	2
+		GOTO	DIba		* BCAC/ABCD		
+DIarit1_1	?ABIT=1	2
+		GOYES	DIchr-1
+		DAT1=C	B		* '+'
+		D1=D1+	2
+		GOTO	DIabcd
+DIchr-1		LCSTR	'-1'
+		DAT1=C	4
+		D1=D1+	4
+		RTNCC
+**********************************************************************
+* Write arithmetic operation, type 2, according to nib A[0]
+*	0 A=0		4 A=B		8 B=A		C ABEX
+*	1 B=0		5 B=C		9 C=B		D BCEX
+*	2 C=0		6 C=A		A A=C		E CAEX
+*	3 D=0		7 D=C		B C=D		F DCEX
+**********************************************************************
+DIarit2		D0=D0+	1
+		GOSUB	DIaaba
+		?ABIT=1	3
+		GOYES	DIarit2_2
+		?ABIT=1	2
+		GOYES	DIarit2_1
+		LCSTR	'=0'
+		DAT1=C	4
+		D1=D1+	4
+		RTNCC
+DIarit2_1	GOSUB	DIchr=
+		GOTO	DIbcac
+DIarit2_2	?ABIT=1	2
+		GOYES	DIarit2_3
+		GOSUB	DIchr=
+		GOTO	DIabcd
+DIarit2_3	GOSUB	DIbcac
+		GOTO	DIex
+**********************************************************************
+* Write arithmetic operation, type 3, according to nib A[0]
+*	0 A=A-B		4 A=A+1		8 B=B-A		C A=B-A
+*	1 B=B-C		5 B=B+1		9 C=C-B		D B=C-B
+*	2 C=C-A		6 C=C+1		A A=A-C		E C=A-C
+*	3 D=D-C		7 D=D+1		B C=C-D		F D=C-D
+**********************************************************************
+DIarit3		D0=D0+	1
+		GOSUB	DIaaba
+		GOSUB	DIchr=
+		?ABIT=1	3
+		GOYES	DIarit3_2
+		GOSUB	DIabcd
+		?ABIT=1	2
+		GOYES	DIarit3_1
+		LCASC	'-'
+		DAT1=C	B
+		D1=D1+	2
+		GOTO	DIbcac
+DIarit3_1	LCSTR	'+1'
+DIarit_wr2	DAT1=C	4
+		D1=D1+	4
+		RTNCC
+DIarit3_2	GOSUB	DIbcac
+		LCASC	'-'
+		DAT1=C	B
+		D1=D1+	2
+		GOTO	DIabcd
+**********************************************************************
+* Write arithmetic operation, type 4, according to nib A[0]
+*	0 ASL		4 ASR		8 A=-A		C A=-A-1
+*	1 BSL		5 BSR		9 B=-B		D B=-B-1
+*	2 CSL		6 CSR		A C=-C		E C=-C-1
+*	3 DSL		7 DSR		B D=-D		F D=-D-1
+**********************************************************************
+DIarit4		D0=D0+	1
+		GOSUB	DIabcd
+		?ABIT=1	3
+		GOYES	DIarit4_1
+		LCSTR	'SR'
+		?ABIT=1	2
+		GOYES	DIarit_wr2
+		LCSTR	'SL'
+		GONC	DIarit_wr2
+DIarit4_1	LCSTR	'=-'
+		DAT1=C	4
+		D1=D1+	4
+		GOSUB	DIabcd
+		?ABIT=0	2
+		GOYES	DIarit4_2
+		GOTO	DIchr-1
+DIarit4_2	RTNCC
+**********************************************************************
+
+
+**********************************************************************
+*		DATA LOADING INSTRUCTIONS
+**********************************************************************
+
+
+**********************************************************************
+* D0=(2) expr	19|nn		A[B]=nn
+**********************************************************************
+DItyp19		LCSTR	'02'
+		GONC	DItyp1F_1
+**********************************************************************
+* D0=(4) expr	1A|nnnn		A[3-0]=nnnn
+**********************************************************************
+DItyp1A		LCSTR	'04'
+		GONC	DItyp1F_1
+**********************************************************************
+* D0=(5) expr	1B|nnnnn	A[A]=nnnn
+**********************************************************************
+DItyp1B		LCSTR	'05'
+		GONC	DItyp1F_1
+**********************************************************************
+* D1=(2) expr	1D|nn		A[B]=nn
+**********************************************************************
+DItyp1D		LCSTR	'12'
+		GONC	DItyp1F_1
+**********************************************************************
+* D1=(4) expr	1E|nnnn		A[3-0]=nnnn
+**********************************************************************
+DItyp1E		LCSTR	'14'
+		GONC	DItyp1F_1
+**********************************************************************
+* D1=(5)	1F|nnnnn	A[A]=nnnnn
+**********************************************************************
+DItyp1F		LCSTR	'15'
+
+DItyp1F_1	A=C	A		* Save pattern
+		LCASC	'D'		* Write 'D'
+		DAT1=C	B
+		D1=D1+	2
+		DAT1=A	B		* Write 'N' from pattern
+		D1=D1+	2
+		GOSUB	DIchr=
+		LAASC	'('		* Write '(N'
+		DAT1=A	4
+		D1=D1+	4
+		LCASC	')'
+		DAT1=C	B
+		D1=D1+	2
+		P=	7-6
+		GOSUB	DIspaces
+
+* Now handle different sizes differently	A[2]=N = 5/4/2
+
+		?ABIT=0	8
+		GOYES	DIdn2/4
+
+* Now we have Dn=(5) expr
+* Just output '=entry' or #nnnnn
+
+DIdn5		A=DAT0	A
+		D0=D0+	5
+		GOTO	DIgentry
+
+DIdn2/4		?ABIT=0	9
+		GOYES	DIdn4
+
+* Now we have Dn=(2) expr
+* If possible IO page address & match found then output '=entry'
+* Else output #nn
+
+DIdn2		A=0	A
+		A=DAT0	B
+		D0=D0+	2
+		LC(2)	IOPGAREA
+		?A>C	A
+		GOYES	DIdnaddr_2	* Not IO page value - output #nn
+
+		A=A+1	XS		* Convert to #100+nn
+		CD0EX
+		RSTK=C			* Save pc
+		GOSUBL	EntryAddr?
+		P=	2		* Convert back
+		A=0	P
+		P=	0
+		GOC	DIdnaddr_1	* No match - output #nn
+DIdnentry	GOTO	DI=entry
+
+* Now we have Dn=(4) expr
+* If possible RAM variable address & match found then output '=entry'
+* Else output #nnnn
+
+DIdn4		A=0	A
+		A=DAT0	4
+		D0=D0+	4
+
+* Han:	removed SX code (see disdefs.a regarding IRAMPGGX)
+*		LC(5)	=IRAM@
+*		CD0EX
+*		C=DAT0	S
+*		C=C+C	S		* Set carry if IRAM at 8 (GX)
+*		CD0EX
+*		LC(4)	IRAMPGSX	* Upper limit for SX
+*		GONC	DIdn4_1
+*		LC(4)	IRAMPGGX	* Upper limit for GX
+
+		LC(5)	IRAMPGGX
+DIdn4_1		?A>C	A
+		GOYES	DIdnaddr_2	* Not RAM variable - output #nnnn
+		LC(5)	=IRAM@
+		CD0EX
+		RSTK=C
+		P=	4
+		A=DAT0	P
+		P=	0
+		GOSUBL	EntryAddr?
+		P=	4
+		A=0	P
+		P=	0
+		GONC	DIdnentry	* Macth - output '=entry'
+		
+DIdnaddr_1	GOSUBL	RestoreBanks
+		C=RSTK			* Restore pc
+		D0=C
+DIdnaddr_2	GOTO	DIaddr#		* Output A[A] as #nnnnn
+
+**********************************************************************
+* LC(N) nnn	3|cnn.n			A[0]=c
+**********************************************************************
+DItyp21		D0=D0+	1		* Skip c
+		LC(1)	4
+		?A<=C	P
+		GOYES	DIloadc		* Too long to match in tables
+		LCSTR	'LCHEX'
+		GONC	DIload2
+
+DIloadc		LCSTR	'LC('
+DIload		DAT1=C	6
+		D1=D1+	6
+		LCASC	'1'
+		C=C+A	P		* Add to get 1-5
+		DAT1=C	B
+		D1=D1+	2
+		LCASC	')'
+		DAT1=C	B
+		D1=D1+	2
+		P=	7-5
+		GOSUB	DIspaces
+
+* Now if N=5 try finding an entry first. Else just output #n
+
+		LC(1)	4
+		?A#C	P
+		GOYES	DIload<5
+		GOTO	DIdn5		* Output '=entry' or '#nnnnn'
+
+* Might comment possible ascii strings later..
+
+DIload<5	C=A	P
+		P=C	0
+		A=0	A
+		A=DAT0	WP		* A[A]=arg
+		CD0EX			* Skip arg
+		C+P+1
+		CD0EX
+		P=	0
+		GOTO	DIaddr#		* Output #nnn
+
+**********************************************************************
+* LA(N) nn.n	8082|cnn.n		A[0]=c
+**********************************************************************
+DItyp37		D0=D0+	1		* Skip c
+		LC(1)	4
+		?A>C	P
+		GOYES	DIlahex
+		LCSTR	'LA('
+		GONC	DIload
+
+DIlahex		LCSTR	'LAHEX'
+DIload2		DAT1=C	10
+		D1=D1+	10
+		P=	7-5
+		GOSUB	DIspaces
+		C=A	P
+		P=C	0
+		GOTO	DImemhex
+**********************************************************************
+
+
+
+**********************************************************************
+*		BRANCH, JUMP & CALL INSTRUCTIONS
+**********************************************************************
+
+**********************************************************************
+* Disassemble RTNYES/GOYES
+**********************************************************************
+
+DIrtn/goy	ST=0	sBRANCH		* Branch serviced
+		A=0	A
+		A=DAT0	B		* A[A]=offset
+		D0=D0+	2
+		?A#0	A
+		GOYES	DIgoyes
+
+DIrtnyes	LCSTR	'RTNYES'
+		DAT1=C	12
+		D1=D1+	12
+		RTN
+
+DIgoyes		LCSTR	'GOYES'
+		DAT1=C	10
+		D1=D1+	10
+		P=	7-5		* Add spaces to fill up
+		GOTO	DItyp23_1
+**********************************************************************
+* GOC label	4|aa			A[B]=aa
+* Special:	400:RTNC	420:NOP3
+**********************************************************************
+DItyp22		A=0	A
+		A=DAT0	B
+		D0=D0+	2
+		?A=0	B
+		GOYES	DIrtnc
+		LC(2)	2
+		?A=C	B
+		GOYES	DInop3
+		LCSTR	'GOC'
+		DAT1=C	6
+		D1=D1+	6
+		P=	7-3
+		GONC	DItyp23_1
+
+**********************************************************************
+* GONC label	5|aa			A[B]=aa
+* Special:	500:RTNNC
+**********************************************************************
+DItyp23		A=0	A
+		A=DAT0	B
+		D0=D0+	2		* Skip |aa
+		?A=0	B
+		GOYES	DIrtnnc
+		LCSTR	'GONC'
+		DAT1=C	8
+		D1=D1+	8
+		P=	7-4
+DItyp23_1	GOSUB	DIspaces
+DItyp23br	CD0EX
+		D0=C
+		C=C-1	A		* Fix offset start address
+		C=C-1	A
+		?ABIT=0	7
+		GOYES	DItyp23_2
+		A=-A	B
+		A=-A	A
+DItyp23_2	GOTO	DIjump
+
+DInop3		LCSTR	'NOP3'
+		GOC	DInop5_1
+DIrtnc		LCSTR	'RTNC'
+		GOC	DInop5_1
+DInop4		D0=D0+	3
+		LCSTR	'NOP4'
+		GONC	DInop5_1
+DInop5		D0=D0+	4
+		LCSTR	'NOP5'
+DInop5_1	DAT1=C	8
+		D1=D1+	8
+		RTNCC
+DIrtnnc		LCSTR	'RTNNC'
+		DAT1=C	10
+		D1=D1+	10
+		RTNCC
+
+**********************************************************************
+* GOTO label	6|aaa			A[X]=aaa
+* Special:	6300:NOP4	6400x:NOP5
+**********************************************************************
+DItyp24		A=0	A
+		A=DAT0	3
+		C=0	A
+		LC(1)	3
+		?A=C	A
+		GOYES	DInop4
+		C=C+1	A
+		?A=C	A
+		GOYES	DInop5		* The extra nibble is not checked!!
+		LCSTR	'GOTO'
+		DAT1=C	8
+		D1=D1+	8
+		P=	7-4
+		GOSUB	DIspaces
+		A=0	A
+		A=DAT0	X
+		CD0EX			* Start address for GOTO
+		D0=C
+		D0=D0+	3
+		?ABIT=0	11
+		GOYES	DIjump
+		A=-A	X
+		A=-A	A
+DIjump		A=A+C	A		* A[A]=target
+		GOTO	DIhardlabel
+
+**********************************************************************
+* GOLONG label	8C|aaaa			A[3-0]=aaaa
+* Special:	xxxx:NOP4
+**********************************************************************
+DItyp4D		LCSTR	'GOLONG'
+		DAT1=C	12
+		D1=D1+	12
+		P=	7-6
+		GOSUB	DIspaces
+		A=0	A		* Read offset
+		A=DAT0	4
+		CD0EX			* Source address
+		D0=C
+		D0=D0+	4		* Skip offset
+		?ABIT=0	15		* Convert 4 nibble offset to 5
+		GOYES	DIjump
+		P=	3
+		A=-A	WP
+		P=	0
+		A=-A	A
+		GOTO	DIjump
+
+**********************************************************************
+* GOSUB label	7|aaa			A[X]=aaa
+**********************************************************************
+DItyp25		LCSTR	'GOSUB'
+		DAT1=C	10
+		D1=D1+	10
+		P=	7-5
+		GOSUB	DIspaces
+		A=0	A
+		A=DAT0	X
+		D0=D0+	3
+		CD0EX			* Start address for GOSUB
+		D0=C
+		?ABIT=0	11
+		GOYES	DIcall
+		A=-A	X
+		A=-A	A
+		GOTO	DIcall
+
+**********************************************************************
+* GOSUBL label	8E|aaaa			A[3-0]=aaaa
+**********************************************************************
+DItyp4F		LCSTR	'GOSUBL'
+		DAT1=C	12
+		D1=D1+	12
+		P=	7-6
+		GOSUB	DIspaces
+		A=0	A		* Read offset
+		A=DAT0	4
+		D0=D0+	4
+		CD0EX			* Source address
+		D0=C
+		?ABIT=0	15		* Convert 4 nibble offset to 5
+		GOYES	DIcall
+		P=	3
+		A=-A	WP
+		P=	0
+		A=-A	A
+
+DIcall		A=A+C	A		* A[A] = target
+		?ST=1	sGUESS
+		GOYES	+
+DIcalok		GOTO	DIhardlabel
+
+* Check if forward call to C=RSTK
+
++		?A<C	A
+		GOYES	DIcalok		* Ignore negative call
+		AD0EX
+		C=DAT0	B
+		AD0EX
+		B=C	B
+		LCHEX	70		"C=RSTK"
+		?B#C	B
+		GOYES	DIcalok		Normal call
+
+* Now we have a forward call to C=RSTK. Disass label, then guess data
+
+		C=A	A
+		RSTK=C
+		GOSUB	DIhardlabel
+		LCASC	'\n'
+		DAT1=C	B
+		D1=D1+	2
+		GOSUBL	PayBack
+		C=RSTK
+		GOLONG	DIguess
+
+**********************************************************************
+* GOVLNG expr	8D|nnnnn		A[A]=nnnnn
+**********************************************************************
+DItyp4E		LCSTR	'GOVLNG'
+		GONC	+
+**********************************************************************
+* GOSBVL expr	8F|nnnnn		A[A]=nnnnn
+**********************************************************************
+DItyp50
+		A=DAT0	A		First check for DEBUG opcode
+		LC(5)	DBADDRGX
+		?A=C	A
+		GOYES	DIdebug
+*		LC(5)	DBADDRSX
+*		?A=C	A
+*		GOYES	DIdebug
+
+		LCSTR	'GOSBVL'
++		DAT1=C	12
+		D1=D1+	12
+		A=DAT0	A		* A[A]=addr
+		D0=D0+	5		* Skip nnnnn
+		P=	7-6
+		GOSUB	DIspaces
+		GOTO	DIgentry
+
+DIdebug		D0=D0+	5		Skip target
+		LCSTR	'DEBUG'		Output special JAZZ opcode
+		DAT1=C	10
+		D1=D1+	10
+		RTN
+
+**********************************************************************
+*		UTILITIES
+**********************************************************************
+
+**********************************************************************
+* Add P spaces or if sTABU is set add only 1 tabulator
+* Entry:	P=#	D1 = ->output
+* Exit:		P=0	D1 = ->output'		CC
+* Alters:	C[B] C[S] D1 P CRY
+**********************************************************************
+DIspaces	C=P	15
+		P=	0
+		?ST=0	sTABU
+		GOYES	DIspaces10
+		LCASC	'\t'
+		DAT1=C	B
+		D1=D1+	2
+		RTNCC			* Provided for branching
+DIspaces10	LCASC	' '
+DIspaces20	DAT1=C	B
+		D1=D1+	2
+		C=C-1	S
+		GONC	DIspaces20
+		RTNCC			* Provide CC for branching
+**********************************************************************
+* Write '='
+**********************************************************************
+DIchr=		LCASC	'='
+		DAT1=C	B
+		D1=D1+	2
+		RTNCC
+**********************************************************************
+* Write '?' and set sBRANCH
+**********************************************************************
+DIbranch	LCASC	'?'
+		DAT1=C	B
+		D1=D1+	2
+		ST=1	sBRANCH
+		RTNCC
+**********************************************************************
+* Write ABCD/ABCD/BCAC/ABCD according to A[0]
+**********************************************************************
+DIaaba		?ABIT=0	3
+		GOYES	DIabcd
+**********************************************************************
+* Write BCAC/ABCD according to A[0] (low 3 bits)
+**********************************************************************
+DIba		?ABIT=1	2
+		GOYES	DIabcd
+		GONC	DIbcac
+**********************************************************************
+* Write ABCDBCAC according to A[0] (low 3 bits)
+**********************************************************************
+DIreg		?ABIT=1	2
+		GOYES	DIbcac
+**********************************************************************
+* Write ABCD according to A[0] (low 2 bits)
+**********************************************************************
+DIabcd		LC(2)	#43		* 'A' = #41
+		C=C&A	P
+		C=C+1	P		* --> ABCD
+		DAT1=C	B
+		D1=D1+	2
+		RTNCC
+**********************************************************************
+* Write BCAC according to A[0] (low 2 bits)
+**********************************************************************
+DIbcac		LC(2)	#43		* 'A' = #41
+		C=C&A	P
+		?CBIT=1	1		* 2|3 ?
+		GOYES	DIbcac_ac
+		C=C+1	P
+		C=C+1	P
+		GONC	DIbcacNOW
+DIbcac_ac	?CBIT=1	0		* 3? ('C' = #43 )
+		GOYES	DIbcacNOW
+		C=C-1	P
+DIbcacNOW	DAT1=C	B
+		D1=D1+	2
+		RTNCC
+**********************************************************************
+* Write Rn according to A[0]
+* 00 01 02 03 04 05 06 07 ..
+* R0 R1 R2 R3 R4 R1 R2 R3 ..
+**********************************************************************
+DIrn		LCASC	'R'
+		DAT1=C	B
+		D1=D1+	2
+		LC(2)	7
+		C=C&A	P		* Now 0-7
+		C=C-CON	B,5
+		C=C+CON	B,5
+		GOC	DIrn_ok
+		C=C-CON	B,4
+DIrn_ok		P=	3		* Convert to char
+		CPEX	1
+		DAT1=C	B
+		D1=D1+	2
+		RTNCC
+**********************************************************************
+* Write A/C according to bit0 in A[0]
+**********************************************************************
+DIac0		?ABIT=0	0
+		GOYES	DIchra
+		GONC	DIchrc
+**********************************************************************
+* Write A/C according to bit2 in A[0]
+**********************************************************************
+DIac2		?ABIT=0	2
+		GOYES	DIchra
+		GONC	DIchrc
+**********************************************************************
+* Write A/C according to bit3 in A[0]
+**********************************************************************
+DIac3		?ABIT=0	3
+		GOYES	DIchra
+DIchrc		LCASC	'C'
+		DAT1=C	B
+		D1=D1+	2
+		RTNCC
+**********************************************************************
+* Write 0/1 according to bit0 in A[0]
+**********************************************************************
+DInib0/1	LCASC	'1'		* #31
+		C=C&A	P		* --> '0/1'
+		DAT1=C	B
+		D1=D1+	2
+		RTNCC
+**********************************************************************
+* Write field selector according to B[0]
+**********************************************************************
+DIspcflda	GOSUB	DIspaces	* Special entry to shorten code
+DIflda		LC(1)	#F		* Field 'A' ?
+		?C#B	P
+		GOYES	DIfld		* No - dispatch more
+**********************************************************************
+* Write field selector 'A'
+**********************************************************************
+DIchra		LCASC	'A'
+		DAT1=C	B
+		D1=D1+	2
+		RTNCC
+**********************************************************************
+* Write field selector 'B'
+**********************************************************************
+DIchrb		LCASC	'B'
+		DAT1=C	B
+		D1=D1+	2
+		RTNCC
+**********************************************************************
+* Write standard field selector according to B[0] (Fn highest bit set)
+* 00 01 02 03 04 05 06 07 08 09 10 11 12 13 14 15
+* P  WP XS X  S  M  B  W  F1 F2 F3 F4 F5 F6 F7 -	Han: added Fn
+**********************************************************************
+DIfld		C=B	P
+
+* Han:	Allowing Fn for HP50G
+*		CBIT=0	3		* Assure 0-7
+		?CBIT=0	3		* standard fields?
+		GOYES	DIstdflds
+		LCASC	'F'
+		DAT1=C	B
+		D1=D1+	2
+		A=B	P		* in case A[0] got changed
+		ABIT=0	3		* subtract 8
+		A=A+1	P		* get n for Fn
+		GONC	DInib0-15	* write n
+
+DIstdflds	P=C	0		* P = fs
+		?P=	1
+		GOYES	DIfld_WP
+		?P=	2
+		GOYES	DIfld_XS
+		GOSUB	DIpassfld
+		NIBASC	' P  XSMBW'
+DIpassfld	C=RSTK
+		C+P+1			* Extra space before P fixes..
+		C+P+1
+		P=	0
+		CD1EX
+		A=DAT1	B		* A[B]='fs'
+		D1=C
+		DAT1=A	B
+		D1=D1+	2
+		RTNCC
+DIfld_WP	P=	0
+		LCSTR	'WP'
+		GOC	DIfld2
+DIfld_XS	P=	0
+		LCSTR	'XS'
+DIfld2		DAT1=C	4
+		D1=D1+	4
+		RTNCC
+**********************************************************************
+* Write nibble A[0] as decimal 1-16
+**********************************************************************
+DInib1-16	A=A+1	P
+		GONC	DInib0-15
+		LCSTR	'16'
+		DAT1=C	4
+		D1=D1+	4
+		RTNCC
+**********************************************************************
+* Write nibble A[0] as decimal 0-15
+**********************************************************************
+DIspc0-15	GOSUB	DIspaces	* Special entry to shorten code
+
+DInib0-15	LCASC	'9'
+		?A>C	P
+		GOYES	DInib10-15
+		C=A	P
+		DAT1=C	B
+		D1=D1+	2
+		RTNCC
+DInib10-15	LC(1)	'1'		* Write '1' first
+		DAT1=C	B
+		D1=D1+	2
+		C=A	P
+		C=C-CON	B,10		* 'A' --> '0'
+		DAT1=C	B
+		D1=D1+	2
+		RTNCC
+**********************************************************************
+* Write nibble A[0] as hex 0-F
+**********************************************************************
+DIhex		LCASC	'9'
+		ACEX	P
+		?C<=A	P
+		GOYES	DIhex_1
+		C=C+CON	B,7		* Fix to 'A-F'
+DIhex_1		DAT1=C	B
+		D1=D1+	2
+		RTNCC
+**********************************************************************
+* Output NIBHEX for invalid instructions
+* Entry:	D0=->instr	P=nibbles-1
+**********************************************************************
+DIfail		C=P	15
+		A=C	S		* A[S]=nibbles
+		P=	0
+		LCSTR	'NIBHEX'
+		DAT1=C	12
+		D1=D1+	12
+		P=	7-6
+		GOSUB	DIspaces
+		C=A	S
+		P=C	15
+*		GOTO	DImemrhex
+**********************************************************************
+* Output P+1 nibbles of memory as hex string
+**********************************************************************
+DImemrhex	C=P	15
+		P=	0
+DImemrhex_1	A=DAT0	1
+		D0=D0+	1
+		GOSUB	DIhex
+		C=C-1	S
+		GONC	DImemrhex_1
+		RTNCC
+*		GOTO	DImemhex
+**********************************************************************
+* Output P+1 nibbles of memory as a reversed hex string
+**********************************************************************
+DImemhex	A=DAT0	WP		* A[W]=mem
+		CD0EX			* Skip pc
+		C+P+1
+		CD0EX
+* Shift 1st nibble to A[S]
+DIahex		C=P	15		* C[S]=nibbles
+DImemhex_1	P=P+1
+		GOC	DImemhex_2
+		ASL	W
+		GONC	DImemhex_1
+DImemhex_2	ASLC			* A[0]=memnib
+		GOSUB	DIhex
+		C=C-1	S
+		GONC	DImemhex_2
+		RTNCC
+
+**********************************************************************
+* Output A[A] as 'label' or 'entry'
+* If pc is not in hard ROM then don't bother finding entry
+**********************************************************************
+DIhardlabel	LC(5)	=IRAM@
+		CD0EX
+		C=DAT0	S
+		CD0EX
+		P=C	15
+		C=0	A
+		CPEX	4
+		AD0EX
+		?A<C	A
+		GOYES	DIhard_1	* Set CRY if in hard ROM
+DIhard_1	AD0EX
+		GONC	DIlabel		* Out of hard ROM, use label
+**********************************************************************
+* Output A[A] as 'label' or 'entry'
+**********************************************************************
+DIlabel/entry	CD0EX			* Save pc
+		RSTK=C
+		GOSUBL	EntryAddr?
+*		GONC	DIentry_1	* Found match - output 'entry'
+
+		GOC	+
+* Han:	do not allow "^<entry>" (fptr)
+		GOSUB	EntryFptr?
+		GOC	DIentry_2
+		GONC	DIentry_1
++
+		GOSUBL	RestoreBanks
+		C=RSTK
+		D0=C
+**********************************************************************
+* Output A[A] as 'Lhhhhh'
+**********************************************************************
+DIlabel		LCASC	'L'		* 'L'
+		DAT1=C	B
+		D1=D1+	2
+		P=	5-1
+		GONC	DIahex		* Output 'hhhhh'
+**********************************************************************
+* Output A[A] as '=entry' or '#addr' (Or 'entry' if sGLOBENTR is clear)
+**********************************************************************
+DIgentry	ST=1	sGLOBENTR
+DIentry		CD0EX			* Save pc
+		RSTK=C
+		GOSUBL	EntryAddr?
+		GOC	DIentry_2	* No match
+
+* Han:	do not allow "^<entry>" (fptr)
+		GOSUB	EntryFptr?
+		GOC	DIentry_2
+
+* Found name for entry, output it
+		?ST=0	sGLOBENTR
+		GOYES	DIentry_1
+DI=entry	GOSUB	DIchr=
+DIentry_1	C=0	A		* Found name, copy it to buffer
+		C=DAT0	B
+		D0=D0+	2
+		C=C+C	A
+		GOSBVL	=MOVEDOWN
+		GOSUBL	RestoreBanks	
+		C=RSTK			* Restore pc
+		D0=C
+		RTNCC
+DIentry_2	GOSUBL	RestoreBanks
+		C=RSTK			* Restore pc
+		D0=C
+*		GOTO	DIaddr
+**********************************************************************
+* Output A[A] as '#hex' extracting leading zeros
+* Numbers smaller than 10 are output without #
+**********************************************************************
+DIaddr#		C=0	A
+		LC(1)	9
+		?A<=C	A
+		GOYES	DIaddr		* addr < 10 - no hash sign
+		LCASC	'#'
+		DAT1=C	B
+		D1=D1+	2
+**********************************************************************
+* Output A[A] as hex address extracting leading zeros
+**********************************************************************
+DIaddr		?A#0	A
+		GOYES	DIaddr_1
+DIaddr0		LCASC	'0'		* Z
+		DAT1=C	B
+		D1=D1+	2
+		RTNCC
+
+DIaddr_1	C=A	A		* Reverse address for 0-extracting
+		CPEX	0
+		CPEX	4
+		CPEX	0
+		CPEX	1
+		CPEX	3
+		CPEX	1
+		A=0	A		* Find 1st nonzero digit
+DIaddr_2	?C#0	P
+		GOYES	DIaddr_3
+		CSR	A
+		A=A+1	P
+		GONC	DIaddr_2
+DIaddr_3	ACEX	A
+		C=C-CON	A,5		* 5-counter = digits
+		C=-C	A
+		D=C	A		* D[A]=digits
+* Now write D[A] digits
+		D=D-1	A
+DIaddr_4	LCASC	'9'
+		ACEX	P
+		?C<=A	P
+		GOYES	DIaddr_5
+		C=C+CON	B,7
+DIaddr_5	DAT1=C	B
+		D1=D1+	2
+		ASR	A
+		D=D-1	A
+		GONC	DIaddr_4
+		RTNCC
+**********************************************************************
+* Han:	detect "^<entry>" (fptr) nor "~<entry>" (romptr)
+* CS:	we have fptr/romptr entry
+**********************************************************************
+EntryFptr?	D0=D0+	2
+		C=DAT0	B
+		D=C	B
+		D0=D0-	2
+		LCASC	'^'
+		?C=D	B
+		RTNYES
+		LCASC	'~'
+		?C=D	B
+		RTNYES
+		RTN
+**********************************************************************
+* Search address from RPL.TAB
+* Entry:	A[A]=address R3[A]=->tab R3[A1]=->dtab	P=0 HEX
+* Exit:		CC:match	D0=->namelen	P=0 HEX
+*		CS:no match (or no RPL.TAB)	 	P=0 HEX
+* Uses:		B[A] C[W] D[A] D0 P CRY		(A[A] not modified!!)
+* Stack:	1
+* Notes:	If no RPL.TAB is present CS is returned. If RPL.TAB and
+*		DIS.TAB are both present a fast routine is used.
+**********************************************************************
+EntryAddr?
+		C=R3
+		?C=0	A
+		RTNYES			no extable
+		
+		GOSBVL	=CSRW5
+		GOSBVL	=CSRW5
+		?C=0	A
+		GOYES	+
+		GOSUB	eadrPC=C
++		C=R3
+		D0=C			* D0 = ->tab
+		GOSBVL	=CSRW5		* C[A] = ->dtab
+		
+****************************************
+* Fast version of entry address search
+* Entry:	A[A]=addr C[A]=->dtab R3[A]=->tab
+* The routine finds the match which is lowest in dtab.
+****************************************
+entradrfast	RSTK=C			* RSTK: ->dtab
+		ACEX	A
+		D=C	A		* D[A] = addr
+		C=DAT0	A		* C[A] = number of entries
+		B=C	A
+		B=B-1	A		* B[A] = END	(0;N-1 array)
+		A=0	A		* A[A] = START
+
+eadrflp		C=A	A
+		C=C+B	A
+		CSRB.F	A		* C[A] = MID
+
+		CD0EX
+		C=RSTK
+		RSTK=C			* C[A] = ->dtab
+		AD0EX			* A[A] = MID; D0 = START
+		C=C+A	A
+		A=A+A	A
+		A=A+A	A
+		A=A+C	A		* A[A] = midloc in dtab
+		AD0EX
+		C=DAT0	A		* C[A] = offs for MID
+		AD0EX
+		A=A+C	A		* A[A] = ->addr for MID
+		AD0EX
+		C=DAT0	A		* C[A] = addr for MID
+
+		?A=B	A		* START = END?
+		GOYES	eadrthis?	* Check if we found a match
+		?D<=C	A
+		GOYES	eadrDN		* Scan lower half
+
+		A=A+B	A		* START = (START+END)/2 + 1
+		ASRB.F	A
+		A=A+1	A
+		GONC	eadrflp
+
+eadrDN		B=B+A	A		* END = (START+END)/2
+		BSRB.F	A
+		GONC	eadrflp
+
+eadrthis?
+		CDEX	A
+		A=C	A		* Restore addr to A[A]
+		C=RSTK			* Pop ->dtab
+		C=D	A
+		D0=D0+	5		* Skip to name
+		?A#C	A		* Matching addresses?
+		RTNYES			* No - CS
+		RTN			* Yes - CC
+**********************************************************************
+* Restore the banks; keep RSTK usage minimal by not calling =CSRW5
+**********************************************************************
+RestoreBanks
+		C=R3
+		CSLC
+		CSLC
+		CSLC
+		CSLC
+		CSLC
+		CSLC
+		
+		?C=0	A
+		RTNYES
+		P=	1
+eadrPC=C	PC=C
+**********************************************************************
+* Disassemble area between GOSUB and C=RSTK
+* Input:
+*	D0 = ->area	C[A] = ->areatail
+*	D1 = ->output	R4[A] = free (valid)
+**********************************************************************
+DIguess		AD0EX
+		D0=A
+		B=A	A		orig
+		C=C-A	A		nibbles
+		D=C	A		nibbles
+		?C=0	A
+		RTNYES			** NO NIBBLES AT ALL!! **
+
+		LC(5)	100		Assure 100 nibbles
+		GOSUBL	Jail
+
+		GOSUBL	DIguessREL	First is REL(5) ?
+		GOSUB	?DIguess0	All zeros?
+		GOSUB	?DIguessRPLGC	GC in RPL?
+		GOSUB	?DIguessASC	Ascii data?
+
+* Output NIBHEX
+		A=B	A
+		D0=A
+		C=D	A		Alloc nibbles, the prev 100 is
+		GOSUBL	Jail		enough to cover NIBHEX etc
+		GOSUBL	indfree		no label on this line
+		LCSTR	'NIBHEX'
+		DAT1=C	12
+		D1=D1+	12
+		P=	7-6
+		GOSUB	DIspaces
+		D=D-1	A		->GONC test
+
+-		A=DAT0	B
+		D0=D0+	1
+		GOSUB	DIhex
+		D=D-1	A
+		GONC	-
+		RTN
+
+**********************************************************************
+* Check if data is preceded by REL(5) to end of data (like in hppaint)
+*	GOSUB	Blah
+*	REL(5)	Blah
+*	<data>
+* Blah
+**********************************************************************
+DIguessREL	LC(5)	20		Just picked 20 nibs
+		?D<C	A		Absolute min is 5
+		RTNYES			Not enough nibbles for REL(5)
+		A=B	A
+		D0=A
+		C=DAT0	A
+		?C#D	A		number equals nibbles??
+		RTNYES			Nope - not REL(5)
+		GOSUBL	indfree
+		LCSTR	'REL(5)'
+		DAT1=C	12
+		D1=D1+	12
+		P=	7-6
+		GOSUB	DIspaces
+		A=B	A
+		C=D	A
+		A=A+C	A
+		B=B+CON	A,5		Skip the REL
+		D=D-CON	A,5		5 less nibs
+		GOSUB	DIlabel
+		LCASC	'\n'
+		DAT1=C	B
+		D1=D1+	2
+		RTNCC
+**********************************************************************
+* Check if data is entirely zeros
+**********************************************************************
+
+?DIguess0	A=B	A
+		D0=A
+		C=D	A
+		C=C-1	A		->GONC test
+-		A=DAT0	B
+		D0=D0+	1
+		?A#0	P
+		RTNYES			Not all zeros, return
+		C=C-1	A
+		GONC	-
+* All zeros!!
+		C=RSTK			Pop return address
+		GOSUBL	indfree		no label
+		LCSTR	'BSS'
+		DAT1=C	6
+		D1=D1+	6
+		P=	7-3
+		GOSUB	DIspaces
+		C=D	A
+		A=C	A
+		GOTO	DIaddr#
+
+**********************************************************************
+* Check if RPL GC is embedded in code
+**********************************************************************
+?DIguessRPLGC	A=B	A
+		D0=A
+		A=DAT0	10
+		C=A	W
+		LC(N)	10
+		CON(5)	=DOCOL
+		CON(5)	=GARBAGE
+		?A#C	W
+		RTNYES			Nope
+		D0=D0+	10
+		ST=1	sTEMP1		Flag COLA
+		A=DAT0	10
+		D0=D0+	10
+		C=A	W
+		LC(N)	10
+		CON(5)	=COLA
+		CON(5)	=DOCODE
+		?A=C	W
+		GOYES	guessrplgc
+		ST=0	sTEMP1		No COLA
+		D0=D0-	5
+		LC(5)	=DOCODE
+		?A#C	A
+		RTNYES
+
+* :: GARBAGE [COLA] CODE ...
+
+guessrplgc	C=RSTK			Pop return address
+		LC(5)	300		Make sure enough room
+		GOSUBL	Bail
+		LA(5)	=DOCOL
+		GOSUB	outcon5
+		LA(5)	=GARBAGE
+		GOSUB	outcon5
+		?ST=0	sTEMP1
+		GOYES	+
+		LA(5)	=COLA
+		GOSUB	outcon5
++		LA(5)	=DOCODE
+		GOSUB	outcon5
+		GOSUB	outrel5		
+		D1=D1-	2		Strip the newline, added later
+		RTN			Continue at D0
+
+* Output A[A] as CON(5) expr, assume enough room
+
+outcon5		GOSUBL	indfree		no label
+		LCSTR	'CON(5)'
+		DAT1=C	12
+		D1=D1+	12
+		P=	7-6
+		GOSUB	DIspaces
+		GOSUBL	DIgentry
+		LCASC	'\n'
+		DAT1=C	B
+		D1=D1+	2
+		RTNCC
+
+outrel5		GOSUBL	indfree		no label
+		LCSTR	'REL(5)'
+		DAT1=C	12
+		D1=D1+	12
+		P=	7-6
+		GOSUB	DIspaces
+		A=DAT0	A		offset
+		CD0EX
+		A=A+C	A		target
+		D0=C
+		D0=D0+	5		skip offset
+		GOSUB	DIlabel
+		LCASC	'\n'
+		DAT1=C	B
+		D1=D1+	2
+		RTNCC
+
+**********************************************************************
+* Check if data is entirely ascii
+* If so then output either NIBASC or CSTRING
+**********************************************************************
+
+MINASCRATE	EQU	#1000*75/100		75%
+
+?DIguessASC	C=D	A
+		?CBIT=1	0
+		RTNYES			Odd nibbles - not pure asc
+		C=C+B	A
+		D0=C
+		D0=D0-	2
+		A=DAT0	B
+		C=B	A
+		D0=C			->mem
+		C=D	A
+		CSRB.F	A		chars
+		?A#0	B
+		GOYES	+
+		C=C-1	A		chars--
++		GOSUB	Ascii%
+		LC(5)	MINASCRATE
+		?A<C	A
+		RTNYES
+* Got ascii!
+		C=RSTK			Pop return address
+		A=B	A
+		D0=A
+		DSRB.F	A		chars
+
+guoutasclp	LC(5)	200		Must cover 40 char lines
+		GOSUBL	Jail
+		GOSUBL	indfree
+		GOSUB	SplitAsc	Find first ascii partition
+		?C#0	A
+		GOYES	guoutasc
+* CON(2) 00
+		LCSTR	'CON(2)'
+		DAT1=C	12
+		D1=D1+	12
+		P=	7-6
+		GOSUB	DIspaces
+		LCSTR	'0\n'
+		GOTO	guoback4
+
+* Now output NIBASC or CSTRING, C[A] characters long (always >= 1!! )
+guoutasc	ST=0	sTEMP
+		?A#0	B
+		GOYES	+
+		D0=D0-	2
+		ST=1	sTEMP		Flag CSTRING
++		AD0EX
+		A=A-C	A
+		A=A-C	A
+		AD0EX
+* Limit lines to 40 chars
+		B=C	A
+		LC(5)	40
+		?B<=C	A
+		GOYES	gucs10
+		ST=0	sTEMP		Not CSTRING anymore..
+		CBEX	A
+		C=C-B	A
+		D=D+C	A
+gucs10		?ST=1	sTEMP
+		GOYES	gucs20
+		LCSTR	'NIBASC'
+		DAT1=C	12
+		D1=D1+	12
+		P=	7-6
+		GONC	gucs30
+gucs20		LCSTR	'CSTRING'
+		DAT1=C	14
+		D1=D1+	14
+		P=	7-7
+gucs30		GOSUB	DIspaces
+		LCASC	\'\
+		DAT1=C	B
+		D1=D1+	2
+* Output actual chars
+-		A=DAT0	B
+		D0=D0+	2
+		GOSUB	DisAsc
+		B=B-1	A
+		?B#0	A
+		GOYES	-
+* Skip 00 if CSTRING
+		?ST=0	sTEMP
+		GOYES	+
+		D0=D0+	2
++		LCSTR	"'\n"
+guoback4	DAT1=C	4
+		D1=D1+	2
+		?D=0	A
+		RTNYES
+		D1=D1+	2
+		GOSUBL	PayBack
+		GOTO	guoutasclp
+
+**********************************************************************
+* Find \0 or \n in limited memory area
+* In:		D0	->mem
+*		D[A]	chars usable
+* Out:		D0	\n \0 or tail
+*		C[M]	chars to use
+*		D[A]	chars left after split
+**********************************************************************
+SplitAsc	C=0	M
+		LCASC	'\n'
+-		A=DAT0	B
+		D0=D0+	2
+		?A=0	B
+		GOYES	splta0
+		C=C+1	M
+		?A=C	B
+		GOYES	spltan
+		D=D-1	A
+		?D#0	A
+		GOYES	-
+		D=D+1	A
+splta0
+spltan		D=D-1	A
+		CSR	W
+		CSR	W
+		CSR	W
+		RTN
+**********************************************************************
+* Calculate ratio of ascii characters in memory area.
+* In:		D0 = ->mem	C[A] = chars
+* Out:		C[A] = A[A] = rate*#1000
+* Stack:	1
+**********************************************************************
+Ascii%		P=	10-1
+		DSL	WP
+		DSL	WP
+		DSL	WP
+		DSL	WP
+		DSL	WP		Save D[A]
+		BSL	WP
+		BSL	WP
+		BSL	WP
+		BSL	WP
+		BSL	WP
+		P=	0
+		B=C	A		chars
+		D=0	A		counters
+asc%lp		A=DAT0	B
+		D0=D0+	2
+		LCASC	' '
+		?A<C	B
+		GOYES	asc%10
+		LCASC	'~'
+		?A<=C	B
+		GOYES	asc%+
+asc%-		C=D	A
+		DSR	A
+		DSR	A
+		D=D+1	B
+		GONC	+
+		D=D-1	B
++		DSL	A
+		DSL	A
+		D=C	B
+		GOTO	asc%cnt
+asc%10		LCASC	'\t'
+		?A=C	B
+		GOYES	asc%+
+		LCASC	'\n'
+		?A#C	B
+		GOYES	asc%-
+asc%+		D=D+1	B
+		GONC	asc%cnt
+		D=D-1	B
+asc%cnt		B=B-1	A
+		?B#0	A
+		GOYES	asc%lp
+* Now calculate ratio yes/(no+yes)
+		C=0	A
+		C=D	B	yes
+		DSR	A
+		DSR	A	no
+		?D=0	A	quick exit if all ascii
+		GOYES	asc%all
+		D=D+C	A	no+yes
+* Return #1000*yes(no+yes)
+		CSL	A
+		CSL	A
+		CSL	A
+		A=C	A
+		C=D	A
+		GOSBVL	=IntDiv	C[A] = quotient
+-		A=C	A
+		P=	10	Restore D[A] and B[A]
+		DSR	WP
+		DSR	WP
+		DSR	WP
+		DSR	WP
+		DSR	WP
+		BSR	WP
+		BSR	WP
+		BSR	WP
+		BSR	WP
+		BSR	WP
+		P=	0
+		RTNCC
+asc%all		LC(5)	#1000
+		GOC	-
+
+
+**********************************************************************
+* Output A[B] as a character code to D1
+**********************************************************************
+DisAsc		LC(2)	#7E
+		?A>C	B
+		GOYES	dischx
+		LCASC	' '
+		?A<C	B
+		GOYES	disch<
+		LCASC	'\\'
+		?A=C	B
+		GOYES	dischE
+		DAT1=A	B
+		D1=D1+	2
+		RTNCC
+dischE		LCSTR	'\\\\'
+		GOC	dischput4
+
+* Output \xXX
+dischx		LCSTR	'\\x'
+		DAT1=C	4
+		D1=D1+	4+2
+		LCASC	'9'
+		ACEX	P
+		?C<=A	P
+		GOYES	+
+		C=C+CON	B,7
++		DAT1=C	B
+		D1=D1-	2
+		ASR	A
+		LCASC	'9'
+		ACEX	P
+		?C<=A	P
+		GOYES	+
+		C=C+CON	B,7
++		DAT1=C	B
+		D1=D1+	2+2
+		RTNCC
+
+disch<		LCASC	'\n'
+		?A=C	B
+		GOYES	dischN
+		LCASC	'\t'
+		?A#C	B
+		GOYES	dischx
+dischT		LCSTR	'\\t'
+dischput4	DAT1=C	4
+		D1=D1+	4
+		RTNCC
+dischN		LCSTR	'\\n'
+		GOC	dischput4
+**********************************************************************
+

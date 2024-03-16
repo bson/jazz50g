@@ -1,0 +1,227 @@
+**********************************************************************
+*		Disassembler Utilities
+**********************************************************************
+
+**********************************************************************
+*		Simple Outputs
+**********************************************************************
+
+
+**********************************************************************
+* Write digits to buffer, inluding sign
+* Entry:	D0=->mem D1=->buf R4[A]=free			P=0 HEX
+* Exit:		D0=->mem' D1=->buf' R4[A]=free'			P=0 HEX
+* Uses:		P A[B] B[A] C[A] D0 D1 R4[A]
+* Stack:	1 (JailChr)
+* Notes:	currently handles '-0' but looped JailChr jumps = slow
+**********************************************************************
+JailDigits	A=DAT0	A		* D0 ->obbody
+		C=D0
+		B=C	A		* B[A] ->obbody
+		C=C+A	A
+		CD0EX
+		D0=D0-	1		* D0 ->sign
+		C=DAT0	XS
+*		C=C+1	XS		* sign = #F?
+*		GONC	+		* no, skip negative sign
+		C=C-1	XS
+		GOC	+		* sign = 0?
+		LCASC	'-'
+		GOSUB	JailChr
++		LCASC	'0'
+		A=A-CON	A,6
+		?A=0	A		* had more than just sign data?
+		GOYES	+
+		D0=D0-	1
+		A=A-1	A
+jaildiglp	C=DAT0	P
++		GOSUB	JailChr		* rewrite later for speed
+		D0=D0-	1
+		A=A-1	A
+		GONC	jaildiglp
+		C=B	A
+		D0=C
+		A=DAT0	A
+		C=C+A	A
+		CD0EX
+		RTN
+		
+**********************************************************************
+* Write memory nibbles to buffer (all nibbles)
+* Entry:	C[A]=nibbles D0=->mem D1=->buf R4[A]=free	P=0 HEX
+* Exit:		D0=->mem' D1=->buf' R4[A]=free'			P=0 HEX
+* Uses:		P A[B] B[A] C[A] D0 D1 R4[A]
+* Stack:	1 (Jail)
+**********************************************************************
+JailMemHex	B=C	A		* B[A]=nibbles
+		GOSUB	Jail
+		B=B-1	A
+		RTNC
+jailmemlp	A=DAT0	B		* A[0]=next nib
+		D0=D0+	1
+		LCASC	'9'
+		ACEX	P
+		?C<=A	P
+		GOYES	jailmem10
+		C=C+CON	B,7		* Convert to #41-#56 = A-F
+jailmem10	DAT1=C	B		* Write nib as ascii
+		D1=D1+	2
+		B=B-1	A
+		GONC	jailmemlp
+		RTN
+
+**********************************************************************
+* Write address in A[A] to buffer as hex extracting leading zeros
+* Entry:	A[A]=addr D1=->buf R4[A]=free	P=0 HEX
+* Exit:		D1=->buf' R4[A]=free'		P=0 HEX
+* Uses:		P A[A] C[A] D1 R4[A]
+* Stack:	2 (BailP, DIaddr, RSTK=C)
+**********************************************************************
+JailAddr	P=	5		* Ensure 5 chars
+		GOSUB	BailP
+		CD1EX			* Save ->output
+		RSTK=C
+		D1=C
+		GOSUBL	DIaddr		* Output digits
+		AD1EX			* A[A]=new ->output
+		D1=A
+		C=RSTK			* C[A]=old ->output
+		C=A-C	A		* C[A]=nibbles used
+		CSRB.F	A		* C[A]=chars used
+		GOTO	Jail		* Pay back
+
+**********************************************************************
+* Write C[A] spaces to disass buffer
+**********************************************************************
+JailSpcP	C=0	A
+		CPEX	0
+JailSpcN	GOSUB	Jail
+		A=C	A
+		LCASC	' '
+		A=A-1	A
+		RTNC			* No spaces to write
+jailspclp	DAT1=C	B
+		D1=D1+	2
+		A=A-1	A
+		GONC	jailspclp
+		RTN
+**********************************************************************
+* Write space to disass buffer
+* Entry:	D1=->buf R4[A]=free	P=0 HEX
+* Exit:		D1=->buf' R4[A]=free'	P=0 HEX
+* Uses:		C[A] D1 CRY
+**********************************************************************
+JailSpc		LCASC ' '
+JailChr		AR4EX.F	A
+		A=A-1	A
+		AR4EX.F	A
+		GOC	JailFail
+		DAT1=C	B
+		D1=D1+	2
+		RTN
+
+**********************************************************************
+* Following fixes free counter according to D1 and the end address
+* of the $diss buffer. This allows us to bail but still use allocation
+* subroutines and be sure that the end result will be correct.
+*
+* Note that the jump to Jail is never supposed to cause free to run out.
+**********************************************************************
+PayBack		SETHEX			* Courtesy for dcREAL etc
+		P=	0
+		AD1EX			* Current DISPOS
+		GOSBVL	=D1=DSKTOP
+		C=DAT1	A		->$diss
+		D1=C
+		D1=D1+	5
+		C=DAT1	A		$len
+		AD1EX
+		C=C+A	A		->$dissend
+		AD1EX
+		D1=A
+		C=C-A	A		free nibbles
+		GOC	JailFail	** JUST IN CASE **
+		CSRB.F	A		free chars
+		R4=C.F	A		new free
+		RTN
+**********************************************************************
+* Following just ensures sufficient memory without allocating
+**********************************************************************
+BailP		C=0	A
+		CPEX	0
+Bail		AR4EX.F	A
+		?A<C	A
+		GOYES	BailFail
+		AR4EX.F	A
+		RTN
+**********************************************************************	
+* 		Disassembler Memory Allocation
+**********************************************************************
+JailP		C=0	A		* Allocate P chars
+		CPEX	0
+
+Jail		AR4EX.F	A
+		A=A-C	A
+BailFail	AR4EX.F	A
+		RTNNC			* Return if enough memory
+
+**********************************************************************
+* Disassembler memory allocation failure.
+* 1) Convert DISPOS to an offset
+* 2) Shrink $buffer up to DISPOS
+* 3) ROOM (save)
+* 4) GARBAGECOL
+* 5) If new ROOM <= old ROOM then GPMEMERR, else restart disassembler
+* PopDisArgs will then expand $buffer again
+**********************************************************************
+JailFail
+
+* All but R2[A] are free to be used (->status)
+* Note that SHRINK$ will not move $status since the status buffer was
+* created before $buffer
+
+		P=	0		* Just in case
+		SETHEX
+
+		A=R2.F	A		* Save modes
+		D0=A
+		D0=(2)	dMODES
+		C=ST
+		DAT0=C	X
+
+		D0=(2)	dDISPOS
+		A=DAT0	A		* A[A] = DISPOS
+
+		GOSBVL	=D1=DSKTOP
+		C=DAT1	A		* C[A] = ->$buffer
+
+		R0=C.F	A		* For SHRINK$
+		C=A-C	A		* C[A] = DISPOS-$buffer
+		C=C-CON	A,10
+		DAT0=C	A		* Store dispos offset
+
+		D0=A			* new $bufend for SHRINK$
+		GOSUB	jailshrink
+
+		GOSBVL	=ROOM
+		RSTK=C
+		GOSBVL	=GARBAGECOL
+		GOSBVL	=ROOM
+		A=C	A		* A[A] = room2
+		C=RSTK			* C[A] = room1
+
+		?A<=C	A		* room2 <= room1 ?
+		GOYES	jailcrash
+		
+		GOSBVL	=GETPTR
+		GOLONG	Disassemble	* Restart
+
+jailcrash	GOVLNG	=GPMEMERR	* Insufficient memory
+
+jailshrink	A=PC
+		LC(5)	(SHRINK$)-(*)
+		A=A+C	A
+		PC=A
+	
+**********************************************************************
+

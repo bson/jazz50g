@@ -1,0 +1,224 @@
+**********************************************************************
+*		% and %% decompilation
+**********************************************************************
+
+**********************************************************************
+* Entry:	A[W]=% or A[W]&B[W]=%%
+*		D1=->output buffer
+* Exit:		D1=->tail of decompiled number		P=0 DEC
+* Alters:	A[W] B[W] C[W] D[W] P CRY SB D1
+* Stack:	2	(dc%digD calls dc%dig)
+**********************************************************************
+
+Decomp%%	GOSBVL	=GETAB0
+		GOTO	decomp%%
+
+Decomp%		A=DAT0	W
+		D0=D0+	16
+
+decomp%		GOSBVL	=SPLITA
+decomp%%
+**********************************************************************
+* First check special cases:	Inf -Inf NaN 0
+**********************************************************************
+
+		SETHEX
+		A=A+1	XS
+		A=A-1	XS		* Set CRY if Inf/NaN
+		SETDEC
+		GONC	dc%
+
+**********************************************************************
+* NaN:	A[B] = 01
+* Inf:	A[B] = 00
+**********************************************************************
+
+		?A#0	B
+		GOYES	dcNaN
+
+		GOSUB	dc%sgn		* Output Inf sign
+		LCASC	'fnI'
+dc%wr3		DAT1=C	6
+		D1=D1+	6
+		RTN
+
+dcNaN		LCASC	'NaN'
+		GOC	dc%wr3
+
+**********************************************************************
+* Here:		A,B = %% (finite)
+**********************************************************************
+dc%		GOSUB	dc%sgn		* Output mantissa sign
+		?B#0	W
+		GOYES	dc%x
+		LCASC	'0'
+		GONC	dc%wr1
+**********************************************************************
+* Output '-' if A[S] <> 0
+**********************************************************************
+dc%sgn		?A=0	S
+		RTNYES
+		LCASC	'-'
+		GONC	dc%wr1
+**********************************************************************
+* Output comma
+**********************************************************************
+dc%comma	LCASC	'.'
+dc%wr1		DAT1=C	B
+		D1=D1+	2
+		RTN
+
+**********************************************************************
+* Here:		X = %% (finite, non-zero)
+* The following algorithm outputs STD mode numbers:
+* 
+* 1) Store exponent sign to A[S], make exp positive
+* 2) Find number of significant digits in mantissa (N = # - 1)
+* 3) If abs(exp) > 15 output sd.dddddEsddd
+*    Else if exp >= 0 output sdddd.ddddd
+*    Else output s.0000ddddd
+**********************************************************************
+
+* 1) Store exponent sign to A[S], make exp positive
+
+dc%x		A=0	S	* Assume positive exponent
+		C=A	A
+		C=C+C	A	* Set CRY if exponent >= #50000 (negative)
+		GONC	dc%10
+		A=A+1	S	* Mark negative exponent
+		A=-A	A	* ABS(exponent)
+dc%10
+
+* 2) Find number of significant digits in mantissa (N = # - 1)
+
+		BSLC
+		LC(5)	#15	* 15 = max N
+dc%qlp		?B#0	P
+		GOYES	dc%gotq
+		C=C-1	A
+		P=P+1
+		GONC	dc%qlp
+dc%gotq		P=	0
+		D=C	A	* D[A] = N
+
+* 3) If abs(exp) > 15 use SCI notation (A[S] = exp sign is the only difference)
+
+		LC(2)	#15
+		?A>C	A
+		GOYES	dc%sci
+
+* Now dispatch on exp sign
+
+ 		?A#0	S
+		GOYES	dc%nege
+**********************************************************************
+* 0 <= exp <= 15
+**********************************************************************
+		C=D	A
+		C=C-A	A		* N-exp
+		D=C	A		* D[A] = n-exp = # fractional digits
+		GONC	dc%frac
+		D=0	A		* Mark no fractional digits
+
+* Now output A[A] integer digits and D[A] fractional digits
+
+dc%frac		GOSUB	dc%dig		* Output integer digits
+		A=A-1	A
+		GONC	dc%frac
+		?D=0	A		* No fractional digits?
+		RTNYES			* None => done
+		GOSUB	dc%comma
+		GOTO	dc%digD		* Fractional digits
+**********************************************************************
+* -15 <= exp < 0	==>	".0000dddd"
+**********************************************************************
+dc%nege		GOSUB	dc%comma	* Output comma
+
+* Output exp leading zeros		
+
+		LCASC	'0'
+dc%0lp		A=A-1	A
+		?A=0	A
+		GOYES	dc%0ok
+		DAT1=C	B
+		D1=D1+	2
+		GONC	dc%0lp
+
+* Output significant digits
+
+dc%0ok		D=D+1	A		* Fix needed
+		GOTO	dc%digD		* Output digits
+**********************************************************************
+* abs(exp) > 15		==>	"d.ddddEsdddd"
+**********************************************************************
+dc%sci		GOSUB	dc%dig		"d"
+
+		?D=0	A
+		GOYES	dc%exp		* N=0 -> no fractional part
+
+		GOSUB	dc%comma	"d."
+		GOSUB	dc%digD		"d.ddddd"
+
+dc%exp		LCASC	'E'
+		GOSUB	dc%wr1		"d.ddddE"
+
+		GOSUB	dc%sgn		"d.ddddEs"
+
+* Output exponent digits
+* 1) Init Q = 4
+* 2) If 1st digit = 0, Q--, shift to next digit, test again
+* 3) Output Q digits from exponent
+
+* Reverse digits in exp to ease things
+
+		C=A	A
+		CPEX	0
+		CPEX	4
+		CPEX	0
+		CPEX	1
+		CPEX	3
+		CPEX	1
+
+* Init Q
+		P=	4
+		C=P	15
+		P=	0
+
+* Skip leading zeros
+
+dc%e0lp		?C#0	P
+		GOYES	dc%e#0
+		CSR	A		* Ignore zero
+		C=C-1	S		* Q--
+		GONC	dc%e0lp		* Always jump
+dc%e#0
+
+* Now output Q digits
+
+		A=C	A
+		LCASC	'0'
+dc%e#0lp	C=A	P
+		ASR	A		* Shift to next digit
+		DAT1=C	B
+		D1=D1+	2
+		C=C-1	S
+		GONC	dc%e#0lp
+		RTN			* Done
+**********************************************************************
+* Output D[A] digits from mantissa stream
+**********************************************************************
+dc%digD		GOSUB	dc%dig		* Write next digit
+		D=D-1	A
+		?D#0	A
+		GOYES	dc%digD
+		RTN
+**********************************************************************
+* Output 1 digit from mantissa stream
+**********************************************************************
+dc%dig		LCASC	'0'
+		BSLC			* B[0] = next digit
+		C=B	P
+		DAT1=C	B		* Write out
+		D1=D1+	2
+		RTN
+**********************************************************************

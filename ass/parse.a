@@ -1,0 +1,1017 @@
+**********************************************************************
+*		Token Parsing Subroutines
+**********************************************************************
+
+**********************************************************************
+* Advance source pointer past current token
+* Eg: srcmed = D0  = srcmed+toklen
+**********************************************************************
+Source+		A=R0.F	A		* A[A] = srcmed
+		A=A+B	A
+		A=A+B	A
+		A=A+CON	A,2
+		D0=A			* Advance src
+		R0=A.F	A		* Advance srcmed
+		RTNCC
+
+**********************************************************************
+* Skip to end of this line or srcend.
+* Output:
+*	CS: D0 = srcend
+*	CC: @D0 = '\n'
+**********************************************************************
+SkipLine	C=R1
+		P=	10-1
+		CSR	WP
+		CSR	WP
+		CSR	WP
+		CSR	WP
+		CSR	WP		->end
+		D=C	A		->srcend
+		P=	0
+SkipLineHere	LCASC	'\n'
+
+SkipLineLp	A=DAT0	B
+		D0=D0+	2
+		GOC	SkipLineOver
+		?A#C	B
+		GOYES	SkipLineLp
+		D0=D0-	2		Back to \n
+		CD0EX
+		?C>=D	A
+		GOYES	SkipLineOver
+		D0=C
+		RTNCC
+SkipLineOver	C=D	A
+		D0=C
+		RTNSC
+
+**********************************************************************
+* Get line end address to R2.A1
+* Output:
+*	CC: ok	Stores D0 to srcloc and srcmed
+*	CS: no line exists, already end of source
+**********************************************************************
+GetLine		AD0EX
+		R1=A.F	A		new srcloc
+		R0=A.F	A		new srcmed
+		D0=A
+		C=R1
+		P=	10-1
+		CSR	WP
+		CSR	WP
+		CSR	WP
+		CSR	WP
+		CSR	WP		->end
+		P=	0
+		?A>=C	A
+		GOYES	GetLineNone	No line exists
+		D=C	A		->end
+		LCASC	'\n'
+GetLineLp	A=DAT0	B
+		D0=D0+	2
+		GOC	GetLineOver
+		?A#C	B
+		GOYES	GetLineLp
+		D0=D0-	2		Back to \n
+		CD0EX
+		D0=C
+		?C<=D	A
+		GOYES	+
+GetLineOver	C=D	A
++		P=	10-1
+		CSL	WP
+		CSL	WP
+		CSL	WP
+		CSL	WP
+		CSL	WP
+		P=	0
+		C=R2.F	A
+		R2=C
+		C=R0.F	A
+		D0=C
+		RTNCC
+GetLineNone	D0=C			* Not really needed
+		RTNSC
+**********************************************************************
+* Skip back white space.
+* No start of src test is done because it is assumed atleast 1 token
+* has been found
+**********************************************************************
+BackWhite	LCASC	' '
+BackWhiteLp	D0=D0-	2
+		A=DAT0	B
+		C=C-1	B		* '\1F'
+		?A=C	B
+		GOYES	BackNoWh
+		C=C+1	B
+		?A<=C	B
+		GOYES	BackWhiteLp
+BackNoWh	D0=D0+	2		* Skip over the non white char
+		RTNCC
+**********************************************************************
+* Skip white space, including newline characters.
+* Used to get first rpl token, not subsequent tokens like the lenght
+* fields for HXS that assume the argument is on the same line.
+* Sets carry if srcend is found.
+**********************************************************************
+SkipWhite	C=R1
+		P=	10-1
+		CSR	WP
+		CSR	WP
+		CSR	WP
+		CSR	WP
+		CSR	WP
+		P=	0
+		D=C	A	->srcend
+		LCASC	' '
+SkipWhiteLp	CD0EX	A
+		?C>=D	A
+		GOYES	SkipWhFail
+		CD0EX
+		A=DAT0	B
+		?A>C	B		* char > ' ' ?
+		GOYES	SkipWhDone
+		C=C-1	B
+		?A=C	B		* char = '\1F' ?
+		GOYES	SkipWhDone
+		C=C+1	B
+		D0=D0+	2
+		GONC	SkipWhiteLp
+SkipWhDone	RTNCC
+SkipWhFail	D0=C
+		RTNSC
+
+**********************************************************************
+* Skip white space on this line.
+* Output:
+*	CS: @D0 = '\n'
+*	CC: next token found
+**********************************************************************
+SkipWhiteIn	C=R1
+		P=	10-1
+		CSR	WP
+		CSR	WP
+		CSR	WP
+		CSR	WP
+		CSR	WP
+		P=	0
+		D=C	A	->srcend
+SkipWhInHere	CD0EX
+		?C>=D	A
+		GOYES	SkipWhFail
+		D0=C
+		A=DAT0	B
+		LCASC	'\n'
+		?A=C	B
+		RTNYES
+		LCASC	' '
+		?A>C	B
+		GOYES	SkipWhDone
+		C=C-1	B
+		?A=C	B
+		GOYES	SkipWhDone
+		D0=D0+	2
+		GONC	SkipWhInHere
+
+**********************************************************************
+* Get next token on the same line.
+* If none is found then errors "More Tokens Expected"
+* Updates srcmed to start of the token.
+* Output:
+*	CC: D0 = ->token	B[A] = toklen-1 in chars
+**********************************************************************
+NextTok		GOSUB	Source+		* Advance src and srcmed
+NextTokHere	GOSUB	SkipWhiteIn	* Skip white on the line
+		GOC	NextTokErr	* No more tokens on the line
+NxtTokNow	CD0EX
+		R0=C.F	A		* Set new srcmed
+		CD0EX
+		GOTO	GetTokLen
+
+NextTokErr	DERR	errMoreToks	* "More Tokens Expected"
+
+* Following returns CS if no more tokens on the line
+* Else CC and B.A = toklen
+NextTok?	GOSUB	Source+
+NextTokHere?	GOSUB	SkipWhiteIn
+		RTNC			* No token
+		GONC	NxtTokNow
+
+**********************************************************************
+* Get token lenght to B[A] (no skipping of whitespace)
+* Restores D0 from srcmed, returns FFFFF if empty token
+**********************************************************************
+ThisTokLen	C=R1
+		P=	10-1
+		CSR	WP
+		CSR	WP
+		CSR	WP
+		CSR	WP
+		CSR	WP
+		P=	0
+		D=C	A	->srcend
+		GOTO	NxtTokNow
+
+**********************************************************************
+* Get RPL token.
+* Skips until next non white character.
+* If char = '"' then returns that as token to enable assembling "<string>"
+* Else if "(" then skips the comment and continues search.
+* Else if "*" and at start of the line then skips line and continues search.
+* Else returns that location.
+*
+* Output:
+*	CS: end of src
+*	CC: D0 = ->token	B.A = toklen-1 in chars
+* Updates srcmed and srcloc to start of the token.
+**********************************************************************
+
+GetRplTok	C=R1
+		P=	10-1
+		CSR	WP
+		CSR	WP
+		CSR	WP
+		CSR	WP
+		CSR	WP
+		P=	0
+		D=C	A		->srcend
+		D0=D0-	2
+SkipRplLine?	D0=D0+	2
+		CD0EX
+		?C>=D	A
+		GOYES	skiprplend
+		CD0EX
+		A=DAT0	B
+		LCASC	'*'
+		?A#C	B
+		GOYES	SkipToTok	Not a line starting with "*"
+		D0=D0+	2
+		GOSUB	SkipLineHere
+		RTNC			Return if end of source
+		GONC	SkipRplLine?
+skiprplend	CD0EX
+		RTNSC
+
+
+SkipToTok	GOSUB	SkipWhInHere	Skip on this line
+		CD0EX
+		?C>=D	A
+		GOYES	skiprplend	At end - fail
+		CD0EX
+		A=DAT0	B
+		LCASC	'\n'
+		?A=C	B
+		GOYES	SkipRplLine?	Start from next line again
+		LCASC	'('
+		?A#C	B
+		GOYES	RplTokLen
+
+SkipRplComLp	D0=D0+	2
+		CD0EX
+		?C>=D	A
+		GOYES	skiprplend
+		CD0EX
+		A=DAT0	B
+		LCASC	')'
+		?A#C	B
+		GOYES	SkipRplComLp
+		D0=D0+	2
+		CD0EX
+		?C>=D	A
+		GOYES	skiprplend
+		CD0EX
+		A=DAT0	B
+		LCASC	' '		Ignore ')' if not followed by white
+		?A>C	B
+		GOYES	SkipRplComLp
+		C=C-1	B		Ignore ')' if followed by ...
+		?A=C	B
+		GOYES	SkipRplComLp
+		GONC	SkipToTok
+
+RplTokLen	CD0EX
+		R0=C.F	A		Set new srcmed
+		R1=C.F	A		Set new srcloc
+		CD0EX
+
+		LCASC	\"\		String special case?"
+		?A#C	B
+		GOYES	GetTokLen
+		B=0	A
+		RTNCC
+
+* Count lenght of token, non-white characters. For speed check against
+* srcend only later
+
+GetTokLen	B=0	A		Init toklen to 0-1
+		B=B-1	A
+		LCASC	' '
+GetTokLenLp	A=DAT0	B
+		D0=D0+	2
+		B=B+1	A
+		?A>C	B
+		GOYES	GetTokLenLp
+		A=A+1	B		Maybe \1F ?
+		?A=C	B
+		GOYES	GetTokLenLp
+* Now check what we got doesn't overflow
+		D0=D0-	2
+		B=B-1	A
+		GOC	gottoklen	Got none - no check needed
+		CD0EX
+		D0=C
+		C=C-D	A		tail - srcend
+		GONC	gettoklast	Went over or equal!
+		C=R0.F	A
+		D0=C
+		RTNCC
+gettoklast	CSRB.F	A		chars after tail
+		B=B-C	A		CC or CS correctly!
+gottoklen	C=R0.F	A		Restore ->src from ->srcmed
+		D0=C
+		RTN
+**********************************************************************
+* Called after NextBin to check for overflow (max FFFFF)
+**********************************************************************
+NotBin#?	C=0	W
+		C=C-1	A
+NotBin?.1	?ST=1	qOVERFLOW
+		RTNYES
+		?A>C	W
+		RTNYES
+		RTN
+
+* Same with max FFF
+NotBin#3?
+		C=0	W
+		C=C-1	X
+		GOC	NotBin?.1
+
+* Han:	added FFFF check for FPTR
+NotBin#4?
+		C=0	W
+		LC(4)	#FFFF
+		GONC	NotBin?.1		
+
+**********************************************************************
+* Get next token as a binary number.
+*
+* Output:
+*	A.W = number
+*	B.A = nibbles
+* Stops at first nonhex char/end of source:
+*	CS: nonhex char			D0 = @char
+*	CC: whitespace / srcend		D0 = @white / srcend
+* Sets sOVERFLOW if overflow happened (more than 16 significant nibbles)
+* Errors if no hex field is found ("Need Hex Field")
+**********************************************************************
+
+NextBin		GOSUB	Source+		* Advance src
+
+* Same without advancing src, but saves D0 to srcmed anyway
+
+NextBinHere	GOSUB	SkipWhiteIn	* Skip white
+		GONC	TryParseBin
+		CERR	errNeedHex	* "Need Hex Field"
+TryParseBin	AD0EX
+		R0=A.F	A
+		AD0EX
+
+* Parse binary in D0 to A.W.
+
+ParseBin	ST=0	qOVERFLOW	* No overflow
+		B=0	A
+		B=B-1	A		* Init toklen to zero
+		D=0	W		* Init number to zero
+
+		C=R1			* Get srcend to RSTK
+		GOSBVL	=CSRW5
+		RSTK=C
+
+ParBinLp	AD0EX
+		D0=A
+		C=RSTK
+		?A>=C	A
+		GOYES	ParBinOK.1
+		RSTK=C
+		A=DAT0	B
+		LC(2)	' '-1
+		?A=C	B
+		GOYES	ParBinFail
+		C=C+1	B
+		?A<=C	B
+		GOYES	ParBinOK
+		GOSUB	ParseNib
+		GOC	ParBinFail	* Invalid digit - fail
+		B=B+1	A		* toklen++
+		?D=0	S
+		GOYES	ParBinAdd
+		ST=1	qOVERFLOW
+ParBinAdd	DSL	W
+		C=A	P
+		D=C	P
+		GOTO	ParBinLp		
+ParBinFail	C=RSTK			* Pop srcend
+		C=D	W
+		A=C	W		* Return number in A.W
+		RTNSC			* Despite failing a digit..
+ParBinOK	C=RSTK
+ParBinOK.1	C=D	W
+		A=C	W		* Return number in A.W
+		RTNCC			* Success
+**********************************************************************
+* Parse character as a hex digit
+* CS if failed, else A.0 = nib
+**********************************************************************
+ParseNib	A=DAT0	B
+		LCASC	'0'
+		A=A-C	B
+		RTNC			* char < '0' - fail
+		LC(2)	9
+		?A<=C	B
+		GOYES	ParNibOK	* '0' <= char <= '9' ok
+		LC(2)	'A'-'0'
+		A=A-C	B
+		RTNC			* '9' < char < 'A' - fail
+		LC(2)	5
+		?A>C	B
+		RTNYES			* char > 'F' - fail
+		A=A+CON	A,10
+ParNibOK	D0=D0+	2		* Skip the parsed char
+		RTNCC
+**********************************************************************
+* Get next token as a decimal number, result in hex
+*
+* Output:
+*	A.W = number
+*	B.A = digits
+* Stops at first nondec char/end of source:
+*	CS: nondec char			D0 = @char
+*	CC: whitespace / srcend		D0 = @white / srcend
+* Sets sOVERFLOW if overflow happened (more than 16 significant nibbles)
+**********************************************************************
+ParseDec	ST=0	qOVERFLOW	* No overflow
+		B=0	A
+		B=B-1	A		* Init toklen to zero
+		D=0	W		* Init number to zero
+
+		C=R1			* Get srcend to RSTK
+		GOSBVL	=CSRW5
+		RSTK=C
+
+ParDecLp	AD0EX
+		D0=A
+		C=RSTK
+		?A>=C	A
+		GOYES	ParDecOK.1
+		RSTK=C
+		A=DAT0	B
+		LC(2)	' '-1
+		?A=C	B
+		GOYES	ParDecFail
+		C=C+1	B
+		?A<=C	B
+		GOYES	ParDecOK
+		GOSUB	ParseDecNib
+		GOC	ParDecFail	* Invalid digit - fail
+		B=B+1	A		* toklen++
+		?D=0	S
+		GOYES	NdcOvFlw
+		ST=1	qOVERFLOW	* Hmmm..
+NdcOvFlw	D=D+D	W		* 2x
+		C=D	W		* 2x
+		C=C+C	W		* 4x
+		C=C+C	W		* 8x
+		D=D+C	W		* 10x
+		C=0	W
+		C=A	P		* Copy digit to C.W
+		D=D+C	W		* Add digit
+		GONC	ParDecLp
+		ST=1	qOVERFLOW
+		GOC	ParDecLp
+
+ParDecFail	C=RSTK			* Pop srcend
+		C=D	W
+		A=C	W		* Return number in A.W
+		RTNSC			* Despite failing a digit..
+ParDecOK	C=RSTK
+ParDecOK.1	C=D	W
+		A=C	W		* Return number in A.W
+		RTNCC			* Success
+**********************************************************************
+* Parse character as a hex digit
+* CS if failed, else A.0 = nib
+**********************************************************************
+ParseDecNib	A=DAT0	B
+		LCASC	'0'
+		A=A-C	B
+		RTNC			* char < '0' - fail
+		LC(2)	9
+		?A>C	B
+		RTNYES			* char > '9' - fail
+		D0=D0+	2		* Skip parsed char
+		RTNCC
+
+**********************************************************************
+* Test if reached end of source (srcend in D.A)
+**********************************************************************
+AtEnd?		CD0EX
+		?C>=D	A
+		GOYES	AtEndYES
+AtEndYES	CD0EX
+		RTN
+**********************************************************************
+* Test if reached end of source (D[A] ) or if current char is white
+**********************************************************************
+TokEnd?		A=DAT0	B
+TokEndA?	CD0EX
+		?C>=D	A
+		GOYES	AtEndYES
+		CD0EX
+WhiteA?		LCASC	' '
+		?A>C	B
+		GOYES	AtEndWhNO
+		C=C-1	B
+		?A#C	B
+		RTNYES
+AtEndWhNO	RTNCC
+**********************************************************************
+* Get source end to D.A
+**********************************************************************
+EndToD		C=R1
+		P=	10-1
+		CSR	WP
+		CSR	WP
+		CSR	WP
+		CSR	WP
+		CSR	WP
+		P=	0
+		D=C	A	->srcend
+		D=C	A
+		RTN
+**********************************************************************
+* Get next character and interpret it
+* Input:
+*	D0 = ->chr
+*	D[A] = srcend
+* Output:
+*	CC: D0 = ->nextchr A[B] = chr
+*	CS: fail
+* Note: Special effort is made to keep register usage as low as possible
+**********************************************************************
+ParseChar	A=DAT0	B
+		D0=D0+	2
+		LCASC	'\\'
+		?A#C	B
+		GOYES	ParChrOK	Ok, char is in A[B]
+		CD0EX
+		D0=C
+		?C>=D	A
+		RTNYES			No more chars - fail
+* Now test if we have a special code
+		A=DAT0	B		Next character
+		D0=D0+	2
+		GOSUB	SpcChar?
+		A=C	B
+		GONC	ParChrOK
+* Now we have a RPL type number, eg 2 hex digits
+* Check if they exist..
+		D0=D0-	2
+		CD0EX
+		D0=C
+		C=C+CON	A,2
+		?C>=D	A
+		RTNYES			Not enough chars - fail
+* Now try getting the digits
+		GOSUB	ParseNib
+		RTNC			Not hex digit - fail
+		ASL	A
+		ASL	A		A[XS] = digit
+		GOSUB	ParseNib
+		RTNC			Not hex digit - fail
+		ASL	B
+		ASR	X		A[B] = hex number
+ParChrOK	RTNCC			Succeed
+
+**********************************************************************
+* Entry:	A[B] = chr
+* Exit:		CS: Not special
+*		CC: C[B] = translation
+**********************************************************************
+SpcChar?	LCASC	'\\'
+		?A#C	B
+		GOYES	+
+*		LCASC	'\\'
+		RTNCC
++		LCASC	'a'		alert
+		?A#C	B
+		GOYES	+
+		LC(2)	7
+		RTNCC
++		LCASC	'b'		backspace
+		?A#C	B
+		GOYES	+
+		LC(2)	8
+		RTNCC
++		LCASC	't'		tabulator
+		?A#C	B
+		GOYES	+
+		LCASC	'\t'
+		RTNCC
++		LCASC	'n'		line feed
+		?A#C	B
+		GOYES	+
+		LCASC	'\n'
+		RTNCC
++		LCASC	'f'		form feed
+		?A#C	B
+		GOYES	+
+		LCASC	'\f'
+		RTNCC
++		LCASC	'r'		carriage return
+		?A#C	B
+		GOYES	+
+		LCASC	'\r'
+		RTNCC
++		RTNSC
+**********************************************************************
+* Parse normal float
+**********************************************************************
+Next%		GOSUB	NextTok		* Better check srcend here..
+Next%Here	GOSUBL	SaveRegs
+		ST=0	qWANTLONG
+		GOTO	ParseReal	* A.W = %float
+**********************************************************************
+* Parse long float
+**********************************************************************
+Next%%		GOSUB	NextTok		* Better check srcend here..
+Next%%Here	GOSUBL	SaveRegs
+		ST=1	qWANTLONG
+*		GOTO	ParseReal	* A.W = %%mant C.A = %%exp
+* Fall through
+
+**********************************************************************
+* Parse float in D0, lenght B.A chars (0->1)
+* CS if no float parsed
+* Else either A.W = % or A.W + C.A = %%
+* RSTK:2
+**********************************************************************
+ParseReal	
+
+* 1st check if -Inf, Inf or NaN
+
+		P=	0
+		A=DAT0	W		Same high nibbles
+		C=A	W
+
+		C=0	A
+		LC(1)	2
+		?B=C	A
+		GOYES	tryInf3
+		C=C+1	A
+		?B#C	A
+		GOYES	ParseReal.1	None of the spc values
+
+tryInf4		LCSTR	'-Inf'
+		?A#C	W
+		GOYES	ParseReal.1
+Ret-Inf		A=0	W		Clear exponent & sign
+		SETDEC
+		A=-A-1	S		Sign = neg
+		SETHEX
+RetSpc%		A=A-1	XS		Inf exp = "F00"
+		?ST=0	qWANTLONG	Return short real
+		GOYES	+
+		C=A	A		C[A] = %%exp
+		A=0	A		And clear %%mantissa
++		RTNCC
+RetInf		A=0	W
+		GOC	RetSpc%
+RetNaN		A=0	W
+		A=A+1	B
+		GONC	RetSpc%		NaN exp = "F01"
+
+tryInf3		LCSTR	'Inf'
+		?A=C	W
+		GOYES	RetInf
+		LCSTR	'NaN'
+		?A=C	W
+		GOYES	RetNaN
+
+ParseReal.1	P=	0
+		AD0EX				* Put ->float to D1
+		D1=A
+*		D0=(5)	=aSystemFlags		* Get radix flag
+*		C=DAT0	A
+*		D0=C
+		D0=(5)	=SystemFlags
+
+		D0=D0+	12
+		C=DAT0	1
+		P=	8
+		LAASC	\.E\
+		?CBIT=0	2
+		GOYES	GotRadix
+		LAASC	\,E\
+GotRadix	P=	0
+		LAASC	\-+09\
+		R0=A			* R0.W = ".E-+09"
+
+* Use D0 as todo counter
+
+		C=B	A
+		D0=C
+		D0=D0+	1		* D0 = true lenght of real body
+
+qWANTLONG	EQU 0			* %% wanted?
+qESIGNIS	EQU 1			* Exponent sign exists?
+qNEGMANT	EQU 2			* Negative mantissa?
+qNEGEXP		EQU 3			* Negative exponent?
+qRADIX		EQU 4			* Radix exists?
+qLEADNUM	EQU 5			* Got leading numbers?
+qNUMIS		EQU 6			* Got some number?
+
+		ST=0	qESIGNIS	
+		ST=0	qNEGMANT
+		ST=0	qNEGEXP
+		ST=0	qRADIX
+		ST=0	qLEADNUM
+		ST=0	qNUMIS
+
+* Init number
+		B=0	W		* mantissa = 0
+		SETDEC
+		D=0	A
+		D=D-1	A		* mantlen = -1 = 999
+					* counter for digits before radix
+
+* Start parsing mantissa
+
+		GOSUB	ParRealDig
+		GONC	adigfail	* Empty string
+		?P=	0		* Invalid chr?
+		GOYES	adigfail
+		?P=	14		* "E" ?
+		GOYES	adigfail	* "Exxx" not allowed
+		?P=	12		* "+" ?
+		GOYES	amanloop	* Just ignore leading +
+		?P#	13		* Not "-" ?
+		GOYES	amandig		* Add digit
+		ST=1	qNEGMANT	* Set negative mantissa
+
+amanloop	GOSUB	ParRealDig
+		GOC	amandig
+		GOTO	amanok		* Got only mantissa, check it
+
+amandig		?P=	1		* "0"
+		GOYES	aman0
+		?P=	2		* "1" - "9" ?
+		GOYES	aman19
+		?P=	15		* "."
+		GOYES	amanradix
+		?P=	14		* "E"
+		GOYES	amanexp
+		GONC	adigfail	* "+" and "-" not allowed again
+
+amanradix	?ST=1	qRADIX		* Radix already exists?
+		GOYES	adigfail	* Yes - fail
+		ST=1	qRADIX
+		GONC	amanloop
+
+aman19		ST=1	qLEADNUM	* Set nonzero lead in mantissa
+aman0		ST=1	qNUMIS		* Mantissa exists
+		SETDEC
+		?ST=0	qLEADNUM	* Ignore mantlen++ if only "000.."
+		GOYES	aman.1
+		D=D+1	A
+aman.1		?ST=0	qRADIX		* Ignore decrease if radix exists
+		GOYES	aman.2
+		D=D-1	A		* Fixes mantlen++ above after radix
+aman.2		?B#0	S		* Ignore digit if mantissa full
+		GOYES	amanloop
+		BSL	W		* Roll mantissa
+		P=	0		* Add new digit
+		B=A	P
+		GONC	amanloop	* Continue loop
+
+* Fail float parser
+adigfail	SETHEX
+		P=	0
+		GOSUBL	RestoreRegs
+		RTNSC
+
+* Note the ?B#0 S test above, not with P=14
+* This enables an extra digit for long floats and thus also roundup
+
+* Got "E", now check if it's ok to start assembling the exponent
+
+amanexp		?ST=0	qLEADNUM	* Fail if "0000E"
+		GOYES	adigfail
+
+		C=B	W		* Save mantissa to R1
+		R1=C
+		B=0	A		* Init exponent
+*		ST=0	qLEADNUM	* No nonzero digits yet
+* Fix: 20.10.94  "8E" was considered a real
+		ST=0	qNUMIS		* No digits yet
+
+aexploop	GOSUB	ParRealDig
+		GOC	aexplp1ok
+		GOTO	amanexpok	* Now check the result
+aexplp1ok	?ST=1	qESIGNIS	* Exp sign exists?
+		GOYES	aexpnons	* Yes - ignore sign tests
+		ST=1	qESIGNIS	* Sign finannly determined below
+		?P=	12		* "+" ?
+		GOYES	aexploop	* Yes - ignore it
+		?P#	13		* Not "-" ?
+		GOYES	aexpnons
+		ST=1	qNEGEXP		* Set negative exponent
+		GONC	aexploop	* Continue loop
+
+aexpnons	?P=	1		* "0" ?
+		GOYES	aexp0
+		?P#	2		* Not "1" - "9" ?
+		GOYES	adigfail	* Then fail
+aexp0		P=	4		* Fail if exponent full already
+		?B#0	P
+		GOYES	adigfail
+		BSL	A		* Shift exponent
+		P=	0
+		B=A	P		* Copy new digit
+		ST=1	qNUMIS		* Exponent exists now, "0" is allowed
+		GONC	aexploop	* Continue
+
+
+* Got mantissa without exponent
+
+amanok		?ST=1	qLEADNUM	* Got nonzero mantissa?
+		GOYES	amangot		* Yes - check it
+		?ST=0	qNUMIS		* Got no mantissa?
+		GOYES	adigfail	* None - fail
+		GOTO	agive0		* Give zero
+amangot		A=B	W		* Copy mantissa to A.W
+		B=0	A		* Set exponent = 0
+		GOC	amanck
+
+* Got mantissa and exponent
+
+amanexpok	?ST=0	qNUMIS		* Fail if got "xxxxE"
+		GOYES	adigfail
+		A=R1			* A.W = mantissa
+
+amanck		P=	0
+		?A#0	W
+		GOYES	amanshft
+		GOTO	agive0		* mantissa = 0 - give 0
+
+* Now roll mantissa until nonzero 1st digit
+
+amanshft	?A#0	S
+		GOYES	amannoshft
+		ASL	W
+		GONC	amanshft
+amannoshft
+
+* Next round the mantissa depending on how the result is wanted
+
+		SETDEC
+		?ST=1	qWANTLONG
+		GOYES	arndlong
+		ASR	W		* Low digit is free to go..
+		A=A+A	X		* Set carry if roundup needed
+		GONC	amannornd	* Done - no roundup
+		C=0	M
+		C=C+1	M
+		A=A+C	M		* mantissa++
+		GONC	amannornd	* No change in exponent
+arndup		P=	14		* Increase high digit
+		A=A+1	P
+		P=	0
+		D=D+1	A		* mantlen++
+		GOTO	amannornd
+arndlong	A=A+A	P		* Set carry if roundup needed
+		ASR	W
+		GONC	amannornd
+		A=A+1	W		* Roundup
+		?A#0	S		* Need to adjust exponent?
+		GOYES	arndup
+amannornd	
+
+* Now check mantissa sign
+
+		A=0	S		* Ensure sign clear
+		?ST=0	qNEGMANT
+		GOYES	amansok
+		A=-A-1	S
+amansok	
+
+* Now form exponent
+
+		C=D	A		* C.A = mantlen
+		?ST=0	qNEGEXP
+		GOYES	aexpsok
+		B=-B	A		* Negate exponent
+aexpsok		C=C+B	A		* Add mantlen
+
+* Now check if number is valid in wanted format
+
+		?ST=1	qWANTLONG
+		GOYES	aexpckok	* Long is always ok
+		D=C	A		* D.A = exponent
+		LC(5)	#500		* Check -500 < exp < 500
+		CDEX	A
+		?C<D	A
+		GOYES	aexpckok
+		D=-D	A
+		?C>D	A
+		GOYES	aexpckok
+		GOTO	adigfail
+aexpckok
+
+* Now return the number
+
+		SETHEX
+		?ST=1	qWANTLONG
+		GOYES	agivenow
+		A=C	X		* A.W = real
+agivenow	GOSUBL	RestoreRegs
+		RTNCC
+
+* Return 0 result
+
+agive0		A=0	W		* Init real and ereal to 0
+		C=0	A
+		GOTO	agivenow
+
+* Get next digit. P indicates type of next char
+* 0: invalid chr
+* 1: "0"
+* 2: "1" - "9"
+* 12: "+"
+* 13: "-"
+* 14: "E"
+* 15: "."
+
+ParRealDig	SETHEX
+		P=	0
+		D0=D0-	1		* todo--
+		GONC	GNDigOk
+		RTNCC			* No more digits - CC
+GNDigOk		P=	12
+		A=DAT1	B		* Get next chr
+		D1=D1+	2
+		C=R0
+		?A>C	B		* chr > "9" ?
+		GOYES	GNNonDig+4
+		CSR	W
+		CSR	W
+		?A<C	B		* chr < "0" ?
+		GOYES	GNNonDig+2
+		P=	1		* Assume "0"
+		A=A-C	B		* A.B = 0-9
+		?A=0	B		* Zero?
+		RTNYES			* Yes - return
+		P=	2		* No - set nonzero digit
+		RTNSC
+GNNonDig+4	CSR	W
+		CSR	W
+GNNonDig+2	CSR	W
+		CSR	W
+		?A=C	B		* chr = "+", "-", "E", "." ?
+		RTNYES
+		P=P+1
+		GONC	GNNonDig+2
+		RTN			* Return P=0, invalid chr
+**********************************************************************
+
+**********************************************************************
+* Compare labels (max 16 chars)
+* Input:	D0 = ->string1
+*		D1 = ->string2
+*		C[0] = lenght (max 16 chars)
+* Output:	CC: match	CS: no match
+* Uses:	A[W] C[W]
+**********************************************************************
+CmpStrTok	C=C+1	B		chars
+CmpStr		C=C+C	B		nibbles
+		C=C-1	B		nibbles-1
+		P=C	0
+		?CBIT=0	4		* Set carry if 2*toklen-2 < 16
+		GOYES	CmpStrCr	* eg toklen < 9
+CmpStrCr	A=DAT0	W		* Get 1st part of token ready
+		C=DAT1	W		* Get 1st part of entry ready
+		GOC	CmpStrShrt	* Short word - test with .WP
+		?A#C	W		* Long word - compare .W first
+		GOYES	CmpStrDone	* Fail test
+		D0=D0+	16		* Fetch next words
+		D1=D1+	16
+		A=DAT0	W
+		C=DAT1	W
+		D0=D0-	16		* Back to old position
+		D1=D1-	16
+CmpStrShrt	?A#C	WP		* Last parts different?
+		GOYES	CmpStrDone	* Yes - CS
+CmpStrDone	P=	0
+		RTN
+**********************************************************************

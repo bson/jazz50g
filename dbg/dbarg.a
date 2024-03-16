@@ -1,0 +1,181 @@
+**********************************************************************
+*		JAZZ	- Arg handling for xDB
+**********************************************************************
+
+** Argument digit processing.
+**
+** The digit is accumulated to the numerical argument count
+** and the input line updated.
+**
+** In:
+**	C[A]	Digit (0-F)
+**
+** Out:
+**	R0[A]	Digit from C[A]
+**	C-bit	Cleared
+**
+** Used:
+**	C[A], A[A], D0, R0[W], D1, RSTK(2)
+
+GetArg
+	DADDR	gARG,C
+	D0=C			D0 = ->gARG
+	C=DAT0	A		C[A] = ARG
+	RTN
+
+AddArgDigit
+	R0=C
+	GOSUB	GetArg		D0 = ->gARG C[A] = ARG
+	A=R0
+	CSL	A
+	C=C+A	A		C[A] += digit
+	DAT0=C	A		ARG = C[A]
+	RTNCC
+
+** Clear argument input line
+**
+** Used:
+**	D0, A[A], C[A], RSTK(2)
+
+* D0, C[A] = &line 7
+
+GetArgDispLine
+	GOSUBL	GetViewGrob	D1 = ->display GROB data
+	AD1EX
+*	LC(5)	7*8*34		C[A] = 7 lines, 8 rows, 34 nibbles
+	LC(5)	9*8*34
+	C=C+A	A		C[A] = start of line 7
+	D0=C			D0 = ->line7
+	RTN
+
+ClearArg
+	GOSUB	GetArgDispLine	D0 = ->line7
+	LC(5)	8*34
+	GOTO	db_clear	Clear emory block
+
+*********************************************************************
+ArgKey>#
+	GOSUB	+
+	CON(2)	=0CODE
+	CON(2)	=1CODE
+	CON(2)	=2CODE
+	CON(2)	=3CODE
+	CON(2)	=4CODE
+	CON(2)	=5CODE
+	CON(2)	=6CODE
+	CON(2)	=7CODE
+	CON(2)	=8CODE
+	CON(2)	=9CODE
+	CON(2)	=Sfkey1
+	CON(2)	=Sfkey2
+	CON(2)	=Sfkey3
+	CON(2)	=Sfkey4
+	CON(2)	=Sfkey5
+	CON(2)	=Sfkey6
++	D0=C
+	C=RSTK
+	CD0EX
+	C=0	S		Clear digit counter
+-	A=DAT0	B		A[B] = table scancode
+	D0=D0+	2
+	?A=C	B		Match?
+	GOYES	+
+	C=C+1	S		One more digit
+	GONC	-
+	RTNCC			No match - return CC
++	C=0	A
+	CSLC			Move digit to C[A]
+	RTNSC
+
+** Update entry line
+
+ArgRedraw
+	GOSUBL	LineBlank	->gOUTBUF
+	LCSTR	'ARG:'
+	DAT1=C	8
+	D1=D1+	8
+
+	GOSUB	GetArg		C[A] = gARG
+	GOSUBL	putnib5		Add C[A] to buffer
+
+	GOSUBL	GetDbgFont	R0[A] = ->font
+	GOSUBL	GetOutBuf	D1 = ->gOUTBUF
+	CD1EX
+	D0=C			D0 = ->gOUTBUF
+*	LA(5)	7*8*34
+	LA(5)	9*8*34
+	GOLONG	ViewLine	Go draw line
+
+** Parse numerical entry, chain to db_kbsw when non-digit.
+** Out:
+**	gARG?	nonzero
+**	gARG	argument
+
+ArgInput
+
+	GOSUB	ClearArg	Clear input line
+	GOSUB	GetArg		D0 = ->gARG
+	C=0	A
+	DAT0=C	A		Clear argument
+	D0=D0-	(gARG)-(gARG?)
+	LC(1)	1
+	DAT0=C	1		Flag argument present
+
+** Continue to read argument
+
+ArgInputCont
+	GOSUB	ArgRedraw	Update input line
+	GOSUBL	DbgWaitKey	A[A] = key
+	R1=A			Save scan code in R1
+	C=A	A		C[A] = binary 0-F
+	GOSUB	ArgKey>#	Digit key?
+	GONC	+		No - dispatch
+	GOSUB	AddArgDigit	Update digit
+	GONC	ArgInputCont	Loop
+
+* Scan code is in R1 - dispatch as any other key
+
++	A=R1			A[B] = scan code
+	GOLONG	SwitchKey	Switch as normal key
+
+ArgReset
+	GOSUB	GetArg		D0 = ->gARG
+	D0=D0-	(gARG)-(gARG?)
+	C=0	B
+	DAT0=C	1		Flag no argument
+	RTN
+
+** Expanded form of argument retrieval.
+** Intended for the higher level functions.
+**
+** Out:
+**	D0  = &gARG
+**	C[A]= gARG
+**	A[A]= gARG?
+**	CRY = set if gARG? nonzero
+**
+** Used:
+**	A
+
+Argument?
+	GOSUB	GetArg	D0 = ->gARG C[A] = gARG
+	D0=D0-	(gARG)-(gARG?)
+	A=0	A
+	A=DAT0	1		A[A] = presence flag
+	D0=D0+	(gARG)-(gARG?)
+	?A#0	A
+	RTNYES
+	RTN
+
+** Shift argument right one digit, then reread.
+**
+** In:
+**	D0  = &gARG
+**	C[A]= gARG
+
+ArgDel
+	CSR	A
+	DAT0=C	A
+	GOTO	ArgInputCont
+
+**********************************************************************

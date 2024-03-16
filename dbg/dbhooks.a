@@ -1,0 +1,310 @@
+**********************************************************************
+*		Debugger Entry Hooks
+**********************************************************************
+
+**********************************************************************
+*		Debugger GOSBVL Entry from GX
+**********************************************************************
+GxDbg		RSTK=C				Save C[A]
+		CD0EX				Save D0
+		D0=(5)	(DBADDRGX)+7
+		DAT0=C	A
+
+		D0=(5)	=UserFlags		=G_UserFlags
+		C=DAT0	B
+		GONC	+
+		?CBIT=0	0
+		GOYES	gxdbgcs			Not disabled and CS
+		C=0	A
+		C=C-1	A			CS and disabled
+-		D0=(5)	(DBADDRGX)+7
+		C=DAT0	A
+		D0=C
+		C=RSTK
+		RTN
++		?CBIT=0	0
+		GOYES	gxdbgcc			Not disabled and CC
+		GONC	-
+
+gxdbgcc		C=-C-1	A			CC
+gxdbgcs		D0=(5)	(DBADDRGX)+12		Save status
+		C=0	A
+		C=P	3
+		P=	2
+		GONC	+
+		C=C+1	P			Flag CRY
++		P=	1
+		C=-C-1	P			Flag HEX/DEC
+		SETHEX
+		P=	0
+		?SB=0
+		GOYES	+
+		C=C+1	P			Flag SB
+		C=C+1	P			[MP SR SB XM]
++		DAT0=C	A
+
+		D0=(5)	(DBADDRGX)+16		Save C[0-7]
+		C=RSTK
+		DAT0=C	8
+		D0=(5)	(DBADDRGX)+24		Save A[0-7]
+		DAT0=A	8
+
+		GOSUBL	FindDBPAR		D0=R4[A]=->par  C[A]=old R4[A]
+		D0=(5)	(DBADDRGX)+12
+*		GOTO	DbgSave&Start
+
+* SX code removed
+
+DbgSave&Start	CR4EX.F	A			Old R4[W]
+		CD0EX
+		RSTK=C				->DBADDR+12
+
+		LA(2)	#80	(gTEXT?)	gFLAGS
+		DAT0=A	B
+
+		D0=D0+	2			REG_CRY
+		C=RSTK				->DBADDR+12
+		CD0EX
+		A=DAT0	A
+		CD0EX
+		P=	2
+		DAT0=A	P
+		D0=D0+	1			REG_P
+		P=	3
+		DAT0=A	P
+		P=	0
+		A=C	A			->DBADDR+12
+
+		D0=D0+	1			REG_PC
+		C=RSTK
+		DAT0=C	A
+				
+		D0=D0+	5			REG_A
+		C=A	A			->DBADDR+12
+		CD0EX
+		D0=D0+	12			->DBADDR+24
+		A=DAT0	8			A[W] valid
+		CD0EX
+		DAT0=A	W
+		D0=D0+	16			REG_B
+		A=B	W
+		DAT0=A	W
+		D0=D0+	16			REG_C
+		A=C	A			->DBADDR+24
+		AD0EX
+		D0=D0-	8			->DBADDR+16
+		C=DAT0	8			C[W] valid
+		AD0EX
+		DAT0=C	W
+		D0=D0+	16			REG_D
+		C=D	W
+		DAT0=C	W
+		D0=D0+	16			REG_R0
+		C=R0
+		DAT0=C	W
+		D0=D0+	16			REG_R1
+		C=R1
+		DAT0=C	W
+		D0=D0+	16			REG_R2
+		C=R2
+		DAT0=C	W
+		D0=D0+	16			REG_R3
+		C=R3
+		DAT0=C	W
+		D0=D0+	16			REG_R4
+		C=R4
+		DAT0=C	W
+		D0=D0+	16			REG_D0
+		AD0EX				->DBADDR+16
+		D0=D0-	9			->DBADDR+7
+		C=DAT0	A
+		AD0EX
+		DAT0=C	A
+		D0=D0+	5			REG_D1
+		CD1EX
+		DAT0=C	A
+		D0=D0+	5			REG_ST
+		C=ST
+		DAT0=C	X
+		D0=D0+	3			REG_HST
+		AD0EX				->DBADDR+7
+		D0=D0+	5			->DBADDR+12
+		C=DAT0	A
+		AD0EX
+		DAT0=C	1
+		D0=D0+	1			REG_MODE
+		C=0	P
+		P=	1
+		C=C+1	P			CS if was F (HEX)
+		P=	0
+		GOC	+
+		C=C+1	P
++		DAT0=C	1
+		D0=D0+	1			REG_RSTK
+		P=	16-8
+-		C=RSTK
+		DAT0=C	A
+		D0=D0+	5
+		P=P+1
+		GONC	-		
+
+* All registers are now saved. Clear the rest of the buffer
+* Maybe could have kept breakpoints, watchpoints etc?
+
+		AD0EX				->gTOT_CYCLES
+		LC(5)	gTOT_CYCLES
+		C=A-C	A			->dat
+		R4=C.F	A
+		D1=A				->gTOT_CYCLES
+		LC(5)	(DBBUFSIZE)-(gTOT_CYCLES)
+		GOSBVL	=WIPEOUT
+
+
+* Han:	removed UFL dependency; use =MINI_FONT and =SystemFont
+
+		A=R4.F	A
+		LC(5)	gFONT1
+		A=A+C	A
+		D0=A				D0 -> gFONT1
+		LC(5)	(=MINI_FONT)+#1F*6
+		DAT0=C	A
+		D0=D0+	(gFONT2)-(gFONT1)
+		CD0EX				C[A] -> gFONT2
+		D0=(5)	(=SystemFont)+5+5+4
+		A=0	A
+		A=DAT0	B
+		A=A+1	A
+		A=A+1	A
+		A=A+A	A		A[A] = 2 + font name len + 2
+		CD0EX			C[A] -> sysfont data; D0 -> gFONT2
+		A=A+C	A
+		LC(5)	#20*16		offset to char #20
+		A=A+C	A
+		DAT0=A	A
+
+
+* Initialize tables
+
+		A=R4.F	A
+		LC(5)	gRTAB
+		A=A+C	A
+		D0=(5)	(DBADDRGX)-5
+		C=DAT0	A			C[A] = rtab
+		AD0EX				D0 ->gRTAB
+		DAT0=C	A			save rtab
+		D0=D0+	(gDTAB)-(gRTAB)		D0 ->gDTAB
+		AD0EX
+		D0=D0-	(gDTAB)-(gRTAB)		skip rtab
+		C=DAT0	A			C[A] = dtab
+		AD0EX
+		DAT0=C	A			save dtab
+		D0=D0+	(gCFGADR)-(gDTAB)	D0 ->gCFGADR
+		AD0EX
+		D0=D0-	(gCFGADR)-(gDTAB)	skip dtab
+		C=DAT0	A
+		AD0EX
+		DAT0=C	A			save cfg addr
+
+*		AD0EX				D0 -> (DBADDRGX)-10
+*		D0=D0-	(gCFGADR)-(gDTAB)
+*		C=DAT0	A
+*		CD0EX				D0 = cfg addr
+*		A=R4.F
+*		LC(5)	gCFGADR
+*		C=C+A	A
+*		CD0EX				D0 -> gCFGADR
+*		DAT0=C	A			C[A] = cfg addr
+
+
+***
+*** old code
+***
+
+*		A=R4.F	A
+*		LC(5)	gOUTBUF
+*		A=A+C	A
+*		D0=A
+*		R0=A
+*		LC(N)	2+8
+*		CON(2)	4
+*		NIBASC	'~rtb'
+*		DAT0=C	2+8
+*		GOSBVL	=FINDLAM	CC: D0=->lam binding
+*		GOC	+
+*		A=DAT0	A
+*		LC(5)	=NULL$
+*		?A=C	A
+*		GOYES	+
+*		D0=A
+*		A=R4.F	A
+*		LC(5)	gRTAB
+*		A=A+C	A
+*		AD0EX
+*		DAT0=A	A		->rtab
+
+*		A=R4.F	A
+*		LC(5)	gOUTBUF
+*		A=A+C	A
+*		D0=A
+*		R0=A
+*		LC(N)	2+8
+*		CON(2)	4
+*		NIBASC	'~dtb'
+*		DAT0=C	2+8
+*		GOSBVL	=FINDLAM	CC: D0=->lam binding
+*		GOC	+
+*		A=DAT0	A
+*		LC(5)	=NULL$
+*		?A=C	A
+*		GOYES	+
+*		D0=A
+*		A=R4.F	A
+*		LC(5)	gDTAB
+*		A=A+C	A
+*		AD0EX
+*		DAT0=A	A		->dtab
+
++
+		
+* Ensure menu is off. Cannot really expand abuff though, user
+* can worry about that one..
+
+* Han:	see =Warmstart and =LINECHANGE
+*	- C[B] = 0 sets full screen; use new opcode SETLNED;
+*	- this should take care of expanding ABUFF
+*	- user is still responsible for ensuring menu is off
+*	- we do not need =disprange (which takes care of even
+*	  alignment, etc) since this is now built-in (see rammap.a)
+
+		C=0	B
+		SETLNED
+		LCHEX	3F
+		D0=(5)	=LINECOUNTg
+		DAT0=C	B
+		D0=(4)	=LINECOUNT
+		DAT0=C	B
+
+* old code:
+*		LAHEX	3F			64 rows
+*		LCHEX	3F			copied from LINECHANGE
+*		A=A&C	B
+*		C=-C-1	A
+*		B=C	A
+**		D0=(5)	=aLINECNTg
+**		C=DAT0	A
+**		D0=C
+*		D0=(5)	=LINECOUNTg
+*		C=DAT0	B
+*		C=B&C	B
+*		A=A!C	B
+*		DAT0=A	B
+*		D0=(5)	=LINECOUNT
+*		DAT0=A	B
+**		GOSBVL	=disprange		Han:	legacy code
+		
+* And start
+		ST=1	1			Return via RTN
+		GOSUBL	DbgDisp1		Set display format to screen 1
+		GOLONG	DbgMainEntry
+
+**********************************************************************

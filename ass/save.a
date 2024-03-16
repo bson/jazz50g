@@ -1,0 +1,95 @@
+**********************************************************************
+* Saves other regs but A[W] and C[W]. No registers modified
+* Input: R2[A] = ->Status
+* RSTK:1
+**********************************************************************
+
+SaveRn	MACRO	* $Rn
+	D0=(2)	O_$1
+	C=$1
+	DAT0=C	W
+SaveRn	ENDM
+
+SaveRegs	RSTK=C			* Save C.A to RSTK
+		C=R2.F	A
+		CD0EX
+		D0=(2)	O_ST_SAVE	* Save ST
+		CSTEX
+		DAT0=C	X
+		CSTEX
+		D0=(2)	#FF		* Get to 2nd page
+		D0=D0+	1
+		D0=(2)	O_D0
+		DAT0=C	A		* Save D0
+		D0=(2)	O_D1
+		CD1EX
+		DAT0=C	A
+		D1=C
+		D0=(2)	O_B		* Save B[W]
+		CBEX	W		* Save C[W] - C[A] temporarily to B[W]
+		DAT0=C	W
+		D0=(2)	O_D
+		C=D	W
+		DAT0=C	W
+		SaveRn	R0
+		SaveRn	R1
+		SaveRn	R2
+		SaveRn	R3
+		SaveRn	R4
+		D0=(2)	O_B
+		C=DAT0	W
+		CBEX	W		* Restore B[W] and C[W] - C[A]
+		D0=(2)	O_D0
+		C=DAT0	A		* Restore D0
+		D0=C
+		C=RSTK			* Restore C[A]
+		RTN
+**********************************************************************
+* Restore regs. A[W] and C[W] not modified. Returns CC
+* Input: stk3 = $status
+* RSTK:1
+**********************************************************************
+
+RestRn	MACRO	* $Rn
+	D1=(2)	O_$1
+	C=DAT1	W
+	C$1EX
+RestRn	ENDM
+
+
+RestoreRegs	R4=C			* Save C[W] to R4
+		R3=A			* Save A[W] to R3
+
+		GOSUBL	PopStat1	* Pop status buffer to R2[A]
+		D1=A
+		A=R3			* Restore A[W]
+		
+		D1=(2)	O_ST_SAVE
+		C=DAT1	X		* Restore ST
+		ST=C
+		D1=(2)	#FF		* Get 2nd page
+		D1=D1+	1
+
+		D1=(2)	O_D0
+		C=DAT1	A
+		D0=C
+		D1=(2)	O_D1
+		C=DAT1	A
+		RSTK=C			* Save D1 to RSTK
+		D1=(2)	O_B
+		C=DAT1	W
+		B=C	W
+		D1=(2)	O_D
+		C=DAT1	W
+		D=C	W
+		RestRn	R0
+		RestRn	R1
+		RestRn	R2
+		RestRn	R3
+		RestRn	R4
+		D1=C			* D1=C[A]
+		C=RSTK			* C[A] = D1
+		CD1EX			* Final swap
+		RTNCC
+
+**********************************************************************

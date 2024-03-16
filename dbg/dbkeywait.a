@@ -1,0 +1,75 @@
+**********************************************************************
+*		JAZZ	- Key wait code for xDB
+**********************************************************************
+
+* Poll keyboard
+
+KeyPoll
+*	D0=(5)	=aKEYBUFFER
+*	A=DAT0	A
+*	D0=A			D0 = ->keybuffer
+	D0=(5)	=KEYBUFFER
+
+	D0=D0+	1
+	A=DAT0	S		A[S] = put ctr
+	D0=D0-	1
+	C=DAT0	S		C[S] = get ctr
+	?A=C	S
+	GOYES	+		Ctrs are equal - buffer empty
+
+	P=C	15		P = get ctr
+	C=C+1	S		Remove key
+	DAT0=C	S
+
+	CD0EX
+	C+P+1
+	C+P+1			C += get ctr, in bytes
+	P=	0
+	D0=C			D0 = ->next key
+	A=0	A
+	A=DAT0	B		A[B] = key
+	RTNSC
++	A=0	A
+	RTNCC
+
+** Wait for a key to become pressed, then return scan code in A[B]
+** Uses C[A] and B[B]
+
+-
+*	GOSBVL	=srvc_kbd
+	GOSBVL	=BITMAP
+	GOSBVL	=SrvcKbdAB
+
+
+
+DbgWaitKey
+	GOSUB	KeyPoll		Get key, if any
+	RTNC			Return if got key
+
+	?ST=0	15
+	GOYES	-		Special handle if interrupts off
+
+	GOSBVL	=AllowIntr	Ensure keyboard is on (INTON is not enough)
+
+* No keys are down - enter light sleep. But first save the return
+* address, since it seems it may get zapped.
+
+	C=R4.F	A		Save R4[A] on RSTK
+	RSTK=C
+	D0=(5)	=CARDCTL
+	LC(1)	#8
+	DAT0=C	1		Enable wake-up
+	D1=(5)	=ANNCTRL	Annunciators off
+	C=DAT1	B
+	CBIT=0	7
+	DAT1=C	B
+	SHUTDN			Go asleep
+	CBIT=1	7
+	DAT1=C	B
+	LC(1)	#C
+	DAT0=C	1
+	C=RSTK
+	R4=C.F	A		Restore R4[A] from RSTK
+	GOTO	DbgWaitKey	Check buffer again
+
+**********************************************************************

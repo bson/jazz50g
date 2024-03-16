@@ -1,0 +1,225 @@
+Jazz50G ... for the HP49G+ and HP50G (ROM 2.15) 	
+	version 1.20 (aka v2010.09.06)
+
+	Send comments/suggestions/bug reports to:
+
+	hduong _nospam_ (at) ju (dot) edu 
+	( remove the _nospam_ )
+
+
+NOTES:
+
+	Even though Jazz does not currently support the long float
+	objects ( DOLNGREAL and DOLNGCMP ), it is possible to compile
+	such objects as follows:
+
+	ASSEMBLE
+			CON(5)	=DOLNGREAL
+			REL(5)	->endmant
+			NIBHEX	123456789
+	->endmant	REL(5)	->endexp
+			NIBHEX	123456
+	->endexp
+	RPL
+
+
+	ASSEMBLE
+			CON(5)	=DOLNGCMP
+			REL(5)	->endmantR
+			NIBHEX	123456789
+	->endmantR	REL(5)	->endexpR
+			NIBHEX	123456
+	->endexpR	REL(5)	->endmantI
+			NIBHEX	123456789
+	->endmantI	REL(5)	->endexpI
+			NIBHEX	123456
+	->endexpI
+	RPL
+
+	These object types are actually not even well-defined. It
+	appears that the sign nibble for these objects is either 0
+	for positive mantissa/exponent and non-zero for negatives.
+	However, it is unclear whether the negative should be the
+	digit #9h or #Fh.
+
+CHANGELOG:
+
+v2010.0.06
+   o	Jazz no longer requires HPTAB; uses extable instead. This
+	version of extable is back-ward compatible; only the version
+	provided with the Jazz package will work with Jazz! (DO NOT
+	use older extable libraries!)
+
+   o	New token ROMPTR2; usage is the same as with Debug4x
+
+   o	Reverted SDB to emulate buggy ROM for CK&DISPATCH1 and related
+	commands; fixed bug with integer-to-real conversion
+
+   o	gentab2.c updated to create source file of entries table for
+	extable library and now included
+
+   o	EC search string allows up to 24 chars (length of the longest
+	known entry); also fixed an bug related to ECpgdn as well as
+	swaping out of lexico mode
+
+   o	EC has a new option to toggle entry type ( F3 key ) so that
+	longer names can be fully viewed
+
+   o	EC can now properly view ^<entry> and ~<entry> however EC will
+	not follow flash pointers correctly beyond the initial
+	disassembly. This will be adjusted in the next release. EC
+	also does not properly identify these entries (harmless but
+	will also be fixed next release).
+
+   o	Fixed some errors in the Jazz manual.
+
+v2010.06.26
+   o	Minor updates to how labels are generated when the word
+	is a flash pointer
+
+   o	SDB handling of CK&DISPATCH1 (and hence, related entries)
+	updated to emulate ROM; also includes two bug fixes that
+	are currently in ROM 2.15
+
+v2010.06.16
+   o	ASS now assembles all new opcodes (except NATIVE? hh -- I
+	have no idea what this opcode would actually be used for,
+	so it is currently not implemented)
+
+   o	ASS also now compiles FPTR2 and ZINT; no support for long
+	floats or long complex numbers -- is anyone even interested
+	in this? It is still possible to compile these objects via
+	ASSEMBLE ... RPL environments within Jazz. If enough people
+	want this, I'll code it in.
+
+   o	A bug fix in SafeSkipOb's dispatch table for new ob types
+
+   o	ED now handles FPTR2 names when viewed with DoEd_DOB
+
+   o	SSTK now implemented -- this version merely maintains flags
+	-79 and -85, restoring them upon exiting SSTK. Coding SSTK
+	to be more like the HP48 version is very cumbersome since
+	GetKeyOb no longer returns a pointer to the key objects,
+	and entries like CMD_DROP update the stack display directly
+	(rather than setting the appropriate flag for outer loop
+	display routine to handle). SSTK's error handler restores
+	the old HP48 error message display rather than using the
+	retarded (my personal opinion) icon message box that covers
+	a good portion of the stack.
+
+   o	SDB is now available in this version. To maintain user's
+	stack display flags, a new kill command (xSKILL) is also
+	now part of Jazz. Since some SysRPL entries are now both
+	non-PCO and non-PRLG'd, the dispatch tables may need to
+	include both the stable entry, and the address to which it
+	points.
+
+   o	FPTRs can only be single-stepped in SDB; no into mode (yet).
+
+   o	Code-wise, SDB can now be compiled without Jazz for those
+	who need a standalone SysRPL debugger.
+
+   o	SSTK and SDB both use extable rather than library 993 by
+	default. This was so that SDB could be compiled separately
+	from Jazz.
+
+   o	The entries library (hptab50.hp) may be stored in any port
+	without loss of speed or requiring RAM to copy to main
+	memory. Jazz now configures the library on the fly.
+
+v2010.05.24
+   o	Ported from HP48 code version 6.8a, which includes some bug
+	fixes (perhaps backport some bug-fixes to HP48 code later)
+
+   o	FindObEnd no longer assumes PCOs end at next PCO or RPL.
+	PCO objects and ML code are treated alike due to changes in
+	ROM. The end of a PCO or ML entry is computed as either the
+	start of a PCO, a common RPL object, or as detected by the
+	FINDMLEND routine -- whichever comes first.
+
+   o	No longer requires UFL; MINIFONT used instead
+
+   o	Includes MINIFONT editor
+
+   o	DIS can disassemble new objects:
+		DOINT		ZINT dddd...
+		DOFLASHP	FPTR hhh hhhh
+		DOMINIFONT	MINIFONT hhhhh hhhhh...
+		DOMATRIX	MATRIX ... ;
+		DOLNGREAL	L% sddd...Eseee...
+		DOLNGCMP	LC% sddd...Esee... sddd...Esee...
+				    ^^^^^^^^^^^^^^ ^^^^^^^^^^^^^^
+				    real part	 complex part
+
+   o	DIS can disassemble newer opcodes (BUSCC hh) and includes new 
+	field selectrs Fn (see newopcodes.txt); all known new opcodes
+	are included
+
+   o	DIS also handles special opcodes for common routines in ROM
+	(Some are still missing -- just the ones that replace certain
+	repetitive routines; for example ARM_LOOP is a new name I use
+	for the opcode replacing =Loop)
+
+	Unofficial dissasembly includes:
+
+	TOKEN		OPCODE	ROM 	OVERWRITTEN
+	--------	------	------	----------------
+	ARM_LOOP		=Loop
+			81B|1	142	A=DAT0
+				164	D0=D0+	5
+					...
+
+	ARM_SEMI		=SEMI
+				03130	CON(5)	(*)+5
+			81B|D	D9	C=B	A
+				136	CD0EX
+					...
+
+	ARM_G1RC	81B|E	G1RC	(unsupported)
+				427	GOC	#02E15
+				D9	C=B	A
+					...
+
+
+	>KEYTIM			n/a
+
+	These tokens are for disassembly purposes only; they WILL
+	NOT compile. Others were not given any special disassembly
+	output.
+
+   o	ED, VV both support 131x80 screens; in fact, it assumes
+	BigApple platform 
+
+   o	ED has remapped keys to better match the keyboard of the
+	HP50G (see source for layout info; see also ed_layout.txt)
+
+   o	ED disassembly mode can now be used to disassemble any object
+	in any flash bank, and even keeps track of the rom view
+	history
+
+   o	Initial support for assembling matrices, minifont, and flash
+	pointers (FPTR xxx yyyy)
+
+   o	EC has additional keys MODE/STO/APPS/TOOL
+
+   o	EC/ED/DOB recognizes #11111 entries
+
+   o	EC/ED/DOB now correctly disassembles indirections via #11111
+
+   o	EC/ED/DOB also recognizes non-PCO SysRPL entries (all the
+	named entries between !REDIMUSER and $5x7)
+
+   o	DBHOOK now sets up all necessary hooks and DBpar
+
+   o	DB now uses entries table regardless of entry mode; all
+	screens have been slightly modified for either more data
+	display or rearranged for better data organization
+
+   o	DB handles all new opcodes, including ?HS=1 n and even the
+	undocumented opcodes. However, care should be taken when
+	debugging new BUSCC opcodes as some can circumvent the code
+	trapping set up by DB (in particular those which alter the
+	interrupt flags)
+
+
+12345678901234567890123456789012345678901234567890123456789012345678901234567890

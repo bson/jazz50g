@@ -1,0 +1,155 @@
+**********************************************************************
+*		Assembler Display Routines
+**********************************************************************
+
+**********************************************************************
+*		Report Functions
+**********************************************************************
+
+**********************************************************************
+* Clear status area if Report is on, do not modify D1
+**********************************************************************
+ClearStat?	CD1EX
+		RSTK=C
+		?ST=0	qREPORT
+		GOYES	ClrSt?NO
+		GOSUB	ClearStat
+ClrSt?NO	C=RSTK
+		D1=C
+		RTN
+
+**********************************************************************
+* RPL assembler Report (srcloc - src)
+* Input: R1.A = srcloc  D0 = src
+* RSTK:3
+* Stores D0 to srcmed!
+**********************************************************************
+
+RplReport?	?ST=0	qREPORT
+		GOYES	AnnunReport
+
+RplReport	GOSUB	DispMem
+		CD1EX			* Save pc
+		RSTK=C
+		CD0EX			* Save src
+		RSTK=C
+		GOSUB	ClearLine2
+		C=RSTK
+		RSTK=C			* C.A = src
+		A=R1.F	A		* A.A = srcloc
+		D0=A			* Display from srcloc
+		C=C-A	A
+		CSRB.F	A		* C.A = chars
+		GOSUB	Disp$
+		C=RSTK			* Restore D0
+		D0=C
+
+* Next needed because some assembler subroutines do not return
+* to the main loop to display the tokens
+
+		R0=C.F	A		* Set srcmed = D0 !!!
+		C=RSTK			* Restore D1
+		D1=C
+ 		RTN
+
+* Rotate annunciators so we know something is happening
+AnnunReport	RTN
+
+*		AD1EX			->pc
+*		GOSBVL	=D1=DSKTOP
+*		D1=D1+	5
+*		C=DAT1	A		->buf
+*		C=A-C	A		pc - buf
+*		C=C-CON	A,10		pcoff
+*		C=0	B
+*		C=C+1	B
+*		CBIT=0	11
+*		CBIT=0	10
+*		C=C-1	XS
+*		GOC	+
+*-		C=C+C	B
+*		C=C-1	XS
+*		GONC	-
+*+		CBIT=0	6
+*		CBIT=1	7
+*		CBIT=1	4
+*		D1=(5)	=ANNCTRL
+*		DAT1=C	B
+*		D1=A
+*		RTN
+**********************************************************************
+* RPL assembler Report (srcloc - lineend)
+* Input: R1.A = srcloc  R2.A1 = lineend
+* Output D0 = srcloc
+**********************************************************************
+CodeReport?	?ST=0	qREPORT
+		GOYES	AnnunReport
+		GOSUB	DispMem
+		CD1EX			* Save pc to RSTK
+		RSTK=C
+		CD0EX			* Save src
+		RSTK=C
+
+		GOSUB	ClearLine2
+		A=R1.F	A		* A.A = srcloc
+		D0=A			* Display from srcloc
+		C=R2
+		GOSBVL	=CSRW5		* C.A = lineend
+		C=C-A	A
+		CSRB.F	A		* C.A = chars
+		GOSUB	Disp$		* Display tokens
+		C=RSTK			* Restore D0
+		D0=C
+		C=RSTK			* Restore D1
+		D1=C
+		RTN
+
+**********************************************************************
+* Display "PC: hhhhh  Free: hhhhh"
+**********************************************************************
+DispMem		CD1EX			* Save pc to RSTK
+		RSTK=C
+		GOSBVL	=D1=DSKTOP
+		D1=D1+	5
+		A=DAT1	A		* A.A = ->buf
+		C=RSTK			* C.A = ->pc
+		RSTK=C
+		C=C-A	A
+		C=C-CON	A,10		* C.A = pcoff
+		R0=C			* R0.A = pcoff
+		CD0EX			* Save src
+		RSTK=C
+		GOSUB	GetDisp1
+		GOSUB	DispMsg
+		NIBASC	'PC:\0'
+		D1=D1+	1
+		A=R0
+		GOSUB	DispHxs5
+		D1=D1+	2
+		GOSUBL	DispMsg
+		NIBASC	'Free:\0'
+		D1=D1+	1
+		A=R4
+		GOSUB	DispHxs5
+		D1=D1+	2
+		GOSUBL	DispMsg
+		NIBASC	'Pass:\0'
+		D1=D1+	1
+		LCASC	'1'
+		?ST=0	qPASS2
+		GOYES	DispPassNum
+		LC(1)	'2'
+DispPassNum	GOSUB	DispChrC
+		?ST=1	qPASS2
+		GOYES	DispMemDone
+		?ST=0	qNEEDPASS2
+		GOYES	DispMemDone
+		LCASC	'+'
+		GOSUB	DispChrC
+
+DispMemDone	C=RSTK			* Restore src
+		D0=C
+		C=RSTK			* Restore pc
+		D1=C
+		RTN
+**********************************************************************

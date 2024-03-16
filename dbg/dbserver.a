@@ -1,0 +1,647 @@
+**********************************************************************
+*		JAZZ	- Server code for xDB
+**********************************************************************
+
+**
+** Read line. Set up arguments and read line into gOUTBUF.
+**
+** Out:
+**	Carry	= set if non-empty line
+**
+
+ServRead
+	GOSUBL	GetFlags	ST[B] = flags
+	ST=0	3		Assume no echo
+	?ST=1	1
+	GOYES	+		Protocol mode - indded no echo
+	ST=1	3		Use mode - enable echo
++	ST=1	2		Enable parity
+	LC(2)	13
+	R0=C			R0[B] = CR for delimiter
+
+	GOSUBL	GetOutBuf	D1 = ->gOUTBUF
+	GOSUB	+
+	CSTRING	'* '		Reader prompt
++	C=RSTK			C[A] = ->prompt
+	LA(5)	inbufsize	A[A] = size of buffer
+	GOSUB	ReadLine	Read line
+	?C#0	A
+	RTNYES
+	RTN
+
+** Execute command in buffer.
+**
+** We set up D0 = wire switch table, B[X] = first character, D1 =
+** address of first non-blank character. We clear ARG so we can
+** call existing routines and expect their default behavior.
+
+ServExec
+	GOSUBL	ArgReset	Lose ARG
+	GOSUBL	GetOutBuf	D1 = ->gOUTBUF
+	GOSUB	ServWhite+	Skip D1 past blanks
+	B=0	XS		Clear modifier
+
+** Iterative entry: B[XS] contains modifier, load next character into
+** B[B] and dispatch B[X].
+
+ServExecLp
+	A=DAT1	B		A[B] = character
+	B=A	B		B[X] = character|modifier
+	D1=D1+	2		Skip past it
+	GOSUB	ServWhite+	Skip blanks
+	GOSUB	srvr200
+
+** Server-mode command switch table.
+**
+** Each entry is called with:
+**
+**	B[X]	= key code
+**	D1	= address of first non-blank char on line
+**	Carry	= clear
+
+
+* `b' (breakpoint) command modifiers:
+
+SMOD_LIST	EQU 0		* list modifier
+SMOD_DEF	EQU 1		* def modifier
+SMOD_SET	EQU 2		* set modifier
+
+	KBENT	'=',ServSetPC
+	KBENT	'+',ServPC+
+	KBENT	'-',ServPC-
+	KBENT	'n',ServNext
+	KBENT	'l',ServModList
+	KBENT	'd',ServModDef
+	KBENT	'h',ServModSet
+	KBENT	'b'!#100*(SMOD_LIST),ServBptList
+	KBENT	'b'!#100*(SMOD_DEF),ServBptDef
+	KBENT	'b'!#100*(SMOD_SET),ServBptSet
+	KBENT	's',ServStepDeep
+	KBENT	'S',ServStepShallow
+	KBENT	'c',ServCont
+	KBENT	't',ServExit
+	KBENT	'T',ServRRExit
+	KBENT	'R',ServReset
+	KBENT	'r',ServPrintState
+	KBENT	'z',ServPrintRSTK
+	KBENT	'i',ServPrintInstr
+	KBENT	'x',ServPrintMem
+	KBENT	'a',ServPrintAscii
+	CON(3)	0
+
+srvr200	C=RSTK
+	D0=C			D0 = ->key switch
+	GOLONG	SwitchKeyD0	Switch key
+
+** Skip D1 past blanks in ASCIZ
+
+ServWhite+
+	LCASC	' '
+-	A=DAT1	B		A[B] = character
+	?A=0	B
+	RTNYES			End of string, return
+	?C<A	B
+	RTNYES			Non-blank, return
+	D1=D1+	2		Advance D1 to next char
+	GONC	-		Loop
+
+** Modifiers
+
+ServModList
+	P=	SMOD_LIST
+-	C=0	XS
+	CPEX	2		P = 0, C[XS] = P
+	B=C	XS		B[XS] = modifier (original P)
+	GOTO	ServExecLp	Load B[B] with char and switch
+ServModDef
+	P=	SMOD_DEF
+	GONC	-
+ServModSet
+	P=	SMOD_SET
+	GONC	-
+
+** The following are just chains to the corresponding db_xxx entries
+
+* Continue
+
+ServCont
+	GOSUBL	ArgReset
+	GOLONG	DbgContinue
+
+* Exit
+
+ServExit
+	GOSUBL	ArgReset
+	GOLONG	DbgExit
+
+* Exit, restore system registers
+
+ServRRExit
+	GOSUBL	ArgReset
+	GOLONG	DbgRRExit
+
+* Reset
+
+ServReset
+	GOSUBL	ArgReset
+	GOLONG	DbgReset
+
+** Convert ASCII character to hex digit.
+**
+** In:
+**	C[B]	 = ASCII character
+**
+** Out:
+**	B[W]	= Binary 0-F
+**	Carry	= Cleared if digit, set otherwise
+**
+
+ServChr>#
+	B=0	W
+	B=C	B		B[B] = character
+	LCASC	'0'
+	B=B-C	B		Adjust B[B] for zero
+	RTNC			< '0' - not digit
+	LC(2)	9
+	?B<=C	B
+	GOYES	+		<= 9 - return B[B]
+	LC(2)	'a'-'0'
+	B=B-C	B		Adjust B[B] for 'a'
+	RTNC			< 'a' - not digit
+	LC(2)	#F-#A
+	?B>C	B		> 'f' - not digit
+	RTNYES
+	B=B+CON	B,10
++	RTNCC
+
+** Parse hex integer.
+**
+** In:
+**	D1	= Address of ASCIZ string
+**
+** Out:
+**	D1	= Address of first char following last digit
+**	A[W]	= Integer
+**	ST:0	= Set if number, cleared otherwise
+**
+
+ServParseHex
+	GOSUB	ServWhite+	Skip D1 past spaces
+	A=0	W
+	ST=0	0		No digits yet
+-	C=DAT1	B		C[B] = character
+	?C=0	B
+	RTNYES			End of line
+	GOSUB	ServChr>#	B[W] = C[B] in binary
+	RTNC			Not digit - return
+	D1=D1+	2		Advance to next character
+	ASL	W		Add digit to A[W]
+	A=A+B	W
+	ST=1	0		At least one digit
+	GOTO	-		Loop
+
+** Set PC to address. Ignore if no address supplied
+
+ServSetPC
+	GOSUB	ServParseHex	A[A] = addr
+	?ST=0	0
+	GOYES	goRedisN	No addr - ignore
+	C=A	A
+	GOSUBL	SetPC		DB PC = addr
+goRedisN
+	GOLONG	DbgMain
+
+** Add offset to PC. Ignore if no offset supplied
+
+ServPC+	GOSUB	ServParseHex	A[A] = offs
+	?ST=0	0
+	GOYES	goRedisN	No offs - ignore
+srv_addtopc
+	R0=A			R0[A] = offs
+	GOSUBL	GetPC		D0 = ->REG_PC, A[A] = DB PC
+	C=R0			C[A] = offs
+	C=C+A	A
+	DAT0=C	A		DB PC = new DB PC
+	GOTO	goRedisN
+
+** Substract offset from PC. Ignore if no offset supplied
+
+ServPC-	GOSUB	ServParseHex	A[A] = offs
+	?ST=0	0
+	GOYES	goRedisN	No offs - ignore
+	A=-A	A
+	GOTO	srv_addtopc	Add A[A] to DB PC, continue
+
+** Parse integer, set ARG to it, if any.
+** In:
+**	D1	= address of ASCIZ string
+**
+** Out:
+**	ARG	= set to argument if any, otherwise untouched
+**	Carry	= cleared if argument, set if no argument
+**	C[A]	= argument, if any
+**
+** Uses:
+**	R0[A] D0 A[A] ST:0
+
+ServParseArg
+	GOSUB	ServParseHex		A[A] = argument
+	?ST=0	0
+	RTNYES				No argumument, leave ARG untouched
+	R0=A
+	GOSUBL	GetArg			D0 = ->gARG
+	D0=D0-	1			D0 = ->gARG?
+	LC(1)	#F
+	DAT0=C	1			Mark ARG presence
+	D0=D0+	1			D0 = ->gARG
+	C=R0				C[A] = argument
+	DAT0=C	A			Set ARG
+	RTNCC
+
+** Advance [N] instructions
+
+ServNext
+	GOSUBL	ArgReset
+	GOSUB	ServParseArg		ARG = N, if any
+	GOLONG	DbgNext			Advance ARG instructions
+
+** Deep step, [N] instructions
+
+ServStepDeep
+	GOSUBL	ArgReset
+	GOSUB	ServParseArg		ARG = N, if any
+	GOLONG	DbgSingle		Single-step, [+] fashion
+
+** Shallow step, [N] instructions
+
+ServStepShallow
+	GOSUBL	ArgReset
+	GOSUB	ServParseArg		ARG = N, if any
+	GOLONG	DbgShallow		Single-step, [-] fashion
+
+** Print registers.
+
+* Register table. Each entry consists of an ASCIZ prefix string, a
+* register offset from DBBUF, and a nybble specifying the register
+* size, in nybbles minus 1. The table is ended with a null string.
+
+REGENT	MACRO	$prefix,$sym,$size
+	NIBASC	'$1'
+	CON(2)	0
+	CON(2)	($2)-(DBBUF)
+	CON(1)	($3)-1
+REGENT	ENDM
+
+ServPrintState
+	GOSUB	+
+	REGENT	CY,REG_CRY,1
+	REGENT	P,REG_P,1
+	REGENT	PC,REG_PC,5
+	REGENT	A,REG_A,16
+	REGENT	B,REG_B,16
+	REGENT	C,REG_C,16
+	REGENT	D,REG_D,16
+	REGENT	R0,REG_R0,16
+	REGENT	R1,REG_R1,16
+	REGENT	R2,REG_R2,16
+	REGENT	R3,REG_R3,16
+	REGENT	R4,REG_R4,16
+	REGENT	D0,REG_D0,5
+	REGENT	D1,REG_D1,5
+	REGENT	ST,REG_ST,3
+	REGENT	HST,REG_HST,1
+	REGENT	HD,REG_MODE,1
+	CON(2)	0
++	C=RSTK
+	R3=C				R3 = ->register table
+
+* Print next entry, pointed to by R3[A]
+
+prstlp	C=R3
+	D0=C				D0 = entry address
+	A=DAT0	B			Examine first character
+	?A#0	B
+	GOYES	+			Not null - continue
+	GOTO	goRedisN		Null string - done
++	A=C	A			A[A] = ->ASCIZ string
+	GOSUB	WriteAsciz		Write it
+	GOSUB	WriteColon		Write ':'
+	C=R3
+	D0=C
+-	C=DAT0	B			Advance 0 past NUL
+	D0=D0+	2
+	?C#0	B
+	GOYES	-
+
+	A=0	A
+	A=DAT0	B			A[A] = offset
+	D0=D0+	2			Advance to size
+	C=DAT0	1			C[0] = size-1
+	R0=C				R0[0] = size-1
+	D0=D0+	1			Advance to next entry
+	CD0EX
+	R3=C				Save pointer in R3
+	GOSUBL	GetData			D0 = ->DBBUF
+	CD0EX
+	C=C+A	A			Add register offset
+	D0=C				D0 = ->integer
+	C=DAT0	W
+	R2=C				R2[W] = integer
+
+	GOSUBL	GetOutBuf		D1 = ->gOUTBUF
+
+	A=0	B
+	A=R0.F	P			A[B] = size-1
+	A=A+1	B			A[B] = digits
+
+	C=R2				C[W] = integer
+	GOSUBL	putint			C[W] as integer, A[B] digits -> @D1
+	LC(4)	#A			C.4 = '\n\0'
+	DAT1=C	4			LF & NUL terminate gOUTBUF
+
+	GOSUBL	GetOutBuf		D1 = ->gOUTBUF
+	AD1EX				A[A] = ->gOUTBUF
+	ST=1	4			LF-to-CRLF conversion enabled
+	GOSUB	WriteAsciz		Write gOUTBUF
+	GOTO	prstlp			Loop all registers
+
+WriteColon
+	LCASC	':'
+	GOSUB	WriteC			Write colon
+	RTNCC
+
+** Print return stack
+
+ServPrintRSTK
+	GOSUBL	sp_getrstk		D0 = ->REG_RSTK
+	CD0EX
+	R3=C				R3 = ->REG_RSTK
+	LCASC	'0'			Level, in ASCII
+	R2=C				R2[B] = level, in ASCII
+	LC(1)	#7
+	D=C	P
+	DSRC				D[S] = level counter
+
+* Write next RSTK level
+
+prrslp	GOSUB	+
+	CSTRING	'RSTK'			Prefix
++	C=RSTK
+	A=C	A			A[A] = ->RSTK prefix
+	GOSUB	WriteAsciz		Write prefix
+	A=R2				A[B] = level, in ASCII
+	C=A	B			C[B] = level, in ASCII
+	A=A+1	B
+	R2=A.F	B			R2[B]++
+	GOSUB	WriteC			Write level
+	GOSUB	WriteColon		Followed by colon
+
+	GOSUBL	GetOutBuf		D1 = ->gOUTBUF
+	C=R3
+	D0=C				D0 = ->RSTK entry
+	D0=D0+	5			Advance to next
+	CD0EX
+	R3=C				R3 = ->next RSTK slot
+	C=DAT0	A			C[A] = current RSTK entry
+	GOSUBL	putint5			@D1+ = C[A] in hex
+	LC(4)	#A			C = LF,NUL
+	DAT1=C	4			Add LF, NUL to buffer
+	GOSUBL	GetOutBuf
+	AD1EX				A[A] = ->gOUTBUF
+	GOSUB	WriteAsciz		Write gOUTBUF
+	D=D-1	S			One less level to go
+	GONC	prrslp			Loop all 8 levels
+	GOTO	goRedisN		Continue with main loop
+
+** Write instruction sequence, [N] (1) instructions starting at [addr]
+** (PC).
+
+ServPrintInstr
+	GOSUB	ServParseHex		A[A] = [N]
+	?ST=1	0
+	GOYES	+			N present
+	A=0	A
+	A=A+1	A			Default to 1
+	R2=A				R2[A] = 1
+	GONC	prins27			Set addr to PC and continue
+
++	?A#0	A
+	GOYES	+			Nonzero
+	A=A+1	A			Zero - change to 1
++	R2=A				R2[A] = [N] (1)
+	GOSUB	ServParseHex		A[A] = [addr]
+	?ST=1	0
+	GOYES	prins37			Addr present, use it
+
+prins27	GOSUBL	GetPC			A[A] = DB PC
+prins37	R3=A				R3[A] = [addr] (PC)
+
+* Write next instruction
+
+--	C=R2				C[A] = counter
+	C=C-1	A
+	GONC	+			More to go
+	GOTO	goRedisN		Done - continue main loop
++	R2=C				Update counter
+	GOSUBL	SaveR0R3		Save R0-R4 across disassembly
+	C=R3				C[A] = addr
+	D0=C				D0 = addr
+	GOSUBL	GetOutBuf		D1 = ->gOUTBUF
+	ST=1	8
+	GOSUBL	DbgDis			Disassemble instruction
+	CD0EX
+	RSTK=C				Save next address
+	GOSUBL	RestR0R3		Restore R0-R4
+	C=RSTK				Restore next address
+	R3=C
+	LC(4)	#A			Terminate with LD,NUL
+	DAT1=C	4
+	GOSUBL	GetOutBuf		D1 = ->gOUTBUF
+	AD1EX
+	ST=1	4			Enable LF-CRLF conversion
+	GOSUB	WriteAsciz		Write gOUTBUF on wire
+	GOC	--			Print next instruction
+
+** Dump memory, [N] (1) words starting at [addr] (PC)
+
+ServPrintMem
+	GOSUB	ServParseHex		A[A] = [N]
+	?ST=1	0
+	GOYES	+			N present
+	A=0	A
+	A=A+1	A			Default to 1
+	R2=A				R2[A] = 1
+	GONC	prmem30			Set addr to PC and continue
+
++	?A#0	A
+	GOYES	+			Nonzero
+	A=A+1	A			Zero - change to 1
++	R2=A				R2[A] = [N] (1)
+	GOSUB	ServParseHex		A[A] = [addr]
+	?ST=1	0
+	GOYES	prmem40			Addr present, use it
+
+prmem30	GOSUBL	GetPC			A[A] = DB PC
+prmem40	R3=A				R3[A] = [addr] (PC)
+
+* Dump next word
+
+--	C=R2				C[A] = counter
+	C=C-1	A
+	GONC	+			More to go
+	GOTO	goRedisN		Done - continue main loop
++	R2=C				Update counter
+	GOSUBL	GetOutBuf		D1 = ->gOUTBUF
+	C=R3				C[A] = addr
+	GOSUBL	putint5			@D1+ = C[A] in hex
+	LCASC	':'			@D1+ = ':'
+	DAT1=C	B
+	D1=D1+	2
+	C=R3				C[A] = addr
+	GOSUBL	putmem16		@D1+ = @C[A] word
+	LC(4)	#A
+	DAT1=C	4			@D1+ = LF, NUL
+	GOSUBL	GetOutBuf
+	AD1EX				A[A] = ->gOUTBUF
+	C=R3
+	C=C+CON	A,16
+	R3=C				Increment address by 16
+	ST=1	4			Enable LF-CRLF conversion
+	GOSUB	WriteAsciz		Print gOUTBUF
+	GOC	--			Next word
+
+** Dump memory in ASCII, [N] (1) 32-nybble words starting at [addr] (PC)
+
+ServPrintAscii
+	GOSUB	ServParseHex		A[A] = [N]
+	?ST=1	0			N present
+	GOYES	+
+	A=0	A
+	A=A+1	A			Default to 1
+	R2=A				R2[A] = 1
+	GONC	prasc30			Set addr to PC and continue
+
++	?A#0	A
+	GOYES	+			Nonzero
+	A=A+1	A			Zero - change to 1
++	R2=A				R2[A] = [N] (1)
+	GOSUB	ServParseHex		A[A] = [addr]
+	?ST=1	0
+	GOYES	prasc40			Addr present, use it
+
+prasc30	GOSUBL	GetPC			A[A] = DB PC
+prasc40	R3=A				R3[A] = [addr] (PC)
+
+--	C=R2				C[A] = counter
+	C=C-1	A
+	GONC	+			More to go
+	GOTO	goRedisN		Done - continue main loop
+
++	R2=C				Update ocunter
+	GOSUBL	GetOutBuf		D1 = ->gOUTBUF
+	C=R3				C[A] = addr
+	GOSUBL	putint5			@D1+ = C[A] in hex
+	LCASC	':'
+	DAT1=C	B
+	D1=D1+	2
+	C=R3				C[A] = addr
+	LA(2)	32			32 nibbles
+	GOSUBL	putmemasc		@D1+ = @C[A], 32 nibbles, as ASCII
+
+	LC(4)	#A
+	DAT1=C	4			@D1+ = LF, NUL
+	GOSUBL	GetOutBuf		D1 = ->gOUTBUF
+	A=R3				A[A] = address
+	LC(5)	32
+	A=A+C	A			Add 32 to advance to next line
+	R3=A				Update address
+
+	AD1EX				A[A] = ->gOUTBUF
+	ST=1	4			Enable LF-CRLF conversion
+	GOSUB	WriteAsciz		Print gOUTBUF
+	GOC	--			Next word
+
+** Return BPT # in A[A]
+
+ServGetBPT
+	GOSUB	ServParseHex		A[W] = BPT #
+	?ST=1	0
+	GOYES	+			N present
+-	GOTO	goRedisN		Back to main loop
+
++	C=0	W
+	LC(1)	#8			Assert 1-8
+	?A>C	W
+	GOYES	-			> 8 - ignore
+	A=A-1	W
+	GOC	-			== 0 - ignore
+	A=A+1	A
+	R3=A.F	A			R3[A] = BPT #
+	RTNCC
+
+** Set BPT N counter to [counter] (00)
+
+ServBptDef
+	GOSUB	ServGetBPT		R3[A] = BPT #
+	GOSUB	ServParseArg		ARG = [addr]
+	C=R3				C[A] = BPT #
+	GOLONG	SetBptC			Set BPT #N = [addr]
+
+** Set BPT N counter to [counter] (00)
+
+ServBptSet
+	GOSUB	ServGetBPT		R3[A] = BPT #
+	GOSUB	ServParseArg		ARG = [counter]
+	C=R3				C[A] = BPT #
+	GOLONG	SetBptCtrC		Set BPT #N counter = [counter]
+
+** List breakpoints
+
+ServBptList
+	GOSUBL	GetBpt			D0 = ->db_bpt
+	CD0EX
+	R3=C				R3 = ->db_bpt
+	LCASC	'1'
+	R2=C				R2 = BPT #, in ASCII
+
+	LC(1)	#7			BPT counter
+	CSRC
+	D=C	S			D[S] = counter
+
+--	GOSUB	+
+	CSTRING	'BPT'
++	C=RSTK
+	A=C	A
+	GOSUB	WriteAsciz		Print 'BPT'
+	C=R2				C[B] = bpt #, in ASCII
+	GOSUB	WriteC			Write it
+	GOSUB	WriteColon		Write a colon
+	C=R2
+	C=C+1	B
+	R2=C				R2[B]++
+
+	GOSUBL	GetOutBuf		D1 = ->gOUTBUF
+	C=R3
+	D0=C				D0 = ->BPT slot
+	D0=D0+	BPTSIZE			Advance to next
+	CD0EX				D0 = ->bpt slot
+	R3=C				R3[A] = ->next bpt slot
+
+	C=DAT0	A
+	GOSUBL	putint5			@D1+ = C[A] in hex
+	LCASC	':'
+	DAT1=C	B
+	D1=D1+	2
+	D0=D0+	(BPTSIZE)-2		D0 = ->BPT counter
+	C=DAT0	B			C[B] = counter
+	GOSUBL	putsigned2		@D1+ = C[B] as signed integer
+	LC(4)	#A
+	DAT1=C	4			@D1+ = LF, NUL
+	GOSUBL	GetOutBuf
+	AD1EX				A[A] = ->gOUTBUF
+	GOSUB	WriteAsciz		Print gOUTBUF
+	D=D-1	S			One slot less to go
+	GONC	--			Next slot
+	GOTO	goRedisN
+
+**********************************************************************

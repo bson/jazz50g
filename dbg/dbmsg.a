@@ -1,0 +1,201 @@
+**********************************************************************
+*		JAZZ	- Message code for xDB
+**********************************************************************
+
+GetDbgFont
+	P=	0
+	LC(5)	gFONT2
+	AR4EX.F	A
+	C=C+A	A		->gFONT2
+	AR4EX.F	A
+	D0=C
+	C=DAT0	A
+	R0=C	A		->font
+	RTN
+
+** Display ASCIZ message.
+** In:
+**	C.A = Address of ASCIZ message.
+**
+** Out:
+**	C.A = Address of next char in message not on screen.
+**	Carry = Clearedif entire message did not fit on screen,
+**		otherwise set.
+**
+** Register usage:
+**	R0.A = Address of font data.
+**	R1.A = Address of next message character.
+**	R2.1 = Line counter (0-7).
+**	R3.A = Display offset.
+
+MsgView
+	P=	0
+	R1=C			R1[A] = ->next char
+	GOSUB	GetDbgFont	R0[A] = ->font
+	LC(1)	6
+	R2=C			R2[0] = line counter, 6
+	C=0	A
+	R3=C			R3[A] = offset 0
+
+* Main message display loop, -
+* clear gOUTBUF, then copy up to 22 characters to it.
+
+msglp
+	GOSUBL	LineBlank	Blank gOUTBUF
+	A=R1
+	D0=A			D0 = ->next char
+	LC(2)	21		Up to 22 characters to copy
+	GOSUB	MsgCopyChars	strncpy() @D0 --> @D1, C[B] chars
+	CD0EX			C[A] = first unused char
+	R1=C			Update char ptr
+
+* Display buffer, save R0-R3 across call
+
+	GOSUBL	SaveR0R3	Stash away R0-R3
+
+	GOSUBL	GetOutBuf	D1 = ->gOUTBUF
+	CD1EX
+	D0=C			D0 = ->gOUTBUF
+	A=R3			A[A] = offset
+	GOSUBL	ViewLine	Display line
+	GOSUBL	RestR0R3
+
+* Look up to 7 lines, unless next character is \000
+
+	C=R1.F	A		C[A] = ->next char
+	D0=C
+	A=DAT0	B		A[B] = next char
+	?A=0	B
+	RTNYES			End of string - return with CS
+
+	A=R3			Update offset
+	LC(5)	8*34
+	A=A+C	A
+	R3=A
+
+	A=R2			A[0] = line counter
+	A=A-1	P		One line less to go
+	GOC	+		Out of string - return with CS
+	R2=A			Update R2[0] line counter
+	GOTO	msglp		Not out of lines yet
++	RTNCC
+
+** Display message, alternative entry. Picks the message address from
+** the return stack, displays the message, and returns to the address
+** immediately following the call.
+**
+** In:
+**	RSTK0 = Address of ASCIZ string.
+**
+
+MsgViewr
+	GOSUBL	db_ctotext	Switch to text if applicable
+	ST=0	1		Indicate no delay
+
+MsgViewEntry
+	C=RSTK			C[A] = ASCIZ message address
+	GOSUB	MsgView		View message
+	GOSUB	MsgSkipNul	Skip @C until past \000 terminator
+	RSTK=C			Put back return address
+	?ST=0	1
+	GOYES	view99		No delay - skip and return
+
+* Han:	no need for SX code anymore
+*	CD0EX			Use version dependant delay loop
+*	RSTK=C
+*	D0=(5)	=IRAM@
+*	C=DAT0	P
+*	C=C+C	P
+*	C=RSTK
+*	D0=C
+
+*	LC(5)	#16000		* SX	~ 1 second
+*	GONC	+
+	LC(5)	#20000		* GX	~ 1 second???
++
+-	C=C-1	A
+	GONC	-
+view99	RTNCC
+
+** Same as MsgViewr, except we add a short delay
+
+MsgDelay
+	GOSUBL	db_ctotext	Switch to text if applicable
+	ST=1	1		Indicate delay
+	GOTO	MsgViewEntry
+
+** Skip bytes until past NUL terminator.
+** In:
+**	C.A = address of ASCIZ message string.
+**
+** Out:
+**	C.A = address of first nybble following the NUL terminator.
+**	Carry = cleared
+**
+** Used:
+**	A.B
+
+
+MsgSkipNul
+	CD0EX			D0 = ->next char
+-	A=DAT0	B
+	D0=D0+	2
+	?A#0	B
+	GOYES	-
+	CD0EX			C[A] = ->next char, restore D0
+	RTNCC
+
+** Copy characters. Copies string until either LF (\012) or NUL
+** (\000), or the character count is less than zero. If the source
+** string is NUL terminated, D0 is set to point to the NUL character,
+** otherwise it points to the next character following the LF, or the
+** first character to be excluded due to excessive line size. This
+** function is used to wrap text one line at a time.
+**
+** In:
+**	C.B = character count - 1.
+**	D0  = source string.
+**	D1  = destination string buffer.
+**
+** Out:
+**	D0  = &next source char.
+**	D1  = &next unused buffer position.
+**	Carry = set if NUL terminated, otherwise cleared.
+**
+** Used:
+**	A.B, B.B, C.B
+
+MsgCopyChars
+	B=C	B			B[B] = character count
+	LCASC	'\n'			C[B] = newline
+-	A=DAT0	B
+	?A=0	B
+	RTNYES				NUL - return with CS
+	D0=D0+	2
+	?A=C	B
+	GOYES	+			LF - done
+	DAT1=A	B			Copy character to buffer
+	D1=D1+	2
+	B=B-1	B			Decrement counter
+	GONC	-			Loop until buffer full
+
+* LF or buffer full, return with CC
+
++	RTNCC
+
+** Display fatal error. Displays message using MsgView, waits for
+** any key, then performs a reset. Never returns.
+** In:
+**	RSTK0 = Address of ASCIZ message.
+**
+
+*MsgFatal
+*	GOSUBL	db_ctotext		Swicth to text display
+*	C=RSTK				C[A] = ->message
+*	GOSUB	MsgView			View message
+*	GOSBVL	=Flush
+*	GOSUBL	DbgWaitKey		Wait fo key
+*	RESET				Warm start
+
+**********************************************************************
+

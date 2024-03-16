@@ -1,0 +1,320 @@
+**********************************************************************
+*		Entries used by JAZZ
+**********************************************************************
+
+**********************************************************************
+*		I/O and RAM Variables		( see rammap.a )
+**********************************************************************
+=CARDCTL	EQU #0010E
+=LINECOUNT	EQU #00128
+
+=addrORghost    EQU #01661
+=addrTEMPENV    EQU #04E66
+=addrLINECNTg   EQU #26CE6
+=addrADISP      EQU #26CD8
+=addrATTNFLG    EQU #26CDF
+=addrVDISP      EQU #26CED
+=addrVDISP2     EQU #26CF4
+=addrTEMPTOP    EQU #2ACA9
+=addrClkOnNib   EQU #2B7CC
+
+=aORghost	EQU (addrORghost)+2	->ORghost
+=aTEMPENV	EQU (addrTEMPENV)+2	->TEMPENV
+=aLINECNTg	EQU (addrLINECNTg)+2	->LINECNTg
+=aADISP		EQU (addrADISP)+2	->ADISP
+=aATTNFLG	EQU (addrATTNFLG)+2	->ATTNFLG
+=aVDISP		EQU (addrVDISP)+2	->VDISP
+=aVDISP2	EQU (addrVDISP2)+2	->VDISP2
+=aTEMPTOP	EQU (addrTEMPTOP)+2	->TEMPTOP
+=aClkOnNib	EQU (addrClkOnNib)+2	->ClkOnNib
+
+=SystemFlags	EQU #80F02
+
+* extable support
+=SCREEN		EQU	#822B2
+=ExpValStkStart EQU	(SCREEN)+0
+=ExpOpStkStart	EQU	(ExpValStkStart)+128
+=TempAreaStart	EQU	(ExpOpStkStart)+0
+=TempAreaEnd	EQU	(TempAreaStart)+5
+=TempAreaSize	EQU	(TempAreaEnd)+5
+=TempArea	EQU	(TempAreaSize)+5
+
+**********************************************************************
+*		Status Flags & Defaults for ED and EC
+**********************************************************************	
+sTIMER2ON	EQU 0	For LoPwrShutDn
+sSCROLL		EQU 0
+sFNDCS		EQU 0	Find with case ignore?
+sBLKINV		EQU 0	Invert? flag for display subroutines
+sLAM		EQU 0	Flag for DoEdDob
+sFMTALL		EQU 0	Flag for formatter
+sFILL		EQU 0	Flag for EdECat/EdFill
+sDELNOCLIP	EQU 0	Block clip/cut mode
+
+sBLINK		EQU 1	Blink flag for key wait
+sINPDEC		EQU 2	Input decimal number?
+sCHRMAIN	EQU 2	Set if ChrCat is called from main Ed loop
+sFIND		EQU 3	Input find string?
+sREPL?		EQU 3	Input replace string?
+sBPOFF		EQU 4
+sLOWCS		EQU 5	Lower case on?
+sOVERWR		EQU 6	OverWrite on?
+sCURSOR		EQU 7	Cursor on or off?
+sDELAY		EQU 8	Have to delay in keywait?
+sREPEAT		EQU 9	Key repeat on?
+* WARNING:	ST10 used by PUSH#
+sLINBAD		EQU 10	Display line is bad?
+sDISPOK		EQU 11	Display ok?
+
+**********************************************************************
+*		Key codes
+**********************************************************************	
+=KC_TABLE	EQU #00787+2+4*2	* Han: Bit-to-Keycode table
+=KC2_TABLE	EQU #00811+4		* Han: Keycode table for ThisKeyDn?
+
+* Shift codes used in ED and EC
+NS		EQU #100
+LS		EQU #200
+RS		EQU #300
+ANS		EQU #400
+ALS		EQU #500
+ARS		EQU #600
+
+* Keycodes in ROM and used in ED and EC
+=Sfkey1		EQU 1
+=Sfkey2		EQU 2
+=Sfkey3		EQU 3	
+=Sfkey4		EQU 4	
+=Sfkey5		EQU 5	
+=Sfkey6		EQU 6
+=APPSCODE	EQU 7
+=MATHCODE	EQU 7
+=MODECODE	EQU 8
+=TOOLCODE	EQU 9
+=CUSTCODE	EQU 10
+=UPCODE		EQU 10
+=VARCODE	EQU 11
+=STOCODE	EQU 12
+=NXTCODE	EQU 13
+=LEFTCODE	EQU 14
+=DOWNCODE	EQU 15
+=RIGHTCODE	EQU 16
+=HISTCODE	EQU 17
+=EVALCODE	EQU 18
+=tickCODE	EQU 19
+=SYMBCODE	EQU 20
+=BACKCODE	EQU 21
+=POWERCODE	EQU 22
+=SQRTCODE	EQU 23
+=SINCODE	EQU 24
+=COSCODE	EQU 25
+=TANCODE	EQU 26
+=EEXCODE	EQU 27
+=CHSCODE	EQU 28
+=XCODE		EQU 29
+=INVCODE	EQU 30
+=DIVCODE	EQU 31
+=ALPHACODE	EQU #80		* internal keycode; use 32 for lookup
+=7CODE		EQU 33
+=8CODE		EQU 34
+=9CODE		EQU 35
+=TIMESCODE	EQU 36
+=LSCODE		EQU #40		* internal keycode; use 37 for lookup
+=SHIFTCODE	EQU #40
+=4CODE		EQU 38
+=5CODE		EQU 39
+=6CODE		EQU 40
+=MINUSCODE	EQU 41
+=RSCODE		EQU #C0		* internal keycode; use 42 for lookup
+=ALTCODE	EQU #C0
+=1CODE		EQU 43
+=2CODE		EQU 44
+=3CODE		EQU 45
+=PLUSCODE	EQU 46
+=ONCODE		EQU 47
+=ATTNCODE	EQU 47
+=0CODE		EQU 48
+=PCODE		EQU 49
+=SPCCODE	EQU 50
+=ENTERCODE	EQU 51
+
+**********************************************************************
+*		ML Routines
+**********************************************************************
+* entry name	found in:	notes
+
+*		ass/ass.s
+=TestFlag	EQU #0BC04 *
+
+*		ass/assrpl.a
+=Hashed?	EQU #07A72 *
+=TRAVERSE+	EQU #08400 *
+=TRAVERSE-	EQU #0841E *
+=G_ROMPCOLT	EQU #084F5 *
+
+*		dis/dis.s
+=Vger1RplEntryi	EQU #2598A *
+=TopicVar1!	EQU #2E76A *
+
+*		dbg/...
+*=FINDLAM	EQU #07DA2 *
+=SwapDisp	EQU #1276F *	resets display
+*=SetSizeErr	EQU #206E2 *
+=SAVEWORD	EQU #206BC *
+=SetTypeErr	EQU #206ED *
+=SetStackErr	EQU #206F8 *
+
+*		ass/error.a
+=FIXENV		EQU #04F19 *
+
+*		ec/ec.s
+*		edit/ed.s
+=Timer1On	EQU #0047C *	Han:	TIMER1 interrupt immediately
+=setannun	EQU #0052A *
+*=Timer1On1	EQU #0068E *	Han:	TIMER1 interrupt next tick
+=PWLseq		EQU #01D47 *
+*=adjkey	EQU #0477E *	Han:	avoid; uses RSI for press-hold
+=chk_attn	EQU #04988 *
+=chk_timeout	EQU #049DB *
+*=testflag	EQU #0BD14 *
+=ClrISysFlag	EQU #0BCF3 *
+=ISysFlag?	EQU #0BCE8 *
+=clrflag	EQU #0BD2C *
+*=getflag	EQU #0BD67 *
+=showbusy	EQU #1DAAE *
+=clrbusy	EQU #1DAD4 *
+
+* 		misc/memory.s
+=PTRADJUST2	EQU #0686E *
+=Garbage?Err	EQU #1633D *
+
+*		misc/fptr.s
+*=DoGarbageC1	EQU #03416 *	Han:	GC for 1 pointer, C[A] = 1
+
+*		misc/mfed.s
+*=GCPushALoop	EQU #0EB73 *	push pointer to ob; GC if needed
+
+**********************************************************************
+*		SysRPL
+**********************************************************************
+* entry name	found in:	notes
+
+*		ec/ec.s
+*		edit/ed.s
+=UnScroll	EQU #26422 *	Han:	points to #12A2A
+
+*		edit/ed.s
+=LAM>ID		EQU #05B01 *
+=FREEINTEMP?	EQU #06B3E *
+=>TOPTEMP	EQU #06DDE *	Han:	=>TOPTEMP_
+=PTR>ROMPTR	EQU #07E76 *	Han:	=PTR>ROMPTR_
+=HALTTempEnv?	EQU #13C12 *
+=UNDO_TOP?	EQU #26440 *	Han:	not same as =UNDO_ON?
+=LastRomWord@	EQU #2654E *	Han:	points to #15394	
+
+*		ass/ass.s
+*		edit/ed.s
+*		stk/stk.s
+=FixStk&Menu	EQU #2EF9B *
+=CkSysError	EQU #2F039 *
+=SysErrFixUI	EQU #2F05C *	Han:	( ResetSysUI )
+=MakeErrMesg	EQU #2F0D8 *
+=ProcessAlarm	EQU #2F3D2 *
+=Err#Kill	EQU #3376F *	Han:	=Err#Kill_
+=Err#Cont	EQU #337FB *	Han:	=Err#Cont_
+
+*		dbg/dbg.s
+*=NULLPAINT	EQU #27AA3 *	Han:	=NULLPAINT_ (no longer needed)
+
+*		tab/mkrtab.s
+*=Sys!		EQU #2F380 *	Han:	=SysSTO	(defined in jazz.s)
+
+*		tab/rtab.s
+*=G_COMPILEID	EQU #07C18 *	Han:	=COMPILEID_
+
+*		misc/fptr.s
+*=FptrEval	EQU #02749 *
+
+*		sdb/sdb.s
+=EXITLOOP	EQU #07321 *	Han:	=STOPLOOP_
+
+=haltrtn	EQU #12FB8 *
+=haltrtn-5	EQU (haltrtn)-5
+=UNDOsetABND	EQU #13026 *
+=SSTfind	EQU #1312F *
+=SSTend?	EQU #13184 *
+=ifeclause	EQU #1348A *
+=showsst	EQU #13951 *
+=SSTmark	EQU #139E2 *
+=SSTmark5	EQU (SSTmark)+5
+=sstSILENT'	EQU #139F1 *
+=findsst	EQU #13ABC *	Han:	ML
+
+=R4?2DROP	EQU #14568 *
+=R4?DROP	EQU #1476F *
+
+=Do1st/1st+:	EQU #19EFB *
+=Echo3Macros	EQU #19F6E *
+=Echo4Macros	EQU #19F9B *
+
+=CK3nolastwd	EQU #204A3 *
+=CK2nolastwd	EQU #204BE *
+=CK1nolastwd	EQU #204D9 *
+=CK5nolastwd	EQU #20591 *
+=CK4nolastwd	EQU #205AC *
+=MTCHTBL	EQU #20E80 *
+
+=G_MDISPA2A	EQU #263A0 *
+=G_MDISPA1+	EQU #263A5 *
+=G_MDISPA2+	EQU #263AA *
+=RROLL		EQU #2644A *	Han:	=RROLL_	points to #13AE0
+
+=resolwith	EQU #286BF *
+
+=DUP#2+PICK	EQU #29362 *	Han:	=DUP#2+PICK_
+='R'Rpsh2&rev	EQU #297CC *
+='Rswapop	EQU #29808 *	Han:	='Rswapop_
+
+=DoLevel1:	EQU #2B2F2 *	Han:	=DoLevel1:_
+=restartol	EQU #2B772 *
+=restartol-5	EQU (restartol)-5
+=symdispatch1	EQU #2B9AF *
+*=cknumdsptch2	EQU #2BA1D *
+=nssymdsptch	EQU #2BB6C *
+=snsymdsptch	EQU #2BB80 *
+=sssymdsptch	EQU #2BBFD *
+=SYMALG->	EQU #2BDEB *	Han:	see xALG->
+
+=Unitversion	EQU #2D9CB *
+
+*='RRDstdsolve	EQU #374FA *
+
+=RDRDTRUE	EQU #739C3 *
+=maybeder	EQU #739A0 *
+
+=applyinv1	EQU #74198 *
+=cknum2		EQU #74544 *	Han:	within #2EF27
+=PassiveEval	EQU #780E9 *
+=LinSerRHS	EQU #792FF *
+=LinSetRHStrg	EQU #79363 *
+=LinSetRHSitg	EQU #793BD *
+=CnLnSetRHS	EQU #794D0 *
+=CnLn?RHS	EQU #79520 *
+=LnCn?RHS	EQU #7957A *
+=1GETCOLAEVAL	EQU #79C78 *
+
+=adjustRwhich	EQU #7A088 *
+=adjustLwhich	EQU #7A145 *
+
+**********************************************************************
+* special equates for code readability
+
+=DFLT_TIMEOUT	EQU 5*60*8192		5 minute timeout for ED/EC
+=IRAMBUFF+11	EQU #80100		(=IRAMBUFF)+11
+*=RTAB_REL	EQU 5+5+4+95*5
+*=RTAB_OFFSET	EQU (RTAB_REL)+5
+*=HPENTRY_LIB	EQU #003E1		993
+=ENTRY_LIB	EQU #00102		258 (extable)
+MAXENTRLEN	EQU 24			longest entry is 24 chrs
+**********************************************************************
+

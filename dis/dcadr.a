@@ -1,0 +1,1200 @@
+**********************************************************************
+*		RPL Disassembler Subroutines
+**********************************************************************
+
+**********************************************************************
+* Disassemble RPL Object
+**********************************************************************
+Dcadr		GOSUB	?dcSEMI		* SEMI?
+		GOSUB	?dcOBJECT	* Prologed object?
+DcadrPCO	GOSUB	?dcENTRY	* Named pointer?
+		GOSUB	?dcROMBINT	* ROM # Constant?
+		GOSUB	?dcROM-WORD	* ROM-WORD?
+*		GOTO	dcPTR		* Default: PTR
+**********************************************************************
+* Disassemble pointer			"PTR hex"
+**********************************************************************
+dcPTR		A=DAT0	A		* A[A]=ptr
+		P=	4
+		GOSUBL	JailP
+		LCSTR	'PTR '
+		DAT1=C	8
+		D1=D1+	8
+		D0=D0+	5		* Skip ptr
+		GOLONG	JailAddr	* Output addr
+**********************************************************************
+* Disassemble if entry
+**********************************************************************
+?dcENTRY	A=DAT0	A
+		CD0EX
+		RSTK=C			* Save pc to RSTK
+		GOSUBL	EntryAddr?
+		GONC	dcentry
+
+-		GOSUBL	RestoreBanks
+		
+		C=RSTK	A		* Restore pc
+		D0=C
+		RTN			* Not entry - fail
+
+
+dcentry		GOSUBL	EntryFptr?	* no romptr or fptr names
+		GOC	-
+
+		C=0	A
+		C=DAT0	B
+		GOSUBL	Jail		* Allocate memory for name
+		D0=D0+	2
+		C=C+C	A
+		GOSBVL	=MOVEDOWN	* Copy name
+
+		GOSUBL	RestoreBanks
+		
+		C=RSTK			* Restore pc
+		D0=C
+		D0=D0+	5		* Skip entry
+		C=RSTK			* Pop Dcadr
+		RTN
+
+**********************************************************************
+* Disassemble if pointer to ROM Binary Constant (safe areas)
+**********************************************************************
+?dcROMBINT	A=DAT0	A
+		B=A	A
+		AD0EX
+		C=DAT0	A
+		D0=(5)	=DOBINT
+		AD0EX
+		?A#C	A
+		RTNYES
+
+* Check if bint is in ROM bint areas:
+* 1) 03F8B - 0419D = TYPEREAL - FORTYTHREE
+* 2) 64B12 - 6509E = FORTYFOUR - MINUSONE
+* above is for HP48, below is for HP49:
+* 1) 33107 - 3399f = ZERO - MINUSONE
+
+*		LC(5)	=TYPEREAL
+*		?B<C	A
+*		RTNYES
+*		LC(5)	=FORTYTHREE
+*		?B<=C	A
+*		GOYES	dcrombint
+
+*		LC(5)	=FORTYFOUR
+		LC(5)	=ZERO
+		?B<C	A
+		RTNYES
+		LC(5)	=MINUSONE
+		?B>C	A
+		RTNYES
+
+dcrombint	C=RSTK			* Is rombint - pop Dcadr
+		C=B	A
+		CD0EX
+		D0=D0+	5
+		A=DAT0	A		* A[A]=num
+		D0=C
+		D0=D0+	5		* Skip ptr
+
+		LCASC	'#'		* Output "#"
+		GOSUBL	JailChr
+		GOLONG	JailAddr	* Output A[A] as hex
+
+**********************************************************************
+* Disassemble if ROM-WORD
+**********************************************************************
+?dcROM-WORD	GOSUBL	RomRomWord?
+		RTNC
+		C=DAT0	A
+		CD0EX
+		RSTK=C			->ptr
+		D0=D0-	6
+		A=DAT0	X
+		D0=D0+	3
+		C=DAT0	X
+		GOSUBL	GetRompName
+		GONC	dcr-w10		Got name!
+
+* Just be safe, double check whether we should unconfigure. We should
+* never have to, since RomRomWord? returns with CC only if the word
+* was in library #2 or #700, neither of which require configuring.
+* Comment the unconfigure checks to speed up disassembly
+
+*		GOSBVL	=CSRW5
+*		?C=0	A
+*		GOYES	+
+*		GOSUBL	dcResetBank2
+*+
+		C=RSTK
+		D0=C			->ob
+		RTN			Back to Dcadr
+
+dcr-w10		C=0	A
+		C=DAT0	B		N chars
+		D0=D0+	2
+		C=C+1	A		+ 'x'
+		GOSUBL	Jail
+		LAASC	'x'
+		DAT1=A	B
+		D1=D1+	2
+		C=C-1	A		N chars to copy
+		C=C+C	A		N nibbles to copy
+		GOSBVL	=MOVEDOWN
+
+* safety; see comment above
+*		GOSBVL	=CSRW5
+*		?C=0	A
+*		GOYES	+
+*		GOSUBL	dcResetBank2
+*+		
+		
+		C=RSTK
+		D0=C			->ptr
+		D0=D0+	5		Skip ptr
+		C=RSTK			Pop Dcadr
+		RTNCC
+
+**********************************************************************
+* Disassemble if SEMI
+**********************************************************************
+?dcSEMI		A=DAT0	A
+		LC(5)	=SEMI
+		?A#C	A
+		RTNYES			* Not SEMI - return
+		C=RSTK			* Pop return to Dcadr
+
+* Now we add either "}" or ";" depending on SEMISTR
+
+		P=	1		* Allocate 1 char
+		GOSUBL	JailP
+
+* Update indent level
+
+		D0=D0+	5		* Skip SEMI
+		A=R2.F	A
+		AD0EX			* A[A] = pc
+		D0=(2)	dINDLEV
+		C=DAT0	A		* indlevel--
+		?C=0	A
+		GOYES	dcsemi10
+		C=C-1	A
+		DAT0=C	A
+* Update semi stream
+dcsemi10	D0=(2)	dSEMISTR
+		C=DAT0	W
+		SB=0
+		CSRB
+		DAT0=C	W
+* Output semi	
+		LCASC	';'		* Choose } / ;
+		?SB=0
+		GOYES	dcsemi20
+		LCASC	'}'
+dcsemi20	DAT1=C	B
+		D1=D1+	2		* Skip it
+		AD0EX			* Restore pc
+		RTN
+
+**********************************************************************
+* Disassemble if prologed object
+**********************************************************************
+?dcOBJECT	A=DAT0	A
+
+*		LC(5)	#7F000		* Protect from bank switch
+*		?A<C	A
+*		GOYES	+
+*		LC(5)	#80000
+*		?A<C	A
+*		RTNYES
+*+
+		C=A	A
+		CD0EX
+		A=DAT0	A
+		CD0EX
+		LC(5)	=PRLG
+		?A#C	A
+		RTNYES			* Not prologed, return
+		C=RSTK			* Pop Dcadr
+
+		A=PC
+		LC(5)	(DisObTab)-(*)
+		C=C+A	A
+		A=DAT0	A		* A[A] = prolog
+		D0=D0+	5		* Skip prolog
+		CD0EX
+		D=C	A		* D[A] = ->obbody
+
+dcob10		C=DAT0	A
+		?A=C	A
+		GOYES	dcob20		* Match, execute subroutine
+		D0=D0+	10
+		GONC	dcob10
+* Found object type disassembler, execute it
+dcob20		D0=D0+	5
+		A=DAT0	A
+		C=D	A
+		CD0EX			* D0=->obbody
+		A=A+C	A
+		PC=A
+**********************************************************************
+* RPL Disassembler Dispatch Table
+**********************************************************************
+
+DOBMAC	MACRO		* $prolog $label
+	CON(5)	=$1
+	REL(5)	$2
+DOBMAC	ENDM
+	
+DisObTab
+	DOBMAC	DOCOL,dcCOL
+	DOBMAC	DOLIST,dcLIST
+	DOBMAC	DOROMP,dcROMP
+	DOBMAC	DOCODE,dcCODE
+	DOBMAC	DOCSTR,dcCSTR
+	DOBMAC	DOBINT,dcBINT
+	DOBMAC	DOLAM,dcLAM
+	DOBMAC	DOIDNT,dcIDNT
+	DOBMAC	DOGROB,dcGROB
+	DOBMAC	DOREAL,dcREAL
+	DOBMAC	DOCMP,dcCMP
+	DOBMAC	DOHSTR,dcHSTR
+	DOBMAC	DOCHAR,dcCHAR
+	DOBMAC	DOTAG,dcTAG
+	DOBMAC	DOEREL,dcEREL
+	DOBMAC	DOECMP,dcECMP
+	DOBMAC	DOARRY,dcARRY
+	DOBMAC	DOEXT,dcEXT
+	DOBMAC	DOSYMB,dcSYMB
+	DOBMAC	DOBAK,dcBAK
+	DOBMAC	DOLIB,dcLIB
+	DOBMAC	DOLNKARRY,dcLNKARRY
+	DOBMAC	DORRP,dcRRP
+	DOBMAC	DOEXT0,dcEXT0
+	DOBMAC	DOEXT1,dcEXT1
+	DOBMAC	DOEXT2,dcEXT2		* system font on HP50G
+	DOBMAC	DOEXT3,dcEXT3
+	DOBMAC	DOEXT4,dcEXT4
+
+* HP 50G objects
+	DOBMAC	DOINT,dcINT		* 5+5+digits+sign
+	DOBMAC	DOLNGREAL,dcLNGREAL
+	DOBMAC	DOLNGCMP,dcLNGCMP
+	DOBMAC	DOMINIFONT,dcMINIFONT
+	DOBMAC	DOFLASHP,dcFLASHP	* 5+page(3)+entry(4)
+	DOBMAC	DOMATRIX,dcMATRIX
+**********************************************************************
+* Disassemble decondary			"::"
+**********************************************************************
+dcCOL		P=	2
+		GOSUBL	JailP
+		LCSTR	'::'
+		DAT1=C	4
+		D1=D1+	4
+		GONC	dccomp
+**********************************************************************
+* Disassemble list			"{"
+**********************************************************************
+dcLIST		LCASC	'{'
+		GOSUBL	JailChr
+		ST=1	sLIST		* Mark list
+		GONC	dclist
+**********************************************************************
+* Disassemble unit			"UNIT"
+**********************************************************************
+dcEXT		P=	4
+		GOSUBL	JailP
+		LCSTR	'UNIT'
+		DAT1=C	8
+		D1=D1+	8
+		GONC	dccomp
+**********************************************************************
+* Disassemble symbolic			"SYMBOL"
+**********************************************************************
+dcSYMB		P=	6
+		GOSUBL	JailP
+		LCSTR	'SYMBOL'
+		DAT1=C	12
+		D1=D1+	12
+
+dccomp		ST=0	sLIST
+dclist
+		C=R2.F	A
+		CD0EX
+* Fix indent level
+		D0=(2)	dINDLEV
+		A=DAT0	A
+		A=A+1	A
+		DAT0=A	A
+* Fix semi stream
+		D0=(2)	dSEMISTR
+		A=DAT0	W
+		A=A+A	W		* Shift left
+		?ST=0	sLIST
+		GOYES	dccomp10
+		A=A+1	A		* Set low bit to mark future '}'
+dccomp10	DAT0=A	W
+		D0=C
+		RTN
+**********************************************************************
+* Disassemble rom pointer		"ROMPTR hex hex"
+* If ROMPTR has a name then the name is given with 'x'
+* If romptr exists in the Romps variable then the given name is used instead 
+**********************************************************************
+dcROMP		C=R2.F	A
+		CD0EX
+		D0=(2)	dROMPLIST
+		A=DAT0	A		->romplist
+		D0=C			->libnum
+		?A=0	A
+		GOYES	dcrompregular
+
+		C=DAT0	6		romid|cmd
+		D=C	W		same high nibbles
+		CD0EX
+		RSTK=C			->libnum
+		D0=A
+		D0=D0+	5		Skip dolist
+		
+--		A=DAT0	A
+		LC(5)	=SEMI
+		?A=C	A
+		GOYES	dcrompnotlisted	Wasn't listed - scan hash tables
+		LC(4)	=DOROMP
+		?A#C	A
+		GOYES	dcrompnotlisted	Ignore if not right prolog
+		D0=D0+	5
+		C=DAT0	6		romid|cmd
+		D0=D0+	6
+		?C=D	W
+		GOYES	+		match
+		GOSBVL	=SKIPOB		Skip name
+		GONC	--		And continue
++		A=DAT0	A
+		LC(5)	=DOIDNT		Allow only identifiers as names
+		?A#C	A
+		GOYES	dcrompnotlisted
+		D0=D0+	5
+		C=0	A
+		C=DAT0	B		N chars
+		D0=D0+	2
+		GOSUBL	Jail
+		GOTO	dcrmpcopy
+dcrompnotlisted	C=RSTK
+		D0=C
+
+* Regular hash table search
+
+dcrompregular	CD0EX
+		RSTK=C			Save ->libnum
+		CD0EX
+		GOSUB	dcrmptrick	Have to use a trick for this long call
+		GOTO	dcrmpcont
+
+* Han:	GetRompName now possibly changes ROMBank2!
+dcrmptrick	A=PC
+		LC(5)	(GetRompName)-(*)
+		C=C+A	A		A[A] = ->GetRompName
+		RSTK=C			Call it this way
+		A=DAT0	X
+		D0=D0+	3
+		C=DAT0	X
+		D0=D0-	3
+		RTN			Call GetRompName
+
+dcrmpcont	GOC	dcrmp10
+* Use the found name
+		C=0	A
+		C=DAT0	B		N chars
+		D0=D0+	2
+		C=C+1	A		+ 'x'
+		GOSUBL	Jail
+		LAASC	'x'
+		DAT1=A	B
+		D1=D1+	2
+		C=C-1	A		N chars to copy
+dcrmpcopy	C=C+C	A		N nibbles to copy
+		GOSBVL	=MOVEDOWN
+		GOSBVL	=CSRW5
+		?C=0	A
+		GOYES	+
+		GOSUB	dcResetBank2
++		C=RSTK
+		D0=C			->libnum
+		D0=D0+	6
+		RTNCC
+
+* don't put the calls to =CSRW5 here ( saves 1 RSTK level )
+dcResetBank2	P=	1		reset ROM Bank2
+		PC=C
+
+* Output ROMPTR hex hex
+dcrmp10		GOSBVL	=CSRW5
+		?C=0	A
+		GOYES	+
+		GOSUB	dcResetBank2
++		C=RSTK
+		D0=C			->libnum
+		RSTK=C
+
+* Output ROMPTR2 ~<entry> if possible; otherwise use default
+		P=	6
+		GOSUBL	JailP
+		LCSTR	'ROMPTR'
+		DAT1=C	12
+		D1=D1+	12
+
+		D0=D0+	3		see if we have ~<entry>
+		A=DAT0	X
+		ASL	A
+		ASL	A
+		D0=D0-	3
+		A=DAT0	B
+		GOSUBL	EntryAddr?
+		GOC	+		no, do ROMPTR xxx yyy
+		D0=D0+	2		skip length
+		C=DAT0	B
+		D=C	B		D[B] = first char
+		D0=D0-	2
+		LCASC	'~'		entry starts with '~' ?
+		?C#D	B
+		GOYES	+
+
+dcromptrname	P=	2
+		GOSUBL	JailP
+		LCSTR	'2 '
+		DAT1=C	4
+		D1=D1+	4
+		C=0	A
+		C=DAT0	B
+		GOSUBL	Jail		* Allocate memory for name
+		D0=D0+	2
+		C=C+C	A
+		GOSBVL	=MOVEDOWN	* Copy name
+		GOSUBL	RestoreBanks
+		C=RSTK			* Restore pc
+		D0=C
+		D0=D0+	6		* Skip romptr id and cmd
+		RTN
+
++		GOSUBL	RestoreBanks
+		C=RSTK
+		D0=C
+		GOSUBL	JailSpc
+		A=0	A
+		A=DAT0	X
+		D0=D0+	3
+		GOSUBL	JailAddr
+		GOSUBL	JailSpc
+		A=0	A
+		A=DAT0	X
+		D0=D0+	3
+		GOLONG	JailAddr
+**********************************************************************
+* Disassemble code object		"CODE hex hh.h"
+* If sCODEOOK is set then clears sDISRPL to mark code mode
+**********************************************************************
+dcCODE		?ST=0	sCODEOK
+		GOYES	dccodenibs
+
+		P=	5
+		GOSUBL	JailP
+		LCSTR	'CODE\n'
+		DAT1=C	10
+		D1=D1+	10
+		ST=0	sDISRPL		* Set code mode
+		A=DAT0	A
+		CD0EX
+		A=A+C	A		* A[A] = code end address
+		CD0EX
+		C=R2.F	A		* Save code end address
+		CD0EX
+		D0=(2)	dCODEND
+		DAT0=A	A
+		CD0EX
+		D0=D0+	5		* Skip code size field
+		RTN
+
+dccodenibs	LCSTR	'CODE'
+		GOTO	dcgrob10
+**********************************************************************
+* Disassemble array			"ARRY hex hh.h"
+* To do: Use RPLCOMP mode
+**********************************************************************
+dcARRY		LCSTR	'ARRY'
+		GOTO	dcgrob10
+**********************************************************************
+* Disassemble external object 1		"EXT1 hex hh.h"
+* (Or ACPTR if on GX)
+**********************************************************************
+dcEXT1		CD0EX
+		D0=(5)	=IRAM@
+		C=DAT0	S		* C[S] = IRAM base
+		CD0EX
+		C=C+C	S
+		GONC	dcext1_10	* No carry: SX (IRAM base=7)
+
+		P=	6
+		GOSUBL	JailP
+		LCSTR	'ACPTR '	* 'ACPTR '
+		DAT1=C	12
+		D1=D1+	12
+		A=DAT0	A
+		D0=D0+	5
+		GOSUBL	JailAddr	* 'ACPTR hex'
+		GOSUBL	JailSpc		* 'ACPTR hex '
+		A=DAT0	A
+		D0=D0+	5
+		GOLONG	JailAddr	* 'ACPTR hex hex'
+dcext1_10	LCSTR	'EXT1'
+		GONC	dcgrob10
+**********************************************************************
+* Disassemble external object 2		"EXT2 hex hh.h"
+**********************************************************************
+dcEXT2		LCSTR	'EXT2'
+		GONC	dcgrob10
+**********************************************************************
+* Disassemble external object 3		"EXT3 hex hh.h"
+**********************************************************************
+dcEXT3		LCSTR	'EXT3'
+		GONC	dcgrob10
+**********************************************************************
+* Disassemble external object 4		"EXT4 hex hh.h"
+**********************************************************************
+dcEXT4		LCSTR	'EXT4'
+		GONC	dcgrob10
+**********************************************************************
+* Disassemble grob			"GROB hex hh.h"
+**********************************************************************
+dcGROB		LCSTR	'GROB'
+dcgrob10	A=C	W
+		GOSUB	dcSIZECK
+		P=	4
+		GOSUB	JailP
+		DAT1=A	8
+		D1=D1+	8
+		GONC	dcsized
+**********************************************************************
+* Disassemble hex string		"HXS hex hh.h"
+**********************************************************************
+dcHSTR		LCSTR	'HXS'
+		GONC	dclib10
+**********************************************************************
+* Disassemble backup			"BAK hex hh.h"
+**********************************************************************
+dcBAK		LCSTR	'BAK'
+		GONC	dclib10
+**********************************************************************
+* Disassemble library			"LIB hex hh.h"
+**********************************************************************
+dcLIB		LCSTR	'LIB'
+dclib10		A=C	W
+		GOSUB	dcSIZECK	* If invalid size use NIBB
+		P=	3
+		GOSUB	JailP
+		DAT1=A	6
+		D1=D1+	6
+		GONC	dcsized
+**********************************************************************
+* Disassemble external object 0		"LIBDAT hex hh.h"
+* To do: change to "LIBDAT.."
+**********************************************************************
+dcEXT0		GOSUB	dcSIZECK	* If invalid size use NIBB
+		P=	6
+		GOSUB	JailP
+		LCSTR	'LIBDAT'
+		DAT1=C	12
+		D1=D1+	12
+		GONC	dcsized
+**********************************************************************
+* Disassemble linked array		"LNKARRY hex hh.h"
+**********************************************************************
+dcLNKARRY	GOSUB	dcSIZECK	* If invalid size use NIBB
+		P=	7
+		GOSUB	JailP
+		LCSTR	'LNKARRY'
+		DAT1=C	14
+		D1=D1+	14
+
+dcsized		GOSUB	JailSpc
+		A=DAT0	A
+		A=A-CON	A,5
+		?A#0	A
+		GOYES	dcsizebody
+		D0=D0+	5		* Skip size field
+		LCASC	'0'		* Just "0" for size, no body
+		GOTO	JailChr
+
+* Fin: Added code for stack display case
+
+dcsizebody	GOSUB	JailAddr
+		GOSUB	JailSpc
+		C=DAT0	A
+		C=C-CON	A,5
+		D0=D0+	5
+		?ST=1	sDISSTK
+		GOYES	+
+-		GOTO	JailMemHex	* Disass "hh.h"
+
+* Fin: Disassemble max STKDIS1MIN nibbles
+
++		LA(5)	STKDIS1MIN
+		?C<=A	A
+		GOYES	-
+		C=C-A	A
+		D=C	A		* Save ignored size
+		C=A	A		* Disass minimum
+		GOSUB	JailMemHex
+		CD0EX			* Update D0 past ignored nibbles
+		C=C+D	A
+		D0=C
+		RTN
+
+**********************************************************************
+* Check if the sized object has too short lenght field.
+* If not then just return as is, else disass "NIBB 10 hhhh.."
+**********************************************************************
+dcSIZECK	C=DAT0	A
+		C=C-CON	A,5
+		RTNNC			len >=5 - return
+* Fin: Added fix??
+dcfailszck	C=RSTK			Pop return address
+		D0=D0-	5		Back to prolog
+		LC(5)	10		10 nibbles
+		GOTO	dcnibbC
+
+**********************************************************************
+* Disassemble system binary		"# hex"
+**********************************************************************
+dcBINT		P=	2
+		GOSUB	JailP
+		LCSTR	'# '
+		DAT1=C	4
+		D1=D1+	4
+		A=DAT0	A
+		D0=D0+	5		* Skip num
+		GOTO	JailAddr	* Output hex
+
+**********************************************************************
+* Maximum sized real: r=19	"-1.23456789012E-123"
+* Maximum sized erel: R=24	"-1.23456789012345E-12345"
+*				 123456789012345678901234
+* Using 30 for both currently to be on the safe side...
+**********************************************************************
+
+**********************************************************************
+* Disassemble real		"% dddddd"		Needed: 2+r
+**********************************************************************
+dcREAL		LC(5)	2+30
+		GOSUB	Bail
+		LCSTR	'% '
+		DAT1=C	4
+		D1=D1+	4
+*		GOSUB	Decomp%
+		GOSUBL	Decomp%
+		GOTO	PayBack
+**********************************************************************
+* Disassemble complex		"C% ddddd ddddd"	Needed: 4+2*r
+**********************************************************************
+dcCMP		LC(5)	3+2*30
+		GOSUB	Bail
+		LCSTR	'C% '
+		DAT1=C	6
+		D1=D1+	6
+		GOSUB	Decomp%
+		LCASC	' '
+		DAT1=C	B
+		D1=D1+	2
+		GOSUB	Decomp%
+		GOTO	PayBack
+**********************************************************************
+* Disassemble extended real	"%% ddddd"		Needed: 3+R
+**********************************************************************
+dcEREL		LC(5)	3+30
+		GOSUB	Bail
+		LCSTR	'%% '
+		DAT1=C	6
+		D1=D1+	6
+		GOSUB	Decomp%%
+		GOTO	PayBack
+**********************************************************************
+* Disassemble extended complex	"C%% ddddd ddddd"	Needed: 5+2*R
+**********************************************************************
+dcECMP		LC(5)	5+2*30
+		GOSUB	Bail
+		LCSTR	'C%% '
+		DAT1=C	8
+		D1=D1+	8
+		GOSUB	Decomp%%
+		LCASC	' '
+		DAT1=C	B
+		D1=D1+	2
+		GOSUB	Decomp%%
+		GOTO	PayBack
+**********************************************************************
+* Disassemble directory		"SRRP" or "NIBB hex hhh..h"
+**********************************************************************
+dcRRP
+		P=	3
+		GOSUB	JailP
+		LCSTR	'DIR'
+		DAT1=C	6
+		D1=D1+	6
+
+		D0=D0-	5		->rrp
+		AD0EX
+		GOSUB	LastRamWord
+
+		C=R2.F	A		Save address of the offset field
+		CD0EX
+		D0=(2)	dRRPSTART
+		DAT0=C	A
+		CD0EX
+
+		A=DAT0	A		offset to lastramword
+		?A#0	A
+		GOYES	+
+* Empty rrp
+		D0=D0+	5
+		AD0EX			->rrpend = ->variable1
+		D0=A
+		GONC	dcrrpgotend
+
++		CD0EX
+		B=C	A		->offset
+		C=C+A	A
+		D0=C			->lastramword
+		GOSBVL	=TRAVERSE+
+		GOSBVL	=SKIPOB
+		A=B	A
+		AD0EX			A[A] = ->rrpend
+		D0=D0+	5		->variable1 (preceding link)
+
+* D0 = ->variable1	A[A] = ->rrpend
+dcrrpgotend	C=R2.F	A
+		CD0EX
+		B=C	A		->variable1
+		D0=(2)	dRRPEND
+		DAT0=A	A
+		D0=(2)	dRRPDEPTH	depth++
+		A=DAT0	A
+		A=A+1	A
+		DAT0=A	A
+		A=A-1	A
+		?A#0	A
+		GOYES	+		Already in rrp mode
+		D0=(2)	dDISMODE	Save old mode
+		A=DAT0	B
+		LC(2)	typDISRRP
+		DAT0=C	B
+		D0=(2)	dDISMODESAVE
+		DAT0=A	B
+		D0=(2)	dENDADDR	* This needed for rrp's in composites
+		A=DAT0	A
+		D0=(2)	dENDADDRSAVE
+		DAT0=A	A
+
++		C=B	A
+		D0=C
+		ST=1	sSPECIAL	* Mark change
+		ST=0	sDISOB		* Name comes first
+		ST=0	sDISRPL		* Insignificant?
+		RTNCC
+
+* Get ->offset to lastramword into A[A]
+
+LastRamWord
+*		D0=(5)	=aUSEROB
+*		C=DAT0	A
+*		D0=C
+		D0=(5)	=USEROB
+
+		C=DAT0	A
+		D0=A
+		D0=D0+	5		* Skip rrp prolog
+		?A#C	A		* rrp <> home?
+		GOYES	+
+		C=DAT0	A		* C[X] = libs in home
+-		C=C-1	X		* libs--
+		GOC	+
+		D0=D0+	13
+		GONC	-
++		D0=D0+	3
+		RTNSC
+
+**********************************************************************
+* Disassemble string
+**********************************************************************
+dcCSTR		GOSUB	dcSIZECK	* If size < 5 use "NIBB 10 hh.."
+		?CBIT=0	0
+		GOYES	dccstr10
+* Odd number of nibbles, use NIBB
+		GOTO	dcNIBB
+
+dccstr10	CSRB.F	A		* C[A] = N chars
+		D=C	A		* D[A] = N
+		D0=D0+	5		* Skip len field
+
+* Output '$ "'
+		P=	3
+		GOSUB	JailP
+		LCSTR	'$ "'
+		DAT1=C	6
+		D1=D1+	6
+
+* Fin: Added test for stack decompile case
+		?ST=1	sDISSTK
+		GOYES	dccstrstk
+
+* Needed atleast: 'xxxxx"' = 1+N characters
+		
+dccstr20	C=D	A
+		C=C+1	A
+		GOSUB	Jail
+
+* If special chars are found then decrease memory for each of
+* the additional chars.
+
+		ST=1	sTEMP		* Mark CSTR special case
+		GOSUB	dcmemchrN
+
+		LCASC	'"'
+		DAT1=C	B
+		D1=D1+	2
+		RTN
+
+dccstrstk	LC(5)	STKDIS1MIN
+		?D<=C	A
+		GOYES	dccstr20	* Decompile all
+		D=D-C	A		* Extra chars
+		DSL	W
+		DSL	W
+		DSL	W
+		DSL	W
+		DSL	W		* D[A1] = extra chars
+		D=C	A
+		GOSUB	Jail		* Allocate
+		ST=1	sTEMP		* Mark CSTR special case
+		GOSUB	dcmemchrN	* Decompile chars
+		C=D	W		* Now skip the extra chars
+		GOSBVL	=CSRW5
+		AD0EX
+		A=A+C	A
+		A=A+C	A
+		AD0EX
+		RTN
+**********************************************************************
+* Decompile D[A] characters in memory
+* Normal characters need no malloc, only extra chars
+**********************************************************************
+dcmemchrN	D=D-1	A
+		RTNC			* No characters at all
+
+		GOSUBL	DecompChr
+		?P#	0
+		GOYES	dcmemchr10	* Special characters
+		DAT1=A	B
+		D1=D1+	2
+		GONC	dcmemchrN
+
+dcmemchr10	GOSUBL	JailP		* Malloc extra chars
+		C=C+C	A		* Write them
+		P=C	0
+		P=P+1
+		DAT1=A	WP
+		CD1EX			* Skip written chars
+		C+P+1
+		CD1EX
+		P=	0
+		GONC	dcmemchrN	* Always jump
+**********************************************************************
+
+**********************************************************************
+* Disassemble tagged		"TAG cccc" = min 4+N chars
+**********************************************************************
+dcTAG		GOSUB	dcnullid?	* If nulltag use NIBB
+		LASTR	'TAG '
+		GOC	dclam10
+
+**********************************************************************
+* Disassemble temporary identifier "LAM ccc" = min 4+N chars
+**********************************************************************
+dcLAM		GOSUB	dcnullid?
+		LASTR	'LAM '
+dclam10		C=C+CON	A,4
+		GOSUB	Jail
+		DAT1=A	8
+		D1=D1+	8
+		GONC	dcid10
+**********************************************************************
+* Disassemble identifier	"ID cccc" = min 3+N chars
+**********************************************************************
+dcIDNT		GOSUB	dcnullid?
+		C=C+CON	A,3
+		GOSUB	Jail
+		LCSTR	'ID '
+		DAT1=C	6
+		D1=D1+	6
+dcid10		D0=D0+	2		* Skip idlen
+dcid20		ST=0	sTEMP		* Mark ID special case
+		GOTO	dcmemchrN
+
+* Use NIBB instead if ID/LAM/TAG is null
+
+dcnullid?	C=0	A
+		C=DAT0	B		* C[A] = chars
+		D=C	A
+		?C#0	A
+		RTNYES
+		C=RSTK
+		GOTO	dcNIBB		* Use NIBB instead
+
+**********************************************************************
+* Disassemble character		"CHR c" = min 5 chars
+**********************************************************************
+dcCHAR		P=	5
+		GOSUB	JailP
+		LCSTR	'CHR '
+		DAT1=C	8
+		D1=D1+	8
+		D=0	A
+		D=D+1	A		* 1 character only
+		GONC	dcid20
+
+**********************************************************************
+* Disassemble object as "NIBB hex hh..h"
+**********************************************************************
+dcNIBB		D0=D0-	5		* Back to prolog
+		AD0EX
+		B=A	A		* B[A] = ->ob
+		D0=A
+		GOSBVL	=SKIPOB
+		CD0EX			* C[A] = ->obend
+		A=B	A
+		D0=A			* D0 = ->ob
+		C=C-A	A		* C[A] = nibbles
+
+* Disassemble C[A] nibbles as NIBB hex hh.h
+
+dcnibbC		B=C	A		* B[A] = nibbles
+		P=	5		* Write 'NIBB '
+		GOSUB	JailP
+		LCSTR	'NIBB '
+		DAT1=C	10
+		D1=D1+	10
+
+		A=B	A		* Write hex
+		GOSUB	JailAddr		
+		GOSUB	JailSpc		* Write space
+
+* Fin: Added special code for stack decompile
+		?ST=1	sDISSTK
+		GOYES	+
+-		C=B	A
+		GOTO	JailMemHex	* Write "hh..h"
++		LC(5)	STKDIS1MIN
+		?B<=C	A
+		GOYES	-
+		B=B-C	A		* Extra nibs
+		CBEX	A
+		D=C	A		* Extra nibs
+		C=B	A
+		GOSUB	JailMemHex	* Disass min nibbles
+		CD0EX			* Fix disass location
+		C=C+D	A
+		CD0EX
+		RTN
+
+
+* Han: routines below are just to get DIS to support the new types
+* and not much checking is done regarding the validity of the objects
+* Still missing are also routines for SSTK display mode
+
+**********************************************************************
+* Digit check; must have length field >= 6
+* len = 6 means we have (possibly signed) zero
+**********************************************************************
+dcDIGITCK	C=DAT0	A
+		C=C-CON	A,6
+		RTNNC
+-		GOTO	dcfailszck
+
+* exponent check; allow null body		
+dcEXPONCK	C=DAT0	A
+		C=C-CON	A,5
+		GONC	+
+		C=RSTK			Pop return address
+		LC(5)	5		5 nibbles
+		GOTO	dcnibbC
++		?C=0	A
+		RTNYES
+		C=C-1	A
+		RTNCC
+
+**********************************************************************
+* Disassemble integer object as 'ZINT sddd...Eseee..'
+**********************************************************************
+dcINT		GOSUB	dcDIGITCK
+		P=	5
+		GOSUB	JailP
+		LCSTR	'ZINT '
+		DAT1=C	10
+		D1=D1+	10
+		GOTO	JailDigits
+
+**********************************************************************
+* Disassemble long real as 'L% sddd...Eseee...'
+**********************************************************************
+dcLNGREAL	P=	3
+		GOSUB	JailP
+		LCSTR	'L% '
+		DAT1=C	6
+		D1=D1+	6
+
+                GOSUB	dcDIGITCK
+		GOSUB	JailDigits
+-		LCASC	'E'
+		GOSUB	JailChr
+*		GOSUB	dcDIGITCK
+		GOSUB	dcEXPONCK
+		GONC	+
+		LCASC	'0'
+		GOSUB	JailChr
+		D0=D0+	5
+		RTN
++		GOTO	JailDigits		
+
+**********************************************************************
+* Disassemble long complex as 'LC% sddd...Eseee... sddd...Eseee...'
+**********************************************************************
+dcLNGCMP	P=	4
+		GOSUB	JailP
+		LCSTR	'LC% '
+		DAT1=C	8
+		D1=D1+	8
+
+                GOSUB	dcDIGITCK
+		GOSUB	JailDigits
+		LCASC	'E'
+		GOSUB	JailChr
+		GOSUB	dcEXPONCK
+		GONC	+
+		LCASC	'0'
+		GOSUB	JailChr
+		D0=D0+	5
+		GONC	++
++		GOSUB	JailDigits
+++		GOSUB	JailSpc
+		GOSUB	dcDIGITCK
+		GOSUB	JailDigits
+		GOTO	-		
+
+**********************************************************************
+* Disassemble minifont object as 'MINIFONT hhhhh nnhhh...'
+**********************************************************************
+dcMINIFONT	GOSUB	dcSIZECK
+		C=0	A
+		LC(2)	16
+		GOSUB	Jail
+		LCSTR	'MINIFONT'
+		DAT1=C	W
+		D1=D1+	16
+		GOSUB	JailSpc
+
+		A=DAT0	A		* alternate disassembly below
+		C=0	A
+		LC(1)	5
+		A=A-C	A
+		GOSUB	JailAddr
+		GOSUB	JailSpc
+		A=DAT0	A
+		D0=D0+	5
+		C=0	A
+		LC(1)	5
+		C=A-C	A
+		GOTO	JailMemHex
+
+**********************************************************************
+* Disassemble flash pointer as 'FPTR hhh hhhh' or 'FPTR ^<entry>'
+**********************************************************************
+dcFLASHP	P=	4
+		GOSUB	JailP		* only jail 5 chrs
+		LCSTR	'FPTR'
+		DAT1=C	8
+		D1=D1+	8
+
+		A=0	A
+		A=DAT0	X
+		C=A	A
+		C=0	P
+		?C#0	A
+		GOYES	dcfptr1.1
+*		P=	4		hptab: icccc; extable cccci
+*		A=DAT0	P
+*		P=	0
+*		D0=D0+	3
+*		A=DAT0	4
+*		D0=D0-	3
+
+		D0=D0+	3
+		A=DAT0	4
+		ASL	A
+		D0=D0-	3
+		A=DAT0	P
+		
+		CD0EX
+		RSTK=C			* Save pc to RSTK
+		GOSUBL	EntryAddr?
+		GONC	dcfptr2
+
+dcfptr1		GOSUBL	RestoreBanks
+		C=RSTK			* Restore pc
+		D0=C
+
+dcfptr1.1	GOSUB	JailSpc
+		A=0	A
+		A=DAT0	X
+		D0=D0+	3
+		GOSUB	JailAddr
+		GOSUB	JailSpc
+		A=0	A
+		A=DAT0	4
+		D0=D0+	4
+		GOTO	JailAddr
+
+dcfptr2		D0=D0+	2		skip length
+		C=DAT0	B
+		D=C	B		D[B] = first char
+		D0=D0-	2
+		LCASC	'^'
+		?C#D	B
+		GOYES	dcfptr1
+
+*		GOSUBL	EntryFptr?
+*		GONC	dcfptr1
+
+dcfptrname	P=	2
+		GOSUB	JailP
+		LCSTR	'2 '
+		DAT1=C	4
+		D1=D1+	4
+		C=0	A
+		C=DAT0	B
+		GOSUBL	Jail		* Allocate memory for name
+		D0=D0+	2
+		C=C+C	A
+		GOSBVL	=MOVEDOWN	* Copy name
+		GOSUBL	RestoreBanks
+		C=RSTK			* Restore pc
+		D0=C
+		D0=D0+	7		* Skip fptr
+		RTN
+**********************************************************************
+* Disassemble matrix object as 'MATRIX ... ;'
+**********************************************************************		
+dcMATRIX	P=	6
+		GOSUB	JailP
+		LCSTR	'MATRIX'
+		DAT1=C	12
+		D1=D1+	12
+		GOLONG	dccomp

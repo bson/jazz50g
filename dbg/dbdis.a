@@ -1,0 +1,371 @@
+**********************************************************************
+*		JAZZ	- Disassembler for xDB
+**********************************************************************
+
+**********************************************************************
+** Disassemble one ML instruction
+**
+** In:
+**	D0 = ->Instruction
+**	D1 = ->Outbut buffer
+**	ST:8 = Set to prefix mnemonic with address
+**	DB P in REG_P
+**
+** Out:
+**	D0 = ->Next instruction address
+**	D1 = ->Next output buffer address
+**	ST[B] = IB_xxx bits
+**	C[B] = cycles
+**
+** Global registers:
+**	R0[A]  = cycles|IB_XX
+**	R1[A]  = output buffer address
+**	R2[A]  = Current instruction address
+**	R3     = symbol tables
+**
+**	R0,R1,R3 = Used
+**	A,B,C,D = Used
+**
+**
+
+DbgDis	CD1EX
+	R1=C			R1 = ->Outbut buffer address
+	CD0EX
+	R2=C			R2 = ->Instruction address
+
+	DADDR	gDISADDR,D0
+	DAT0=C	A		DISADDR = C[A]
+
+	GOSUB	db_save_our_rstk	Free 6 levels of RSTK
+
+* Setup entry tables to R3. Set zeros if no tables disabled
+
+	A=0	W		Assume no tables
+	C=R4.F	A
+	D0=C
+	C=DAT0	B
+	?CBIT=1	gTABS?		Disabled?
+	GOYES	+		Yep
+
+*	DADDR	gDTAB,D0
+	DADDR	gCFGADR,D0
+	A=DAT0	A
+	GOSBVL	=ASLW5
+
+	D0=D0-	(gCFGADR)-(gDTAB)
+	A=DAT0	A
+	GOSBVL	=ASLW5
+	D0=D0-	(gDTAB)-(gRTAB)
+	A=DAT0	A
++	R3=A			R3: DTAB RTAB CFGADR
+
+* Output address if requested
+
+	C=R1
+	D1=C			D1 = ->Output buffer address
+	?ST=0	8
+	GOYES	+
+	C=R2			Get save DB PC
+	GOSUBL	putnib5		Make 5 hex digits out of DB PC (never ASCII)
+	LCASC	' '
+	DAT1=C	B
+	D1=D1+	2
++
+
+* Determine emulator bits
+
+	C=R2
+	D0=C
+	GOSUB	EmulBits	ST[X] = IB_xxx
+
+* Determine cycle count
+	A=R4.F	A
+	LC(5)	REG_D0
+	A=A+C	A
+	D0=A
+	A=DAT0	A		A[A] = DB D0
+	D0=D0+	(REG_D1)-(REG_D0)
+	C=DAT0	A		C[A] = DB D1
+	CD1EX			D1 = DB D1
+	RSTK=C			RSTK = ->output
+	AD0EX
+	LC(5)	(REG_D1)-(REG_P)
+	A=A-C	A
+	AD0EX
+	C=DAT0	B		
+	D0=A			D0 = DB D0
+	P=C	0		P = DB P
+	A=R2	A		A[A] = DB PC
+	GOSUB	Cycles		C[X] = cycles
+	A=C	X
+	C=ST
+	CSL	A
+	CSL	A
+	CSL	A		C[4-5]=IB_XX
+	C=A	X		C[X]=cycles
+	R0=C.F	A		R0[A]=cycles|IB_XX
+
+* Disassemble
+
+	C=R2	A
+	D0=C			->instruction
+	C=RSTK
+	D1=C			->output
+	ST=0	sBRANCH		Assume not branch
+	ST=0	sTEMP		Init to zero
+	ST=0	sTABU		No tabulators
+	ST=0	sGUESS		No guessing
+	GOSUBL	DisInstr
+	?ST=0	sBRANCH		Wasn't branch - done
+	GOYES	+
+	LCASC	','
+	DAT1=C	B		Add comma
+	D1=D1+	2
+	GOSUBL	DisDbGoy	Append branch
+
+* Done
+
++	CD0EX
+	R2=C			R2 = ->next instr
+	CD1EX
+	R1=C			R1 = ->next buffer loc
+	GOSUBL	db_restore_our_rstk	Restore 6 levels of RSTK
+	C=R2
+	D0=C			D0 = ->next instr
+	C=R1
+	D1=C			D1 = ->next buffer loc
+	A=R0	A		A[A] = cycles|IB_XX
+	ASR	A
+	ASR	A
+	ASR	A		A[B] = IB_cycles
+	C=ST
+	C=A	B		ST = IB_XX
+	ST=C
+	RTNCC			Return
+
+* Patch for DB GOYES/RTNYES disassembly
+
+DisDbGoy
+	ST=0	sBRANCH		* Branch serviced
+	A=0	A
+	A=DAT0	B		* A[A]=offset
+	D0=D0+	2
+	?A#0	A
+	GOYES	+
+	GOLONG	DIrtnyes
++	GOLONG	DItyp23br	* Add label directly
+
+**********************************************************************
+
+**********************************************************************
+* Set emulator bits to ST[X] for instruction in D0
+* Trashes:
+*	A[A] C[A] D0
+**********************************************************************
+
+ib_call	= 0
+ib_ret	= 1
+ib_nsst	= 2
+ib_emul	= 3
+ib_jump	= 4
+
+*	00	RTNSXM	ret,emul
+*	01	RTN	ret,emul
+*	02	RTNSC	ret,emul
+*	03	RTNCC	ret,emul
+*	06	RSTK=C	emul
+*	07	C=RSTK	emul
+*	0F	RTI	ret,emul
+*	400	RTNC	ret,emul
+*	4xx	GOC	jump,emul
+*	500	RTNNC	ret,emul
+*	5xx	GONC	jump,emul
+*	6xxx	GOTO	jump,emul
+*	7aaa	GOSUB	call,emul
+*	80810	RSI	ret,emul		False. Fixed.
+*	8086x00	?ABIT=0	ret/jump,emul
+*	8087x00	?ABIT=1	ret/jump,emul
+*	808Ax00	?CBIT=0	ret/jump,emul
+*	808Bx00	?CBIT=1	ret/jump,emul
+*	808C	PC=(A)	jump,emul
+*	808E	PC=(C)	jump,emul
+*	808F	INTOFF	nsst,emul		Removed
+*	80A	RESET	nsst,emul
+
+*	80B83x00	?HS=1	jump,emul	added by Han
+
+*	81B2	PC=A	jump,emul
+*	81B2	PC=C	jump,emul
+*	81B4	A=PC	jump,emul
+*	81B5	C=PC	jump,emul
+*	81B6	APCEX	jump,emul
+*	81B7	CPCEX	jump,emul
+*	83x00	?ST=0	ret/jump,emul
+*	84F	ST=0 15	nsst,emul		Removed
+*	86x00	?ST=0	ret/jump,emul
+*	87x00	?ST=1	ret/jump,emul
+*	88x00	?P#	ret/jump,emul
+*	89x00	?P=	ret/jump,emul
+*	8Ax00	?XXX	ret/jump,emul
+*	8Bx00	?XXX	ret/jump,emul
+*	9xx00	?XXX	ret/jump,emul
+*	8Caaaa	GOLONG	jump,emul
+*	8Daaaaa	GOVLNG	jump,emul
+*	8Eaaaa	GOSUBL	call,emul
+*	8Faaaaa	GOSBVL	call,emul
+
+
+EmulBits
+	CSTEX
+	C=0	B		Assume no bits
+	ST=C
+
+	A=DAT0	A		Read first 5 nibbles
+	?A#0	P
+	GOYES	nmb1>		Bigger than "0F"
+
+	ASR	B		Shift away "0" from "0x"
+	LC(1)	7		7
+	?A=C	P
+	GOYES	nmbemu		C=RSTK	- set emul
+	C=C-1	P		6
+	?A=C	P
+	GOYES	nmbemu		RSTK=C	- set emul
+	LC(1)	3
+	?A<=C	P
+	GOYES	nmbret		RTNSXM RTN RTNSC RTNCC - set ret
+	A=A+1	P
+	RTNNC			Return if not RTI
+nmbret	ST=1	ib_ret
+nmbemu	ST=1	ib_emul
+	RTN
+
+* RTNC/GOC ?
+
+nmb1>	LC(1)	4		"4xxxxx"
+	?A<C	P
+	RTNYES			Normal
+	?A=C	P
+	GOYES	nmbr1+		RTNNC/GONC
+
+	LC(1)	5
+	?A=C	P
+	GOYES	nmbr1+		RTNNC/GONC
+	LC(1)	6
+	?A=C	P
+	GOYES	nmbjmp		GOTO
+	LC(1)	7
+	?A=C	P
+	GOYES	nmbgos		GOSUB
+
+	LC(1)	9
+	?A>C	P
+	RTNYES			Normal
+
+* 8xxx and 9xxx left
+
+	?A#C	P
+	GOYES	nmb8
+
+nmbr3+	D0=D0+	2		?XXX
+nmbr1+	D0=D0+	1
+nmbr0+	C=DAT0	B
+	?C=0	B
+	GOYES	nmbret		RTNC
+nmbjmp	ST=1	ib_jump		GOC
+	ST=1	ib_emul
+	RTN
+nmbgos	ST=1	ib_call
+	ST=1	ib_emul
+	RTN
+	
+nmb8	ASR	A		Shift "8" away from "8xxxx"
+
+	LC(1)	#E
+	?A>=C	P
+	GOYES	nmbgos		GOSUBL/GOSBVL
+	LC(1)	#C
+	?A>=C	P
+	GOYES	nmbjmp		GOLONG/GOVLNG
+	LC(1)	5
+	?A>C	P
+	GOYES	nmbr3+		?ST=0 ?ST=1 ?P# ?P= ?XXX
+	?A=C	P
+	RTNYES			85xx normal
+*	LC(2)	#F4
+*	?A=C	B
+*	GOYES	nmbrno		ST=0 15 --> NSST
+	LC(1)	4
+	?A=C	P
+	RTNYES			ST=0 x normal
+	LC(1)	2
+	?A>C	P
+	GOYES	nmbr3+		?ST=0
+	?A=C	P
+	RTNYES			"82xx" normal
+	LC(1)	1
+	?A=C	P
+	GOYES	nmb81
+	ASR	A		Shift away "0" from "80xxx"
+	LC(3)	#38B
+	?A=C	X
+	GOYES	nmbr6+		?HS=1 "80B83x00"
+	C=0	A		clear C[A] just in case...
+	LC(1)	#A
+	?A=C	P
+	GOYES	nmbrno		RESET
+	LC(1)	8
+	?A#C	P
+	RTNYES			<> "808" normal
+	ASR	A		Shift away "8" from "808xx"
+*	LC(1)	#F
+*	?A=C	P
+*	GOYES	nmbrno		INTOFF
+	LC(1)	#E
+	?A=C	P
+	GOYES	nmbjmp		PC=(C)
+	LC(1)	#C
+	?A=C	P
+	GOYES	nmbjmp		PC=(A)
+	?A>C	P
+	RTNYES			"808D" and "808F" normal
+	LC(1)	1
+	?A<=C	P
+	RTNYES			"8080" & "8081" normal
+	GONC	nm8081>
+
+nmbr6+	D0=D0+	3
+	GOTO	nmbr3+
+
+nmbrno	ST=1	ib_nsst
+	ST=1	ib_emul
+	RTN
+
+nmb81	ASR	A		Shift away 1 from "81"
+	LC(1)	#B
+	?A#C	P
+	RTNYES			Not PC=A etc, normal
+	ASR	A		Shift away B from "81B"
+	LC(1)	2		PC=A, etc : 81Bx where x=2,3,4,5,6,7
+	?A<C	P
+	RTNYES
+	LC(1)	7
+	?A>C	P
+	RTNYES
+	GOTO	nmbjmp
+
+nm8081>	LC(1)	6
+	?A<C	P
+	RTNYES			"8082" - "8085" normal
+	LC(1)	8
+	?A=C	P
+	RTNYES			"8088" normal
+	LC(1)	9
+	?A=C	P
+	RTNYES			"8089" normal
+* Left: 8086 8087 808A 808B
+	D0=D0+	5
+	GOTO	nmbr0+
+**********************************************************************
+
+

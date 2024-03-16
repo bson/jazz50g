@@ -1,0 +1,248 @@
+**********************************************************************
+* ITYPE		; Return type number for ml instruction
+* Input:
+*	D0 = ->instr
+* Output:
+*	C.B = type
+*	D0 = ->1st instr nibble to cause further dispatching
+*	     (->next instr if no more dispatching is needed)
+* Uses:
+*	A.A C.A P=0 D0
+* Implemented to get fast dispatching for both the disassembler
+* and the debugger. Note that the provided types do not include
+* checking for instruction validity. The disassembler should
+* disassemble invalid instructions as NIBHEX and the debugger
+* should refuse execution.
+**********************************************************************
+
+**********************************************************************
+ITYPE		P=	0		* Make sure zero
+		GOSUB	PssTypX
+		CON(2)	(Ityp0)-(*)
+		CON(2)	(Ityp1)-(*)
+		CON(2)	(Ityp2)-(*)
+		CON(2)	(Ityp3)-(*)
+		CON(2)	(Ityp4)-(*)
+		CON(2)	(Ityp5)-(*)
+		CON(2)	(Ityp6)-(*)
+		CON(2)	(Ityp7)-(*)
+		CON(2)	(Ityp8)-(*)
+		CON(2)	(Ityp9)-(*)
+		CON(2)	(ItypA)-(*)
+		CON(2)	(ItypB)-(*)
+		CON(2)	(ItypC)-(*)
+		CON(2)	(ItypD)-(*)
+		CON(2)	(ItypE)-(*)
+		CON(2)	(ItypF)-(*)
+PssTypX		A=0	A
+		A=DAT0	1		* A.A = nib1
+		D0=D0+	1		* Skip nib1
+		A=A+A	B
+		C=RSTK
+		C=C+A	A
+		CD0EX
+		A=DAT0	B		* A.A = offset
+		CD0EX
+		A=A+C	A		* A.A = ->subroutine
+		PC=A			* Always CC
+**********************************************************************
+* 00	RTNSXM		00		-
+* 01	RTN		01		-
+* 02	RTNSC		02		-
+* 03	RTNCC		03		-
+* 04	SETHEX		04		-
+* 05	SETDEC		05		-
+* 06	RSTK=C		06		-
+* 07	C=RSTK		07		-
+* 08	CLRST		08		-
+* 09	C=ST		09		-
+* 0A	ST=C		0A		-
+* 0B	CSTEX		0B		-
+* 0C	P=P+1		0C		-
+* 0D	P=P-1		0D		-
+* 0E	r=r&s/r=r!s	0Efs		fs
+* 0F	RTI		0F		-
+**********************************************************************
+Ityp0		C=0	B
+		C=DAT0	1		* 0x
+		D0=D0+	1		* Skip nib2
+		RTN
+**********************************************************************
+* 10	Rn=r		10t		t
+* 11	r=Rn		11t		t
+* 12	rRnEX		12t		t
+* 13	Dn		13t		t
+* 14	DATn A/B	14t		t
+* 15	DATn fs		15tf		tf
+* 16	D0=D0+		16m		m
+* 17	D0=D0+		17m		m
+* 18	D0=D0-		18m		m
+* 19	D0=(2)		19nn		nn
+* 1A	D0=(4)		1Annnn		nnnn
+* 1B	D0=(5)		1Bnnnnn		nnnnn
+* 1C	D0=D0-		1Cm		m
+* 1D	D0=(2)		1Dnn		nn
+* 1E	D0=(4)		1Ennnn		nnnn
+* 1F	D0=(5)		1Fnnnnn		nnnnn
+**********************************************************************
+Ityp1		LC(2)	#10
+		C=DAT0	1		* 1x
+		D0=D0+	1		* Skip nib2
+		RTN
+**********************************************************************
+* 20	P=		2n		n
+* 21	LC(N)		3cnn..n		cnn..n
+* 22	RTNC/GOC	400/4aa		aa
+* 23	RTNNC/GONC	500/5aa		aa
+* 24	GOTO		6aaa		aaa
+* 25	GOSUB		7aaa		aaa
+* 51	?XXX fs		9at		at
+* 52	r=r+s fs etc	Aft		ft
+* 53	r=r-s fs etc	Bft		ft
+* 54	r=r+s A	etc	Ct		t
+* 55	r=0 A etc	Dt		t
+* 56	r=r-s A etc	Et		t
+* 57	rSL A etc	Ft		t
+**********************************************************************
+Ityp2		LC(2)	#20		* P=
+		RTN
+Ityp3		LC(2)	#21		* LC(N)
+		RTN
+Ityp4		LC(2)	#22		* RTNC/GOC
+		RTN
+Ityp5		LC(2)	#23		* RTNNC/GONC
+		RTN
+Ityp6		LC(2)	#24		* GOTO
+		RTN
+Ityp7		LC(2)	#25		* GOSUB
+		RTN
+Ityp9		LC(2)	#51		* ?XXX fs
+		RTN
+ItypA		LC(2)	#52		* r=r+s fs etc
+		RTN
+ItypB		LC(2)	#53		* r=r-s fs etc
+		RTN
+ItypC		LC(2)	#54		* r=r+s A etc
+		RTN
+ItypD		LC(2)	#55		* r=0 A etc
+		RTN
+ItypE		LC(2)	#56		* r=r-s A etc
+		RTN
+ItypF		LC(2)	#57		* rSL A etc
+		RTN
+**********************************************************************
+**********************************************************************
+Ityp8		C=DAT0	1		* C.0 = nib2
+		D0=D0+	1		* Skip nib2
+		C=C-1	P
+		GOC	Ityp80
+		C=C-1	P
+		GOC	Ityp81
+*		GONC	Ityp8x
+* 		Fall through
+**********************************************************************
+* 43	CLRHSN n	82n		n
+* 44	?HS=0 n		83n		n
+* 45	ST=0		84n		n
+* 46	ST=1		85n		n
+* 47	?ST=0		86n		n
+* 48	?ST=1		87n		n
+* 49	?P#		88n		n
+* 4A	?P=		89n		n
+* 4B	?XXX A		8At		t
+* 4C	?XXX A		8Bt		t
+* 4D	GOLONG		8Caaaa		aaaa
+* 4E	GOVLNG		8Dnnnnn		nnnnn
+* 4F	GOSUBL		8Eaaaa		aaaa
+* 50	GOSBVL		8Fnnnnn		nnnnn
+**********************************************************************
+Ityp8x		A=0	B
+		A=C	P
+		LC(2)	#43
+		C=C+A	B
+		RTN
+**********************************************************************
+* 3E	rSLC/rSRC/rSRB	81s		s		s<>8-C
+* 3F	r=r+-CON	818fsn		fsn
+* 40	rSRB.F		819fs		fs
+* 41	Rn.F		81Aftr		ftr
+* 42	PC		81Bn		n
+*
+* Han:	on 50G ROM 2.15, 81B can have special meaning due to ARM
+**********************************************************************
+Ityp81		LC(2)	#30
+		C=DAT0	1
+		?CBIT=0	3		* C.0 = nib3
+		GOYES	Ityp81s
+		?CBIT=1	2
+		GOYES	Ityp81s
+		C=C+CON	B,7		* #38-#3C --> #3F - #42
+		D0=D0+	1		* Skip 8/9/A/B
+		RTN
+Ityp81s		LC(1)	#E
+		RTN
+**********************************************************************
+* 26	OUT=CS		800		-
+* 27	OUT=C		801		-
+* 28	A=IN		802		-
+* 29	C=IN		803		-
+* 2A	UNCNFG		804		-
+* 2B	CONFIG		805		-
+* 2C	C=ID		806		-
+* 2D	SHUTDN		807		-
+*
+* 2E	C+P+1		809		-
+* 2F	RESET		80A		-
+* 30	BUSCC		80B		-
+* 31	C=P		80Cn		n
+* 32	P=C		80Dn		n
+* 33	SREQ?		80E		-
+* 34	CPEX		80Fn		n
+*
+* Han:	BUSCC ignored by peripherals on 48? on Bigapple, we have a
+*	new collection of opcodes; see disnewops.a
+**********************************************************************
+Ityp80		C=DAT0	1
+		D0=D0+	1		* Skip nib3
+		?CBIT=1	3		* >= 808 ?
+		GOYES	Ityp807>
+		A=C	P		* A.0 = 0-7
+		LC(2)	#26
+		C=C+A	P		* #26-#2D
+		RTN
+Ityp807>	CBIT=0	3
+		?C=0	P		* 808?
+		GOYES	Ityp808
+		A=0	B
+		A=C	P
+		LC(2)	#2E-1
+		C=C+A	B
+		RTN
+**********************************************************************
+* 35	INTON		8080		-
+* 36	RSI		8081x		x	* 80810 RSI for sure
+* 37	LA(N)		8082cnn..n	cnn..n
+* 38	BUSCB		8083		-
+* 39	rBIT=n/?rBIT=n	8084n-808Bn	tn
+* 3A	PC=(A)		808C		-
+* 3B	BUSCD		808D		-
+* 3C	PC=(C)		808E		-
+* 3D	INTOFF		808F		-
+**********************************************************************
+Ityp808		LC(2)	#30
+		C=DAT0	1		* #30 - #3F
+		D0=D0+	1		* Skip nib4
+		?CBIT=1	3
+		GOYES	Ityp8087>
+		?CBIT=1	2
+		GOYES	Ityp8084-B
+		C=C+CON	B,5		* 8080-8083 --> #35-#38
+		RTN
+Ityp8087>	?CBIT=0	2
+		GOYES	Ityp8084-B
+		C=C-CON	B,2		* 808C-808F --> #3A-#3D
+		RTN
+Ityp8084-B	LC(1)	9		* #39
+		D0=D0-	1		* Back to t
+		RTN
+**********************************************************************

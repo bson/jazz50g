@@ -1,0 +1,3411 @@
+**********************************************************************
+*			RPL Assembler
+**********************************************************************
+
+**********************************************************************
+* Each of following subroutines is allowed to use
+* 4 RSTK levels only (3 because of the damn keyhandling bug..)
+**********************************************************************
+What?		LC(5)	400		* Ensure some memory so we don't have
+		GOSUBL	Ensure		* to allocate every single nibble
+
+		GOSUBL	?CtrlWord	* Control word?
+		GOSUBL	?Entry		* RPL.TAB entry?
+		GOSUBL	?Symbol		* Label/Symbol/Defined
+		GOSUBL	?Lambda		* Lambda equate?
+		GOSUBL	?Bint		* ROM binary?
+		GOSUBL	?BuiltIn	* Rom Word?
+		GOSUBL	?UserDec	* "ddddd" ?
+		GOSUBL	?UserReal	* "rrr.rrrErrr" ?
+* If library mode then in *pass 1* assume it must be a romptr object..
+		?ST=0	qLIB
+		GOYES	InvalidToken
+		?ST=1	qPASS2
+		GOYES	InvalidToken
+		C=0	A
+		LC(1)	15		romptr name size limit
+		?B>C	A
+		GOYES	InvalidToken
+		LC(5)	=DOROMP		Mark it as romptr for next pass!
+		DAT1=C	A
+		D1=D1+	11
+		GOLONG	Source+
+
+InvalidToken	CERR	errInvTok	* "Invalid Token"
+
+**********************************************************************
+
+**********************************************************************
+* Assemble if Entry in RPL.TAB
+* Entry:	D0 = ->token	B[A] = toklen-1		R3[A] = ->rtab
+* Stack:	3
+**********************************************************************
+?Entry		LCASC	'^'		don't allow fptrnames
+		A=DAT0	B
+		?A=C	B
+		RTNYES
+		LCASC	'~'		don't allow romptr names
+		?A=C	B
+		RTNYES
+		GOSUB	Entry?		A[A] = entr_addr if CC
+		RTNC
+		C=RSTK			Pop return address
+		DAT1=A	A
+		D1=D1+	5
+		GOLONG	Source+		Advance src pointer
+
+**********************************************************************
+* Routines to configure and unconfigure memory containing entry lib
+* ( Don't use =CSRW5 here; try to keep RSTK usage minimal )
+**********************************************************************
+EntResetBank	C=R3
+		CSR	W
+		CSR	W
+		CSR	W
+		CSR	W
+		CSR	W
+		?C=0	A
+		RTNYES
+		P=	1
+Entry?PC=C	PC=C
+
+**********************************************************************
+* Find symbol from RPL.TAB
+* Input: 	D0 = ->word	B[A] = toklen-1		R3[A] = ->rtab
+* Output: 	CS: No match
+*		CC: Match	A[A] = entry_addr
+* Uses:		A[W] C[W] D[A]
+* Stack:	1 (GOSBVL =CSRW5, configure tables, restore bank, D1)
+**********************************************************************
+Entry?
+		C=0	A
+		LC(2)	128-1		#7F
+		?B>=C	A
+		RTNYES			string too long
+		
+		C=R3
+		?C=0	A
+		RTNYES			no rtab
+
+		LC(5)	=TempArea
+		CD1EX
+		AD0EX
+		DAT1=A	A		save D0
+		D1=D1+	5
+		DAT1=C	A		save D1
+		D1=A			D1 -> word
+
+		GOSBVL	=CSRW5		get config
+		?C=0	A		do we need to configure?
+		GOYES	+		no
+		GOSUB	Entry?PC=C	yes, configure entry table
++		D0=A			restore D0
+		
+		C=B	A
+		D=C	A
+		A=0	A
+-		C=DAT1	B		calculate hash
+		A=A+C	B
+		D1=D1+	2		next chr
+		D=D-1	A
+		GONC	-
+
+		LC(2)	#7F		hash mask
+		A=A&C	A
+		
+		A=A+1	A		skip number of entries
+		A=A+1	A		skip offset to entry table
+		C=A	A
+		C=C+C	A
+		C=C+C	A
+		A=A+C	A		A[A] = 5 * hash value + 10
+
+		C=R3
+		C=C+A	A
+		D1=C			D1 -> offset to hash table
+		C=DAT1	A
+		AD1EX
+		C=C+A	A
+		D1=C
+		RSTK=C			RSTK: ->offset to cur. entry
+
+		B=B+1	A		get true toklen
+		
+EntSrchLp	A=DAT1	A
+		?A=0	A		reached end of hash table?
+		GOYES	SrchAddrFail	yes, bail out
+		C=C+A	A
+		D1=C
+		C=DAT1	B
+		?C>B	B		current entry too long?
+		GOYES	SrchAddrFail	yes, bail out
+		?C=B	B		same length?
+		GOYES	SrchTest	yes, go test word equality
+EntrSrchNext	C=RSTK
+		C=C+CON	A,5		->offset to new cur. entry
+		RSTK=C
+		D1=C
+		GONC	EntSrchLp
+
+SrchAddrFail	C=RSTK			pop RSTK
+		GOSUB	EntResetBank	restore bank2
+		D1=(5)	=TempArea
+		C=DAT1	A
+		D0=C			restore D0
+		D1=D1+	5
+		C=DAT1	A
+		D1=C			restore D1
+		B=B-1	A		reset toklen to toklen-1
+		RTNSC			CS: failed
+
+SrchTest	D1=D1+	2		skip len; D1 -> name
+		C=B	A
+		D=C	A
+		DSRB.F	A
+		DSRB.F	A
+		DSRB.F	A		D[A] = floor(num chars / 8)
+-		D=D-1	A
+		GOC	SrchTestShort
+		A=DAT0	W
+		C=DAT1	W
+		D0=D0+	16
+		D1=D1+	16
+		?A=C	W
+		GOYES	-
+SrchTestFail	D0=(5)	=TempArea	restore D0
+		C=DAT0	A
+		D0=C
+		GOTO	EntrSrchNext
+
+SrchTestShort	C=B	P
+		CBIT=0	3
+		?C=0	P
+		GOYES	SrchAddrOK
+		C=C+C	P
+		C=C-1	P
+		P=C	0
+		A=DAT0	WP
+		C=DAT1	WP
+		?A=C	WP
+		GOYES	SrchAddrOK
+		P=	0
+		GONC	SrchTestFail
+
+SrchAddrOK	P=	0
+		C=RSTK			C[A] -> offset to entry
+		D1=C
+		A=DAT1	A
+		C=C+A	A
+		D1=C
+		D1=D1-	5
+		A=DAT1	A		A[A] = entry_addr
+		GOSUB	EntResetBank
+		D1=(5)	=TempArea
+		C=DAT1	A
+		D0=C
+		D1=D1+	5
+		C=DAT1	A
+		D1=C
+		B=B-1	A
+		RTNCC
+
+**********************************************************************
+* Assemble if Symbol
+* Entry:	D0 = ->token	B[A] = toklen-1
+* Stack:	2
+**********************************************************************
+?Symbol		GOSUBL	SymbolValue?
+		RTNC
+		C=RSTK			Pop return stack
+
+* Now A[A] = ->type field. Check if type is allowed in RPL
+
+		CD1EX
+		D=C	A		->pc
+
+		D1=A			->type
+		A=DAT1	B
+		LC(1)	SYMB_LABEL
+		?A=C	P
+		GOYES	rplLABEL
+		LC(1)	SYMB_EQU
+		?A=C	P
+		GOYES	rplEQU
+		LC(1)	SYMB_=
+		?A=C	P
+		GOYES	rpl=
+		LC(1)	SYMB_DEFINE
+		?A=C	P
+		GOYES	gorplDEFINE
+		LC(1)	SYMB_ROMP
+		?A=C	P
+		GOYES	rplROMP
+		LC(1)	SYMB_MACRO	Not implemented
+		?A=C	P
+		GOYES	gorplMACRO
+		P=	10		Internal error!
+		GOVLNG	=PWLseq
+gorplDEFINE	GOTO	rplDEFINE
+gorplMACRO	GOTO	rplMACRO
+
+* Assembly labels not allowed in RPL!
+
+rplLABEL	CERR	errInvUse	"Invalid Use of Symbol"
+
+* EQU and = are both allowed
+rplEQU
+rpl=		D1=D1+	1
+		C=DAT1	B		valuelen
+		D1=D1+	1
+		P=C	0		valuelen
+		A=0	A
+		A=DAT1	WP
+		P=	0
+		C=D	A
+		D1=C			->pc
+		DAT1=A	A
+		D1=D1+	5
+		GOLONG	Source+		Skip token & continue
+
+* ROMPTR definition in rpl. Output as ROMPTR. If pass 2 then
+* also check that previous pass considered it a romp!!
+rplROMP		?ST=0	qPASS2
+		GOYES	+
+		C=D	A		->pc
+		CD1EX
+		A=DAT1	A
+		CD1EX
+		LC(5)	=DOROMP
+		?A#C	A
+		GOYES	rplromperr	Wasn't romp in previous pass!
++		D1=D1+	1+5		->cmdnum
+		A=DAT1	M
+		C=R2
+		D1=C
+		D1=(2)	O_ROMID
+		A=DAT1	X		A[0-5]=prop
+		C=D	A
+		D1=C			->pc
+		LC(5)	=DOROMP
+		DAT1=C	A
+		D1=D1+	5
+		DAT1=A	6
+		D1=D1+	6
+		GOLONG	Source+
+rplromperr	CERR	errDeclaration	"Used Before Declaration"
+
+* DEFINE symbol
+
+rplMACRO	D1=D1+	1		->macroflag
+rplDEFINE	D1=D1+	1		->define string
+		GOSUBL	Source+		Advance source pointers
+
+* Increase & Check define depth
+		C=R2
+		CD0EX
+		D0=(2)	O_INCL_DEPTH
+		A=DAT0	A		incl_depth++
+		A=A+1	A
+		DAT0=A	A
+		CD0EX
+		LC(5)	INCLMAX
+		?A>=C	A
+		GOYES	DefinedErr
+		C=D	A
+		CD1EX			D1 = ->pc
+		R3=C	A		R3[A] = ->define string for include
+		GOLONG	IncludeExit	Do include
+
+DefinedErr	DERR	errFlowDef	"DEFINE Depth Overflow"
+
+**********************************************************************
+* Assemble if lambda variable
+*	Matches:	 X	= getlam
+*			!X	= putlam
+*			=X	= putlam
+*			 X!	= putlam
+**********************************************************************
+
+?Lambda		C=0	A		Check if too long name
+		LC(1)	15
+		?B>C	A
+		RTNYES			Yes - cannot be lambda
+
+		GOSUB	Lambda?		Word matches as is?
+		GONC	lambda1		Yes - handle it
+
+		?B=0	A		No more 1 char tokens allowed
+		RTNYES
+
+		A=DAT0	B		See if first char is = or !
+		LCASC	'='
+		?A=C	B
+		GOYES	lambda2?
+		LCASC	'!'
+		?A#C	B
+		GOYES	lambda3?
+
+lambda2?	B=B-1	A		Skip first char
+		D0=D0+	2
+		GOSUB	Lambda?		Does it match now?
+		GONC	lambda2		Yes - handle it
+		B=B+1	A		Fix back
+		D0=D0-	2
+
+lambda3?	CD0EX			Go to test last character
+		D0=C
+		C=C+B	A
+		C=C+B	A
+		CD0EX
+		A=DAT0	B		A[B] = last char
+		D0=C
+		LCASC	'!'
+		?A#C	B
+		RTNYES			Not '!' - then no match at all
+
+		B=B-1	A		Try one character less
+		GOSUB	Lambda?		Finally a match?
+		GONC	lambda2+	Yes - handle it
+		B=B+1	A		Fix back
+		RTN			And fail
+**********************
+**********************
+**********************
+**********************MODIF 01/2009 Dominique RODRIGUEZ
+**********************
+**********************
+**********************
+*	1GETLAM = 34616		1PUTLAM = 34611
+*	in steps of #10d	in steps of #10d
+*	2GETLAM = 34620		2PUTLAM = 3461B
+*	3GETLAM = 3462A		3PUTLAM = 34625
+*	4GETLAM = 34634		4PUTLAM = 3462F
+*	...			...
+*	22GETLAM = 346E8	22PUTLAM = 346E3
+
+* We have <n>GETLAM with n-1 in D[B]
+
+** OLDlambda2		D0=D0-	2		Skip back to 1st char
+** OLDlambda2+	B=B+1	A		Fix chars back
+** OLD		C=RSTK			Pop return address
+** OLD		LC(2)	4-1
+** OLD		?D>=C	B		handle >= 4PUTLAM
+** OLD		GOYES	+
+** OLD		LC(5)	=1PUTLAM
+** OLD		GONC	lambdaxout
+** OLD+		LC(5)	#3462F-#30	(=4PUTLAM)-#30
+** OLD		GOC	lambdaxout
+** OLD
+lambda2		D0=D0-	2		Skip back to 1st char
+lambda2+	B=B+1	A		Fix chars back
+		C=RSTK			Pop return address
+		LC(5)	=1PUTLAM	(=1PUTLAM)
+		GONC	lambdaxout
+
+* We have <n>PUTLAM with n-1 in D[B]
+
+** OLDlambda1		C=RSTK			Pop return address
+** OLD		LC(2)	5-1
+** OLD		?D>=C	B
+** OLD		GOYES	lambda5out	handle >= 5GETLAM
+** OLD		LC(5)	=1GETLAM
+** OLD		D=D-1	B
+** OLD		GOC	lambda1out
+** OLD		LC(2)	=2GETLAM
+** OLD		D=D-1	B
+** OLD		GOC	lambda1out
+** OLD		LC(3)	=3GETLAM
+** OLD		D=D-1	B
+** OLD		GOC	lambda1out
+** OLD		LC(2)	=4GETLAM
+** OLD		GONC	lambda1out
+** OLDlambda5out	LC(5)	#3463E-#40	(=5GETLAM)-#40
+** OLD
+lambda1		C=RSTK			Pop return address
+		LC(5)	=1GETLAM	(=1GETLAM)
+
+
+lambdaxout	A=C	A
+		C=0	A
+		C=D	B		4-21 for 5-22GETLAM
+		C=C+C	A		1GETLAM+10*(n-1) (resp PUTLAM)
+		A=A+C	A
+		C=C+C	A
+		C=C+C	A
+		C=C+A	A		nGETLAM
+lambda1out	DAT1=C	A		Output GETLAM
+		D1=D1+	5
+		GOLONG	Source+
+**********************
+**********************
+**********************
+**********************MODIF 01/2009 Dominique RODRIGUEZ
+**********************
+**********************
+**********************
+
+*---------------------------------------------------------------------
+* See if word in D0 of length B[A]+1 has a match in the lambda buffer
+* Exit:	CS - no match
+*	CC - match with index D[B] (0-21)
+* Note:	The lambda variables are stored in reverse order in the tables,
+*	so if there are N lambdas the first one is <N>LAM
+*---------------------------------------------------------------------
+
+Lambda?		CD1EX
+		RSTK=C			Save PC
+		A=R2	A		->status
+		LC(5)	O_LAMBDAS
+		A=A+C	A
+		D1=A
+		C=DAT1	B		C[B] = total number
+		?C=0	B
+		GOYES	notlambda	None - exit
+		D=C	B		D[B] = counter initial value
+		D=D-1	B		Get CRY test
+		D1=D1+	2		->lambda1
+
+--		C=DAT1	B		length[i]
+		D1=D1+	1		->name[i]
+		?C=B	P
+		GOYES	cmplambda	equal length - compare body
+-		D1=D1+	16
+		D1=D1+	16
+		D=D-1	B
+		GONC	--		Loop until all done
+notlambda	C=RSTK			Restore PC
+		D1=C
+		RTNSC			CS: No match
+
+cmplambda	GOSUBL	CmpStrTok	CC if match
+		GOC	-		No match - continue loop
+		C=RSTK			Restore PC
+		D1=C
+		RTNCC			CC: match	D[B]=N-1
+
+**********************************************************************
+* Assemble if user binary 	* "ddddd"
+**********************************************************************
+?UserDec	C=B	A		Save toklen to RSTK
+		RSTK=C
+		GOSUBL	ParseDec	Parse decimal
+		GOC	NotBint
+		GOSUBL	NotBin#?
+		GOC	+
+		GOTO	IsBint		Use ROM if possible
++		BERR	errBig#		"Too Big #"
+**********************************************************************
+* Assemble if bint ("#<hhhh>")
+**********************************************************************
+?Bint		A=DAT0	B
+		LCASC	'#'		Ignore token if 1st chr <> '#'
+		?A#C	B
+		RTNYES
+
+		C=B	A		Save toklen to RSTK
+		RSTK=C
+		D0=D0+	2		Skip "#"
+		GOSUBL	ParseBin
+		GOC	NotBint
+		GOSUBL	NotBin#?
+		GONC	IsBint
+
+NotBint		C=R1	A		Restore ->src from srcloc
+		D0=C
+		C=RSTK			Restore toklen
+		B=C	A
+		RTN
+
+IsBint		C=RSTK			Pop toklen
+		C=RSTK			Pop return address
+
+* Now A[A] = bint
+* Try to find bint from ROM to save code
+
+		CD0EX			Save ->src
+		RSTK=C
+
+*		D0=(5)	(=TYPEREAL)+5	start address
+		D0=(5)	(=ZERO)+5
+*		LC(5)	(=FORTYTHREE)+5	end address
+		LC(5)	(=MINUSONE)+5
+		GOSUB	SeekBint
+		GOC	FoundBint
+* not needed now:
+*		D0=(5)	(=FORTYFOUR)+5
+*		LC(5)	(=MINUSONE)+5
+*		GOSUB	SeekBint
+*		GOC	FoundBint
+
+* No such bint in supported ROM areas, write as number
+
+		C=RSTK			Restore ->src
+		D0=C
+		GOTO	AssUBint-
+
+* Add address of Bint to buf
+
+FoundBint	C=RSTK			Restore ->src
+		D0=D0-	5		Address of ROM #
+		CD0EX
+		DAT1=C	A
+		D1=D1+	5
+		RTN
+
+SeekBint	D=C	A		D[A] = end address
+SeekBintLp	C=DAT0	A
+		?A=C	A
+		RTNYES			Match - CS
+		D0=D0+	10		Skip to next bint body
+		CD0EX
+		D0=C
+		?D>=C	A
+		GOYES	SeekBintLp
+		RTNCC			No match - CC
+
+**********************************************************************
+* Assemble if ROM-WORD
+**********************************************************************
+?BuiltIn	A=DAT0	B		Ignore if not 'xword'
+		LCASC	'x'
+		?A#C	B
+		RTNYES
+		?B=0	A		Ignore if 'x' alone
+		RTNYES
+		C=0	A
+		LC(2)	15
+		?B>C	A		Ignore if too long for a hashname
+		RTNYES
+
+		GOSUBL	SaveRegs	Save registers
+
+* Now store address of token to R0 and it's length above it
+* This is needed by the search routine in ROM
+
+		A=B	A
+		GOSBVL	=ASLW5
+*		D0=D0+	2		No need! Hashed! will advance by 2!
+		AD0EX
+		R0=A
+
+*		D0=(5)	=aUSEROB
+*		C=DAT0	A
+*		D0=C
+		D0=(5)	=USEROB
+
+		C=DAT0	A
+		R1=C			Save ->home to R1[A]
+		D0=C
+		D0=D0+	5		Skip DORRP
+		C=0	A
+		C=DAT0	X
+		A=C	A		libs
+		A=A+A	A		2*libs
+		A=A+A	A		4*libs
+		A=A+C	A		5*libs
+		CSL	A		16*libs
+		CSRB.F	A		8*libs
+		A=A+C	A		13*libs
+		CD0EX
+		C=C+A	A
+		C=C+CON	A,3
+		R4=C			R4 = ->curlibfield
+
+-		A=R4		<-------+
+		A=A-CON	A,13		|	to prev libfld
+		R4=A			|
+		C=R1			|
+		?C>A	A		|
+		GOYES	shshnone	|
+		D0=A			|
+		A=DAT0	X		|	A[X] = libnum
+		R2=A			|	R2[X] = libnum
+		D0=D0+	3		|
+		A=DAT0	A		|	A[A] = hashloc
+		?A=0	A		|
+		GOYES	-	--------+	Ignore - no hashtable
+		D0=A			|
+		C=R0			|
+		D1=C			|	D1 = ->token
+		GOSBVL	=CSRW5		|	C[B] = token_len
+		GOSBVL	=Hashed?	|
+		GOC	-	--------+	Not in this lib - continue
+		GONC	+	--------+
+shshnone	GOLONG	RestoreRegs	|	Restore registers & done
+* Found hash name			|
++		C=RSTK		<-------+	Pop return address
+		A=R2				A[X] = libnum
+
+* Han:	removing SX code
+*		LC(3)	#100			Local limit on SX
+*		GOSUBL	SafeOnGX?
+*		GONC	+	--------+
+		LC(3)	#0A0		|	Local limit on GX
++		?A<C	X	<-------+
+		GOYES	+	--------+	Address pointer
+		LC(3)	#700		|
+		?A=C	X		|
+		GOYES	+	--------+
+* Place ROMPTR				|
+		A=R3			|	Get ROMPTR body to A
+		ASL	A		|
+		ASL	A		|
+		ASL	W		|
+		A=R2.F	X		|
+		GOSUBL	RestoreRegs	|
+		LC(5)	=DOROMP		|
+		DAT1=C	A		|
+		D1=D1+	5		|
+		P=	5		|
+		DAT1=A	WP		|
+		P=	0		|
+		D1=D1+	6		|
+		GOLONG	Source+		|
+* Place pointer				|
++		ST=0	11	<-------+
+
+* Han:	removed SX code
+*		GOSUBL	SafeOnGX?
+*		GOC	+		--------+
+*		GOSBVL	=ROMPCOLT		|
+*		GOTO	++		--------|-+
++		GOSBVL	=G_ROMPCOLT	    <---+ |
+++		A=0	A		<---------+
+		A=R3.F	X		A[A] = cmdnum
+		A=A+1	A		cmdnum+1
+		A=A+1	A		cmdnum+2
+		C=A	A
+		A=A+A	A		2*cmdnum+4
+		A=A+A	A		4*cmdnum+8
+		A=A+C	A		5*cmdnum+10
+		CD0EX
+		C=C+A	A		C[A] = ->link
+		D0=C
+		A=DAT0	A		A[A] = link
+		C=C+A	A		C[A] = ->ob
+		GOSUBL	RestoreRegs
+		DAT1=C	A
+		D1=D1+	5
+		GOLONG	Source+
+		
+**********************************************************************
+* Assemble if reserved word
+**********************************************************************
+?CtrlWord	GOSUB	CtrlWord?
+		RTNC
+		C=RSTK			Pop return address
+		PC=A			Execute assembler subroutine
+
+**********************************************************************
+* Test if token is a control word.
+* Output:
+*	CC: yes		A[A] = ->subroutine
+*	CS: no
+**********************************************************************
+CtrlWord?	C=0	A
+		LC(1)	7
+		?C<B	A		7 < toklen?
+		RTNYES			Yes - ignore
+		A=PC
+		LC(5)	(CtrlWordTab)-(*)
+		A=A+C	A		A[A] = ->ctrltab
+		C=B	A
+		A=A+C	A
+		C=C+C	A
+		C=C+C	A
+		C=C+A	A		C[A] = ->ctrlwordrel
+
+		CD1EX			Save ->pc to RSTK
+		RSTK=C
+
+		A=DAT1	A		A[A] = CtrlWordRel
+		CD1EX
+		A=A+C	A		A[A] = ->CtrlWordList
+		D1=A			D1 = ->CtrlWordList
+		C=DAT1	S
+		D=C	S		D[S] = counter
+		D1=D1+	1
+		C=B	B		C[0] = toklen
+		C=C+C	B
+		P=C	0		P = toklen
+		P=P+1			P = toklen+1
+		A=DAT0	WP		A[WP] = token
+		CD1EX
+IsCtrl?Lp	D1=C
+		C=DAT1	WP
+		?A=C	WP
+		GOYES	IsCtrlWord
+		D1=D1+	5		Skip REL(5)
+		CD1EX
+		C+P+1
+		D=D-1	S		counter--
+		GONC	IsCtrl?Lp
+RetCtrl?	P=	0
+		C=RSTK			Restore ->pc
+		D1=C
+		RTN
+
+IsCtrlWord	CD1EX
+		C+P+1
+		D1=C
+		A=DAT1	A		A[A] = offset to cCtrlWord
+		A=A+C	A		A[A] = ->cCtrlWord
+		GONC	RetCtrl?
+
+
+CtrlWordTab	REL(5)	CtrlWLen1
+		REL(5)	CtrlWLen2
+		REL(5)	CtrlWLen3
+		REL(5)	CtrlWLen4
+		REL(5)	CtrlWLen5
+		REL(5)	CtrlWLen6
+		REL(5)	CtrlWLen7
+		REL(5)	CtrlWLen8
+
+CtrlMAC		MACRO		* $str $label
+		NIBASC	\$1\
+		REL(5)	$2
+CtrlMAC		ENDM
+
+CtrlWLen1	CON(1)	7-1
+		CtrlMAC	<;>,cSEMI
+		CtrlMAC <{>,cLIST
+		CtrlMAC	<}>,cSEMI
+		CtrlMAC	<#>,cBINT
+		CtrlMAC	<$>,cCSTR
+		CtrlMAC <%>,cREAL
+		CtrlMAC	<">,cCSTR.1
+* Above is a special word, it's just the first char in a string
+* This will disallow using " as the first char in entries, but that's not
+* a big loss..
+
+CtrlWLen2	CON(1)	5-1		"
+		CtrlMAC	<::>,cCOL
+		CtrlMAC	<ID>,cIDNT
+		CtrlMAC	<%%>,cEREL
+		CtrlMAC	<C%>,cCMP
+		CtrlMAC	<{{>,cBIND
+CtrlWLen3	CON(1)	8-1
+		CtrlMAC	<PTR>,cPTR
+		CtrlMAC	<HXS>,cHSTR
+		CtrlMAC <LAM>,cLAM
+		CtrlMAC <TAG>,cTAG
+		CtrlMAC <CHR>,cCHR
+		CtrlMAC <C%%>,cECMP
+		CtrlMAC	<LIB>,cLIB
+		CtrlMAC	<BAK>,cBAK
+CtrlWLen4	CON(1)	11-1			* Han: was 9-1
+		CtrlMAC	<CODE>,cCODE
+		CtrlMAC <GROB>,cGROB
+		CtrlMAC <UNIT>,cUNIT
+		CtrlMAC <ARRY>,cARRY
+		CtrlMAC <NIBB>,cNIBB
+		CtrlMAC	<ZINT>,cZINT		* Han: integers
+		CtrlMAC <FPTR>,cFPTR		* Han: flash pointers
+		CtrlMAC <EXT1>,cEXT1
+		CtrlMAC <EXT2>,cEXT2
+		CtrlMAC <EXT3>,cEXT3
+		CtrlMAC <EXT4>,cEXT4
+CtrlWLen5	CON(1)	8-1			* Han:	was 7-1
+		CtrlMAC	<ACPTR>,cACPTR
+		CtrlMAC	<FPTR2>,cFPTR2		* Han: FPTR2
+		CtrlMAC	<xNAME>,cxNAME
+		CtrlMAC	<sNAME>,csNAME
+		CtrlMAC	<hNAME>,chNAME
+		CtrlMAC	<tNAME>,ctNAME
+		CtrlMAC	<LABEL>,cLABEL
+		CtrlMAC	<TITLE>,cTITLE
+CtrlWLen6	CON(1)	9-1			* Han:	was 8-1
+		CtrlMAC	<ROMPTR>,cROMP
+		CtrlMAC <SYMBOL>,cSYMB
+		CtrlMAC <MATRIX>,cMATRIX	* Han: matrices
+		CtrlMAC <LIBDAT>,cLIBDAT
+		CtrlMAC <INCLOB>,cINCLOB
+		CtrlMAC <DEFINE>,cDEFINE
+		CtrlMAC	<xROMID>,cxROMID
+		CtrlMAC	<xTITLE>,cxTITLE
+		CtrlMAC	<STITLE>,cSTITLE
+CtrlWLen7	CON(1)	4-1			* Han:	was 3-1
+		CtrlMAC <INCLUDE>,cINCLUDE
+		CtrlMAC <LNKARRY>,cLNKARRY
+		CtrlMAC <ROMPTR2>,cROMPTR2	* Han: ROMPTR2
+		CtrlMAC	<xCONFIG>,cxCONFIG
+CtrlWLen8	CON(1)	5-1			* Han:	was 4-1
+		CtrlMAC <ASSEMBLE>,cASSEMBLE
+		CtrlMAC	<xMESSAGE>,cxMESSAGE
+		CtrlMAC	<NULLNAME>,cNULLNAME
+		CtrlMAC	<EXTERNAL>,cEXTERNAL
+		CtrlMAC <MINIFONT>,cMINIFONT
+**********************************************************************
+
+**********************************************************************
+* Assemble "TITLE <text>"
+**********************************************************************
+cTITLE		D0=D0+	10
+		GOSUBL	SkipWhiteIn
+		GOSUBL	GetLine
+		GOLONG	optitle
+
+**********************************************************************
+* Assemble "STITLE <text>"
+**********************************************************************
+cSTITLE		D0=D0+	12
+		GOSUBL	SkipWhiteIn
+		GOSUBL	GetLine
+		GOLONG	opstitle
+
+**********************************************************************
+* Assemble "LABEL <label>"
+**********************************************************************
+cLABEL		GOSUBL	NextTok
+		GOLONG	SetLabel
+**********************************************************************
+* Assemble SEMI		* ";" or "}"
+**********************************************************************
+cSEMI		GOSUB	cIndent-	Decrement indentlevel
+		GOC	cSemiErr	Underflow
+		LC(5)	=SEMI
+
+AssAddr+	DAT1=C	A		Write address & advance
+		D1=D1+	5
+		GOLONG	Source+
+
+cSemiErr	XERR	errWrongSemi	"Missplaced ; or }"
+
+**********************************************************************
+* Assemble list		* "{"
+**********************************************************************
+cLIST		GOSUB	cIndent+
+		LC(5)	=DOLIST
+		GOTO	AssAddr+
+
+cIndent+	A=R2.F	A		Increase indentlevel
+		AD0EX
+		D0=(2)	O_COMP_DEPTH
+		C=DAT0	A
+		C=C+1	A
+		DAT0=C	A
+		D0=A
+		RTN
+
+cIndent-	A=R2.F	A		Decrease indentlevel
+		AD0EX
+		D0=(2)	O_COMP_DEPTH
+		C=DAT0	A
+		C=C-1	A		Sets carry if underflow
+		GOC	+
+		DAT0=C	A
++		D0=A
+		RTN
+
+**********************************************************************
+* Assemble unit		* "UNIT"
+**********************************************************************
+cUNIT		GOSUB	cIndent+
+		LC(5)	=DOEXT
+		GOTO	AssAddr+
+**********************************************************************
+* Assemble symbolic	* "SYMBOL"
+**********************************************************************
+cSYMB		GOSUB	cIndent+
+		LC(5)	=DOSYMB
+		GOTO	AssAddr+
+**********************************************************************
+* Assemble secondary	* "::"
+**********************************************************************
+cCOL		GOSUB	cIndent+
+		LC(5)	=DOCOL
+		GOTO	AssAddr+
+**********************************************************************
+* Assemble secondary	* "MATRIX"				Han
+**********************************************************************
+cMATRIX		GOSUB	cIndent+
+		LC(5)	=DOMATRIX
+		GOTO	AssAddr+
+
+**********************************************************************
+* Assemble binary	* "# hhhhh"	(max FFFFF)
+**********************************************************************
+cBINT		GOSUBL	NextBin		A[A] = number
+		GOC	cBintErr1	Invalid number
+		GOSUBL	NotBin#?
+		GOC	cBintErr2	Too big number
+
+AssUBint-	LC(5)	=DOBINT
+		DAT1=C	A
+		D1=D1+	5
+		DAT1=A	A
+		D1=D1+	5
+		RTNCC			Done, D0 is ok too
+
+cBintErr1	BERR	errInv#		"Invalid #"
+cBintErr2	CERR	errBig#		"Too Big #"
+
+**********************************************************************
+* Assemble PTR		* "PTR hhhhh"	(max FFFFF)
+**********************************************************************
+cPTR		GOSUBL	NextBin
+		GOC	cPtrErr1	Invalid PTR
+		GOSUBL	NotBin#?
+		GOC	cPtrErr2	Too big PTR
+		DAT1=A	A
+		D1=D1+	5
+		RTNCC
+
+cPtrErr1	BERR	errInvPTR	"Invalid PTR"
+cPtrErr2	BERR	errBigPTR	"Too Big PTR"
+
+**********************************************************************
+* Assemble ROMPTR	* "ROMPTR xxx yyy"	(max FFF)
+**********************************************************************
+cROMP		LC(5)	=DOROMP
+		DAT1=C	A
+		D1=D1+	5
+		GOSUBL	NextBin		Skip ROMPTR and get #
+		GOC	cRompErr1	Invalid hex
+		GOSUBL	NotBin#3?
+		GOC	cRompErr2	Too big libid
+		DAT1=A	X
+		D1=D1+	3	
+		GOSUBL	NextBinHere	Get #
+		GOC	cRompErr3	Invalid hex
+		GOSUBL	NotBin#3?
+		GOC	cRompErr4	Too big romwd
+		DAT1=A	X
+		D1=D1+	3
+		RTNCC
+
+cRompErr1	BERR	errInvLibID	"Invalid LibID"
+cRompErr2	BERR	errBigLibID	"ROMPTR LibID > FFF"
+cRompErr3	BERR	errInvRomWd	"Invalid RomWd"
+cRompErr4	BERR	errBigRomWd	"ROMPTR RomWd > FFF"
+
+**********************************************************************
+* Assemble ACPTR	* "ACPTR xxxxx yyyyy" (max FFFFF)
+**********************************************************************
+cACPTR
+* Han:	removed SX code
+*		GOSUBL	OnGX?
+*		GONC	cAcptrErr1
+		LC(5)	=DOEXT1
+		DAT1=C	A
+		D1=D1+	5
+		GOSUBL	NextBin		Skip ACPTR and get #
+		GOC	cAcptrErr2
+		GOSUBL	NotBin#?
+		GOC	cAcptrErr2
+		DAT1=A	A
+		D1=D1+	5
+		GOSUBL	NextBinHere	Get next #
+		GOC	cAcptrErr3
+		GOSUBL	NotBin#?
+		GOC	cAcptrErr3
+		DAT1=A	A
+		D1=D1+	5
+		RTNCC
+
+*cAcptrErr1	XERR	errAcptr	"ACPTR is a G object"
+cAcptrErr2	BERR	errAPda		"Invalid APda"
+cAcptrErr3	BERR	errAPaa		"Invalid APaa"
+
+**********************************************************************
+* Assemble ZINT		* ZINT sddddd...			Han
+**********************************************************************
+cZINT		LC(5)	=DOINT
+		DAT1=C	A
+		D1=D1+	5+5		skip prolog and len
+		GOSUBL	NextTok
+		C=B	A
+		D=C	A		D[A] = char counter
+		CD1EX
+		C=C+B	A
+		GONC	+
+
+cZintMemErr	GOVLNG	=GPMEMERR
+
++		CD1EX
+		A=DAT0	B		check for minus sign
+		LCASC	'-'
+		?A#C	B
+		GOYES	cZintPos
+
+* negative integer; use '9' as the sign digit to keep compatibility
+* with LONGFLOAT library
+		D0=D0+	2
+		LC(1)	9
+		D=D-1	A
+		GOC	cZintInvDig	only a minus sign!
+		GONC	cZintCont
+
+cZintPos	B=B+1	A		positive integer
+		D1=D1+	1		need 1 more nibble for sign
+		GOC	cZintMemErr
+		C=0	A
+
+cZintCont	DAT1=C	1		write sign
+		D1=D1-	1
+
+cZintLp		A=DAT0	B		assemble rest of integer
+		LCASC	'9'
+		?A>C	B
+		GOYES	cZintInvDig
+		LCASC	'0'
+		A=A-C	B
+		GOC	cZintInvDig
+		DAT1=A	1
+		D1=D1-	1
+		D0=D0+	2
+		D=D-1	A
+		GONC	cZintLp
+
+		D1=D1-	4		point to len
+		B=B+1	A		adjust B[A] (was 0-based)
+		C=B	A
+		C=C+CON	A,5
+		DAT1=C	5		write len
+		D1=D1+	5
+		CD1EX			adjust D1 to point past the
+		C=C+B	A		end of the integer
+		CD1EX
+		CD0EX
+		D0=C
+		R0=C.F	A		save new srcmed
+		RTNCC
+		
+cZintInvDig	BERR	errInvZint	"Invalid Zint"
+**********************************************************************
+* Assemble FPTR		* "FPTR xxx yyyy"			Han
+**********************************************************************
+cFPTR		LC(5)	=DOFLASHP
+		DAT1=C	A
+		D1=D1+	5
+		GOSUBL	NextBin		Skip FPTR and get #
+		GOC	cFptrErr1	Invalid hex
+		GOSUBL	NotBin#3?
+		GOC	cFptrErr2	flash bank too large
+		DAT1=A	X
+		D1=D1+	3	
+		GOSUBL	NextBinHere	Get #
+		GOC	cFptrErr3	Invalid hex
+		GOSUBL	NotBin#4?
+		GOC	cFptrErr4	Too big romwd
+		DAT1=A	4
+		D1=D1+	4
+		RTNCC
+
+cFptrErr1	BERR	errInvFPTRID	"Invalid FPTR ID"
+cFptrErr2	BERR	errBigFPTRID	"FPTR ID > FFF"
+cFptrErr3	BERR	errInvFPTRCMD	"Invalid FPTR CMD"
+cFptrErr4	BERR	errBigFPTRCMD	"FPTR CMD > FFFF"
+
+**********************************************************************
+* Assemble FPTR		* "FPTR2 ^<entry>"			Han
+**********************************************************************
+cFPTR2		LC(5)	=DOFLASHP
+		DAT1=C	A
+		D1=D1+	5
+		GOSUBL	NextTok
+		LCASC	'^'
+*		A=C	B
+*		C=DAT0	B
+		A=DAT0	B
+		?A#C	B
+		GOYES	cFptr2Err1
+		GOSUBL	Entry?		A[A] = entr_addr if CC
+		GOC	cFptr2Err1
+		C=0	A
+*		P=	4		hptabs: icccc; extable cccci
+		C=A	P
+*		CPEX	4
+*		CPEX	0
+		DAT1=C	X
+		D1=D1+	3
+		ASR	A
+		DAT1=A	4
+		D1=D1+	4
+		GOLONG	Source+
+
+cFptr2Err1	BERR	errUndefFPTR	"Invalid FPTR Name"
+
+**********************************************************************
+* Assemble ROMPTR2	* "ROMPTR2 ~<entry>"			Han
+**********************************************************************
+cROMPTR2	LC(5)	=DOROMP
+		DAT1=C	A
+		D1=D1+	5
+		GOSUBL	NextTok
+		LCASC	'~'
+		A=DAT0	B
+		?A#C	B
+		GOYES	cRptr2Err1
+		GOSUBL	Entry?		A[A] = entr_addr if CC
+		GOC	cRptr2Err1
+		C=0	A
+		C=A	B		lib id in lower 2 nibbles
+		DAT1=C	X
+		D1=D1+	3
+		ASR	A		lib cmd in upper 3 nibbles
+		ASR	A
+		ASR	A
+		DAT1=A	X
+		D1=D1+	3
+		GOLONG	Source+
+
+cRptr2Err1	BERR	errUndefRPTR	"Invalid ROMPTR Name"
+**********************************************************************
+* Assemble long complex		* "C%% re im"
+**********************************************************************
+cECMP		LC(5)	=DOECMP		Put prolog
+		DAT1=C	A
+		D1=D1+	5
+		GOSUBL	Next%%
+		GOC	cECmpErr	Invalid %%re
+		DAT1=C	A		Put %%re.exp
+		D1=D1+	5
+		DAT1=A	W		Put %%re.mant
+		D1=D1+	16
+		GOSUBL	Next%%
+		GOC	cECmpErr	Invalid %%im
+		DAT1=C	A		Put %%im.exp
+		D1=D1+	5
+		DAT1=A	W		Put %%im.mant
+		D1=D1+	16
+		GOLONG	Source+
+
+cECmpErr	CERR	errInvC%%	"Invalid C%%"
+
+**********************************************************************
+* Assemble complex			* "C% re im"
+**********************************************************************
+cCMP		LC(5)	=DOCMP		Put prolog
+		DAT1=C	A
+		D1=D1+	5
+		GOSUBL	Next%
+		GOC	cCmpErr		Invalid %re
+		DAT1=A	W		Put %re
+		D1=D1+	16
+		GOSUBL	Next%
+		GOC	cCmpErr		Invalid %im
+		DAT1=A	W		Put %im
+		D1=D1+	16
+		GOLONG	Source+
+cCmpErr		CERR	errInvC%	"Invalid C%"
+
+**********************************************************************
+* Assemble long real		* "%% re"
+**********************************************************************
+cEREL		LC(5)	=DOEREL		Put prolog
+		DAT1=C	A
+		D1=D1+	5
+		GOSUBL	Next%%
+		GOC	cERelErr
+		DAT1=C	A		Put exponent
+		D1=D1+	5
+		DAT1=A	W		Put mantissa+sign
+		D1=D1+	16
+		GOLONG	Source+
+cERelErr	CERR	errInv%%	"Invalid %%"
+
+**********************************************************************
+* Assemble if user real		* "smmmm.rrrEsxxx"
+**********************************************************************
+?UserReal	GOSUBL	Next%Here
+		RTNC			Not user real
+		C=RSTK			Pop return address
+		GONC	AssReal
+**********************************************************************
+* Assemble real			* "% re"
+**********************************************************************
+cREAL		GOSUBL	Next%
+		GOC	cRealErr
+AssReal		LC(5)	=DOREAL
+		DAT1=C	A
+		D1=D1+	5
+		DAT1=A	W
+		D1=D1+	16
+		GOLONG	Source+
+cRealErr	CERR	errInv%		"Invalid %"
+
+**********************************************************************
+* Assemble Hex String		* "HXS hhhhh bbbbb..."
+**********************************************************************
+cHSTR		LC(5)	=DOHSTR
+		GOTO	AssBodyHex
+
+**********************************************************************
+* Assemble Grob			* "GROB hhhhh bbbbb..."
+*
+* The following really should ensure grob size fields too
+**********************************************************************
+cGROB		LC(5)	=DOGROB
+		GOTO	AssBodyHex
+**********************************************************************
+* Assemble array		* "ARRY hhhhh bbbbb..."
+*
+* This would need a RPLCOMP format..
+**********************************************************************
+cARRY		LC(5)	=DOARRY
+		GOTO	AssBodyHex
+**********************************************************************
+* Assemble linked array		* "LNKARRY hhhhh bbbbb.."
+**********************************************************************
+cLNKARRY	LC(5)	=DOLNKARRY
+		GOTO	AssBodyHex
+**********************************************************************
+* Assemble EXT1			* "EXT1 hhhhh bbbbb.."
+**********************************************************************
+cEXT1
+* Han:	EXT1 should be ACPTR since we are not on an SX
+*		GOSUBL	OnGX?
+*		GOC	cExt1Err
+*		LC(5)	=DOEXT1
+*		GOTO	AssBodyHex
+
+cExt1Err	XERR	errExt1		"EXT1 is an S Object"
+
+**********************************************************************
+* Assemble EXT2			* "EXT2 hhhhh bbbbb.."
+**********************************************************************
+cEXT2		LC(5)	=DOEXT2
+		GOTO	AssBodyHex
+**********************************************************************
+* Assemble EXT3			* "EXT3 hhhhh bbbbb.."
+**********************************************************************
+cEXT3		LC(5)	=DOEXT3
+		GOTO	AssBodyHex
+**********************************************************************
+* Assemble EXT4			* "EXT4 hhhhh bbbbb.."
+**********************************************************************
+cEXT4		LC(5)	=DOEXT4
+		GOTO	AssBodyHex
+**********************************************************************
+* Assemble EXT4			* "MINIFONT hhhhh bbbbb.."	Han
+**********************************************************************
+cMINIFONT	LC(5)	=DOMINIFONT
+		GOTO	AssBodyHex
+**********************************************************************
+* Assemble LIBDAT		* "LIBDAT hhhhh bbbbb.."
+**********************************************************************
+cLIBDAT		LC(5)	=DOEXT0
+		GOTO	AssBodyHex
+**********************************************************************
+* Assemble backup		* "BACKUP hhhhh bbbbb.."
+**********************************************************************
+cBAK		LC(5)	=DOBAK
+		GOTO	AssBodyHex
+**********************************************************************
+* Assemble library		* "LIBRARY hhhhh bbbbb.."
+*
+* Maybe some other token for a MAKEROM equivalent
+**********************************************************************
+cLIB		LC(5)	=DOLIB
+		GOTO	AssBodyHex
+**********************************************************************
+* Assemble nibbles		* "NIBB hhhhh bbbbb.."
+*
+* This puts body only, no prolog nor lenght field
+**********************************************************************
+cNIBB		GOSUBL	NextBin		Skip token & get bin
+		GOC	cNibbErr1	Length not binary
+		GOSUBL	NotBin#?
+		GOC	cNibbErr2	Lenght too big
+		B=A	A		B[A] = len
+		B=B-1	A
+		GOC	cNibbErr3	Zero lenght not allowed
+		GOTO	AssBody		Assemble the body
+
+cNibbErr1	BERR	errNibbLen	"Invalid NIBB Length"
+cNibbErr2	BERR	errBigLen	"Lenght Too Big"
+cNibbErr3	BERR	errZeroLen	"Zero Length"
+
+**********************************************************************
+* If "CODE" is followed by a newline then starts ml assembler
+* Else assumes "CODE <hhhhh> <hh.h>
+**********************************************************************
+cCODE		GOSUBL	Free-10		* Keep this!!!
+		LC(5)	=DOCODE		Put prolog
+		DAT1=C	A
+		D1=D1+	5
+		GOSUBL	Source+
+		GOSUBL	SkipWhiteIn
+		GOC	StartCodeAss
+		GOSUBL	TryParseBin
+		GOC	cCodeErr
+		GOSUBL	NotBin#?
+		GOC	cCodeErr
+		GOTO	AssBodyNow
+cCodeErr	DERR	errWantHexSize	"Expecting Hex Size"
+
+* Assembler mode
+
+StartCodeAss	D0=D0+	2		Skip possible '\n'
+		ST=1	qASSEMBLE	Set ml assembler
+		ST=1	qCODE		ENDCODE expected
+
+* Increase codelab counter
+
+		C=R2
+		CD0EX
+		D0=(2)	O_CODELAB	codelab++
+		A=DAT0	A
+		A=A+1	A
+		DAT0=A	A
+		CD0EX
+
+* If pass2 then search for code label from symbol buffer
+
+		?ST=1	qPASS2		If pass2 then find label for
+		GOYES	GetCodeLab	code size
+
+* 1st pass, save pcoff for "CODE" size field
+
+		?ST=1	qNEEDPASS2	Ignore save if pass2 is needed
+		GOYES	IgnCoLabAdd
+		?ST=1	qPASS2		Ignore also if already pass2
+		GOYES	IgnCoLabAdd
+
+		CD1EX
+		D=C	A		D[A] = ->pc
+		GOSBVL	=D1=DSKTOP
+		D1=D1+	5
+		C=DAT1	A		C[A] = ->buf
+		C=C+CON	A,10		C[A] = ->pc0
+		CDEX	A
+		D1=C			D1 = ->pc
+		C=C-D	A		C[A] = pcoff
+		A=R2
+		AD1EX
+		D1=(2)	O_CODEADDR
+		DAT1=C	A
+		D1=A
+
+IgnCoLabAdd	D1=D1+	5
+		RTN			ENDCODE will add the label
+					for the 2nd pass to index
+
+* 2nd pass, get code size
+
+GetCodeLab	CD0EX
+		RSTK=C			Save D0 to RSTK
+
+		D0=(2)	O_TEMPLAB	Write code label to stat buffer
+		ASL	W
+		ASL	W
+		A=A+1	W		CODELAB special ID!
+		DAT0=A	6		label nibbles = "1<codelab>"
+
+		B=B-1	P		B[A] = 2 = len of codelab
+
+		GOSUBL	SymbolValue?	A[A] = ->type
+		GOC	CodLabErr	Label not found!!
+		D0=A
+		D0=D0+	2		Skip type & valuelen
+		C=DAT0	A		Get pcoff for ENDCODE
+		GOSBVL	=D0=DSKTOP
+		D0=D0+	5
+		A=DAT0	A
+		A=A+CON	A,10		A[A] = ->pc0
+		A=A+C	A		A[A] = ->endcode
+		CD1EX			C[A] = ->pc
+		D1=C
+		A=A-C	A		A[A] = codelen
+		DAT1=A	A		Write code len
+		D1=D1+	5
+
+		C=RSTK			Restore ->src
+		D0=C
+		RTN
+
+CodLabErr	P=	11
+		GOVLNG	=PWLseq
+
+**********************************************************************
+* Assemble "ASSEMBLE"
+**********************************************************************
+cASSEMBLE	GOSUBL	Source+
+		GOSUBL	SkipLine	Stuff after "ASSEMBLE" ignored
+		ST=1	qASSEMBLE
+		ST=0	qCODE		Hmm
+		RTNC			End of src, no advance
+		D0=D0+	2		Skip '\n'
+		RTN
+
+**********************************************************************
+* Assemble RPL object with a body
+**********************************************************************
+AssBodyHex	GOSUBL	Free-10		1st check room for prlg & len
+
+AssBodyMOK	DAT1=C	A		Write prolog
+		D1=D1+	5
+		GOSUBL	NextBin		Skip token & get bin
+		GOC	cBodyErr1	Not binary
+		GOSUBL	NotBin#?
+		GOC	cBodyErr2	Binary too big..
+
+AssBodyNow	C=0	A
+		LC(1)	5
+		C=C+A	A
+		GOC	cBodyErr2	Too big body
+		DAT1=C	A
+		D1=D1+	5		Place lenght field
+		B=A	A		Store bin to B[A]
+		B=B-1	A		len--
+		GONC	AssBody		Not empty body.. ass it
+
+* Empty body, were done since Free-10 has already been called
+
+		RTNCC
+
+cBodyErr1	BERR	errHexSize	"Body Len Not Hex"
+cBodyErr2	BERR	errBigBody	"Body Len Too Big"
+cBodyErr3	BERR	errMissBody	"Missing Body"
+cBodyErr4	BERR	errShortBody	"Body Too Short"
+cBodyErr5	BERR	errInvBody	"Invalid Body"
+cBodyErr6	BERR	errLongBody	"Body Too Long"
+
+* Now assemble the body 1 nibble at a time, checking free space too
+
+
+AssBody		GOSUBL	SkipWhiteIn	Skip whitespace on the line
+		GOC	cBodyErr3	No body exists
+
+		AD0EX			Save new srcmed
+		R0=A.F	A
+		AD0EX
+
+		C=R1			Get srcend to D[A]
+		GOSBVL	=CSRW5
+		D=C	A
+
+* Now start the assembler loop
+
+AssBodyLp	CD0EX			1st check if at end of src
+		D0=C
+		?C>=D	A
+		GOYES	cBodyErr4	Yes - body too short
+
+* Get next hxs nibble
+
+		A=DAT0	B		A[B] = chr
+		LCASC	'0'
+		A=A-C	B
+		GOC	cBodyErr5	Not a hex char
+		LC(2)	9
+		?A<=C	B
+		GOYES	ThisNibOK
+		LC(2)	'A'-'0'
+		A=A-C	B
+		GOC	cBodyErr5	Not a hex char
+		LC(2)	5
+		?A>C	B
+		GOYES	cBodyErr5
+		A=A+CON	B,10		Add 10 again
+ThisNibOK	AR4EX.F	A		free--
+		A=A-1	A
+		AR4EX.F	A
+		GOC	AssBodyMemErr
+		DAT1=A	1		Put the nibble
+		D1=D1+	1		And skip it
+		D0=D0+	2		Skip the char
+		B=B-1	A		bodylen--
+		GONC	AssBodyLp	Loop all chars
+
+* Ok, now check if there are too many chars
+
+		CD0EX
+		D0=C
+		?C>=D	A
+		GOYES	AssBodyOK	Reached end of source too - ok
+		A=DAT0	B		Allow whitespace only after
+		LCASC	' '		the specified body lenght
+		?A<=C	B
+		GOYES	AssBodyOK
+		GOTO	cBodyErr6	Too long body
+
+* Now both D0 and D1 are ok, so we just return
+
+AssBodyOK	RTNCC
+
+AssBodyMemErr	GOVLNG	=GPMEMERR
+
+
+**********************************************************************
+* This also needs to check that the followin object exists
+* The object is allowed to be in a different row
+**********************************************************************
+cTAG		LC(5)	=DOTAG
+		GOSUB	cIdLam
+		GOSUBL	SkipWhite	Skip white space
+		RTNNC			Return if skipped ok
+
+		CERR	errMissTagOb	"Missing TagOb"
+
+**********************************************************************
+cIDNT		LC(5)	=DOIDNT
+		GOTO	cIdLam
+**********************************************************************
+cLAM		LC(5)	=DOLAM
+
+cIdLam		DAT1=C	A		Set prolog
+		D1=D1+	7		Skip len fld too
+
+* Use NextTok here to get id size so that we can do a ?Defined test to it
+* Later..
+
+		GOSUBL	NextTok		B[A] = toklen
+
+* Cannot check if ID is too long yet because of the char conversion
+* Better just assemble the body and check the lenght when filling in the
+* lenght field (using saved pc in the status buffer)
+
+		GOSUBL	EndToD		srcend to D[A]
+
+IdLamLoop	GOSUBL	TokEnd?		Source end or white space?
+		GOC	IdLamEnd
+		GOSUBL	ParseChar
+		GOC	IdLamEnd?	Handle the possible error
+		AR4EX.F	A		Free-2
+		A=A-CON	A,2
+		AR4EX.F	A
+		GOC	IdLamGC
+		DAT1=A	B
+		D1=D1+	2
+		GONC	IdLamLoop	Loop all chars
+IdLamGC		GOVLNG	=GPMEMERR
+IdLamEnd?	GOSUBL	AtEnd?		Reached end of src?
+		GOC	IdLamEnd	Yes - add id/lam lenght field
+IdLamErr	BERR	errIdBody	"Invalid ID/LAM Body"
+
+* Assembled body ok, now calculate idlen using saved pc & pc
+
+IdLamEnd	A=R2.F	A
+		AD1EX			A[A] = pc
+		D1=D1+	10
+		C=DAT1	A		C[A] = saved pc
+		D1=A
+		A=A-C	A		A[A] = 2*idlen+7
+		A=A-CON	A,7		A[A] = 2*idlen
+		ASRB.F	A		A[A] = idlen
+		CD1EX			D1 = saved pc
+		D1=D1+	5		D1 = ->idlen
+		DAT1=A	B		Set idlen
+		CD1EX			D1 = pc
+
+* Now check if idlen actually was valid
+
+		?A=0	A
+		GOYES	IdLamErr	Null lenght not allowed
+		C=0	A
+		CBIT=1	7		C[A] = #80 (or #FF ?)
+		?A<C	A
+		RTNYES			idlen < 128 - return
+		BERR	errLongId	"Too Long ID/LAM"
+
+**********************************************************************
+* Assembler for $ "<string>"
+**********************************************************************
+cCSTR		GOSUBL	Free-10		* Assure room for prolog & len
+		GOSUBL	Source+
+		GOSUBL	SkipWhiteIn
+		GONC	cCstr
+		
+cCstrErr	CERR	errMissString	* "Missing String"
+
+**********************************************************************
+* Assembler for "<string>"
+**********************************************************************
+cCSTR.1		GOSUBL	Free-10		Assure room for prolog & len
+
+cCstr		LC(5)	=DOCSTR		Write prolog
+		DAT1=C	A
+		D1=D1+	5
+		C=0	A		Assume nulltring
+		DAT1=C	A
+		D1=D1+	5
+
+
+* Assemble string body.
+* Just assemble char by char and then fix lenght later
+
+* First check if " starts a CSTR (Always true for cCSTR.1)
+
+		A=DAT0	B
+		D0=D0+	2
+		LCASC	\"\
+		?A=C	B
+		GOYES	AssStrNow
+StrErr		BERR	errInvString
+
+AssStrNow	GOSUBL	EndToD		srcend to D[A]
+	
+* Start the string assembler loop
+
+AssStrLp	GOSUBL	AtEnd?		End of src?
+		GOC	StrErr		Yes - error
+
+* cCSTR has to do a special check for "" -> " conversion
+
+		A=DAT0	B
+		LCASC	\"\
+		?A#C	B
+		GOYES	NotCstrSpc
+		D0=D0+	2
+		GOSUBL	AtEnd?		Check srcend again
+		GOC	CstrEnd		End is ok
+		A=DAT0	B
+		D0=D0+	2
+		LCASC	\"\
+		?A=C	B
+		GOYES	CstrPutThis	Convert "" to "
+		LCASC	\ \
+		?A>C	B
+		GOYES	StrErr		"chr is invalid
+		GONC	CstrEnd		whitespace after " ends the string
+NotCstrSpc	GOSUBL	ParseChar	Get next char
+		GOC	StrErr		Invalid special char
+CstrPutThis	AR4EX.F	A		Free-2
+		A=A-CON	A,2
+		AR4EX.F	A
+		GOC	CstrGC
+		DAT1=A	B		Write char
+		D1=D1+	2		& advance
+		GONC	AssStrLp
+CstrGC		GOVLNG	=GPMEMERR
+
+* Now go back and fill in the cstr lenght field
+
+CstrEnd		A=R2.F	A		A[A] = ->Status
+		AD1EX			A[A] = pc
+		D1=(2)	O_PC
+		C=DAT1	A		C[A] = saved pc
+		D1=A
+		A=A-C	A
+		A=A-CON	A,5		A[A] = strlen
+		CD1EX			D1 = saved pc
+		D1=D1+	5		D1 = ->strlen
+		DAT1=A	A		Set strlen
+		CD1EX			D1 = pc
+		RTNCC			Done
+
+**********************************************************************
+* Only CHR chr accepted. CHR "<char>" and CHR ^char currently ignored.
+**********************************************************************
+cCHR		GOSUBL	NextTok		Jump to next token
+		GOSUBL	EndToD		Get srcend to D[A]
+		GOSUBL	ParseChar	Get the character in there
+		GOC	cChrErr		Invalid char
+		LC(5)	=DOCHAR
+		DAT1=C	A
+		D1=D1+	5
+		DAT1=A	B		Put the char
+		D1=D1+	2
+
+* Now check if there are more chars in there..
+
+		GOSUBL	TokEnd?
+		RTNC			No more - done
+
+cChrErr		BERR	errInvChr	"Invalid CHR"
+
+**********************************************************************
+cINCLOB		GOSUBL	NextTok		Advance srcmed & get namelen
+DoInclob	GOSUBL	RclTok		Find the variable
+		GOC	cInclobErr	No match
+		C=A	A
+		D=C	A		->ob
+		GOSUBL	Source+		Advance srcmed past name
+		D=C	A
+		D0=C			D0 = ->ob
+		GOSBVL	=SKIPOB		D0 = ->obend
+		CD0EX
+		C=C-D	A		oblen
+		CDEX	A		D[A] = oblen
+		D0=C			->ob
+		C=D	A		oblen
+		GOSUBL	Free-		Check room for object
+		GOSUB	GetInclObPart	Get the part based on mode & obtype
+		C=D	A
+		GOSBVL	=MOVEDOWN	Copy object, D1 = new pc
+		A=R0			Get srcmed
+		D0=A			Set src
+		RTN
+
+cInclobErr	CERR	errInclob	"Can't INCLOB"
+
+**********************************************************************
+* Choose proper area to inclob based on mode
+* In:	D0	->ob
+*	D[A]	nibbles
+* Out:	D0	->output	CS if changes occurred
+*	D[A]	nibbles
+**********************************************************************
+
+INCLLEN	MACRO
+	CON(5)	=$1
+	CON(2)	$2
+INCLLEN	ENDM
+
+GetInclObPart	?ST=0	qASSEMBLE	* All in rpl mode
+		RTNYES
+		GOSUB	+
+
+		INCLLEN	DOCODE,10		code only
+		INCLLEN	DOCSTR,10		chars only
+		INCLLEN	DOGROB,20		grobdata only
+		INCLLEN	DOHSTR,10		data only
+		INCLLEN	DOARRY,5		body only
+		INCLLEN	DOEXT0,10		..
+		INCLLEN	DOEXT2,10
+		INCLLEN	DOEXT3,10
+		INCLLEN	DOEXT4,10		..
+		CON(5)	0
+
++		C=RSTK
+		A=DAT0	A
+		CD0EX
+		RSTK=C			->ob
+ilenlp		C=DAT0	A
+		D0=D0+	7
+		?C=0	A
+		GOYES	ilenstays
+		?A#C	A
+		GOYES	ilenlp
+		D0=D0-	2
+		A=0	A
+		A=DAT0	B		len
+		C=RSTK			->ob
+		C=C+A	A
+		D0=C
+		C=A	A
+		D=D-C	A		nibbles--
+		RTNSC
+ilenstays	C=RSTK
+		D0=C
+		RTNCC
+**********************************************************************
+cINCLUDE	GOSUBL	NextTok		Advance srcmed & get namelen
+DoInclude	GOSUBL	RclTok		Find the variable
+		GONC	+		Got match
+
+cIncludeErr	CERR	errInclude	"Can't INCLUDE"
+cInclMaxErr	DERR	errFlowInclude	"INCLUDE Depth Oveflow"
+cIncl$Err	CERR	errNoIncl$	"INCLUDE Ob Not String"
+
++
+*		C=RSTK			Pop return address to main loop
+		R3=A			R3 = ->ob
+		AD0EX
+		A=DAT0	A
+		LC(5)	=DOCSTR
+		?A#C	A
+		GOYES	cIncl$Err	Not string..
+
+		GOSUBL	Source+		Update srcmed and D0
+		?ST=0	qASSEMBLE
+		GOYES	+
+		GOSUBL	SourceLine+	Skip line instead in assembly mode!
+		AD0EX
+		R0=A.F	A		Update srcmed
+		AD0EX
++		GOSUBL	RplReport?	Report line
+
+* Increase include depth
+
+		A=R2			A[A] = ->Status
+		D0=A
+		D0=(2)	O_INCL_DEPTH
+		A=DAT0	A		incl_depth++
+		A=A+1	A
+		DAT0=A	A
+		LC(5)	INCLMAX
+		?A>=C	A
+		GOYES	cInclMaxErr
+
+* Include new source file in R3[A] with minimum fuss.
+
+IncludeExit	GOSBVL	=D1=DSKTOP
+		A=DAT1	A		->srccurrent
+		C=R0	A		->srcmed
+		C=C-A	A
+		C=C-CON	A,10
+		R0=C			#srcoff
+* Push the offset into the include stack
+
+		A=R2
+		D0=A
+		D0=(2)	O_INCL_DEPTH	(this is >= 1 now)
+		A=DAT0	A		include depth
+		A=A-1	A		make 0 minimum
+		LC(5)	(O_INCL_STACK)-(O_INCL_DEPTH)
+		AD0EX
+		C=C+A	A		->stack
+		AD0EX
+		C=C+A	A
+		A=A+A	A		depth*2
+		A=A+A	A		depth*4
+		C=C+A	A
+		D0=C			->slot
+		A=R0			#srcoff
+		DAT0=A	A		Save the offset
+
+* Now push the new source object, unroll old one, and restart
+
+		A=R3
+		GOSBVL	=GPPushA
+
+* Now: ($tab  $status $buffer $srcold $src )
+* Need: ($srcold $tab $status $buffer $src )
+
+		D1=D1+	5
+		A=DAT1	A		$srcold
+		D1=D1+	5
+		C=DAT1	15		$tab $status $buffer
+		D1=D1+	10
+		DAT1=A	A
+		D1=D1-	15
+		DAT1=C	15
+		D1=D1-	5
+		GOLONG	AssNew		Restart with new source
+
+**********************************************************************
+* Define label	:	DEFINE symbols <text>
+**********************************************************************
+
+cDEFINE		?ST=0	qPASS2
+		GOYES	+
+		GOLONG	SkipLine	Ignore on 2nd pass!
+
++		GOSUBL	NextTok		Get the label
+
+		GOSUB	longlaberr?	Check label isn't too long
+
+* Check if already used
+		GOSUBL	CheckThisSymbol
+		CD0EX
+		RSTK=C			->name
+		CD0EX
+		GOSUBL	Source+		Skip name
+		GOSUBL	SkipWhiteIn
+		GONC	+
+		DERR	errDefine$	"DEFINE String Missing"
++		AD0EX
+		R0=A.F	A		Save start of define string
+		D0=A
+
+* Now scan until newline or end of source and then back to remove
+* white space. This gives us the define string size
+
+		GOSUBL	SkipLine
+		GOSUBL	BackWhite
+
+* Now we have:
+* B[A] = label length RSTK = ->label
+* R0[A] = ->defstart D0 = ->defend
+
+* Setup call to AddSymbol:	D[A] = nibbles	D[A1] = ->define string
+*				C[0] = SYMB_DEFINE
+
+		C=R0.F	A		->define string
+		GOSBVL	=CSLW5
+		D=C	W		D[A1] = ->define string
+		C=RSTK			->label
+		CD0EX			C[A] = ->defend
+		A=R0.F	A		->defstart
+		C=C-A	A
+		D=C	A		nibbles
+		LC(1)	SYMB_DEFINE
+		GOSUBL	AddSymbol
+		GOLONG	SkipLine	Done
+
+* Label length checking subroutine
+
+longlaberr?	C=0	A
+		LC(1)	15
+		?B<=C	A
+		RTNYES
+		BERR	errLongLabel	"Too Long Label"
+
+
+**********************************************************************
+* Assemble "{{ name1 name2 .. nameN }}"
+**********************************************************************
+
+cBIND		GOSUBL	Source+		Skip "{{"
+		ST=0	qTEMP		Flag no labels yet
+
+		B=0	W		B[A1] = counter = 0
+
+cbindloop	GOSUBL	GetRplTok	CC: D0=->token	B[A]=chars-1
+		GONC	+
+		GOLONG	NextTokErr	"More Tokens Expected"
+
++		C=0	A		See if we found "}}"
+		C=C+1	A
+		?B#C	A		2-character token?
+		GOYES	+		No - not "}}" then - continue
+		A=DAT0	A
+		C=A	A
+		LCASC	'}}'
+		?A#C	A
+		GOYES	+
+		GOTO	cbindfinish	Found "}}" - finish up
+
+* Not "}}" - generate lambda label
+
++		GOSUB	longlaberr?	Check label isn't too long
+		GOSUBL	CheckThisSymbol	Check if reserved label
+
+* Label passe the test - add it if not full yet
+
+		A=B	W
+		GOSBVL	=ASRW5		A[A] = counter
+		LC(5)	LAMBDAMAX
+		?A>=C	A
+		GOYES	toomanyerr	Had 22 already - error
+
+		A=A+1	A		counter++
+		C=A	A
+		GOSBVL	=ASLW5		A[A1] = counter'
+		A=B	A
+		B=A	W		B[A1] = counter'
+
+		A=R2	A		->status
+		A=A+C	A		+ 1*
+		CSL	A
+		A=A+C	A		+ 16*
+		A=A+C	A		+ 16*  = +33
+		LC(5)	(O_LAMBDASTACK)-33
+		A=A+C	A		->slot
+		AD1EX
+		C=B	A		chars-1
+		DAT1=C	B
+		D1=D1+	1
+		C=DAT0	W
+		DAT1=C	W
+		D0=D0+	16
+		D1=D1+	16
+		C=DAT0	W
+		DAT1=C	W
+		D0=D0-	16		->token
+		D1=A			->pc
+
+		ST=1	qTEMP		Flag we got atleast one
+		GOSUBL	Source+		Skip the added label
+		GOTO	cbindloop	And continue until "}}"
+
+toomanyerr	BERR	errManyLabels	"Too Many Labels"
+toofewerr	GOTO	xlabtyperr	"Label Expected"
+
+* Found trailing "}}" - finish up
+
+cbindfinish	?ST=0	qTEMP
+		GOYES	toofewerr	Got 0 labels - error
+		GOSUBL	Source+		Skip "}}"
+
+		A=R2	A		->status
+		LC(5)	O_LAMBDAS
+		C=C+A	A		->lambdas
+		CD1EX
+		A=B	W
+		GOSBVL	=ASRW5		A[A] = total
+		DAT1=A	B		Save total
+		D1=C
+
+* Now generate code based on total
+
+		A=A-1	A		total - 1
+		?A#0	A
+		GOYES	+		More than one
+
+		LC(5)	=1LAMBIND	Only one - optimize
+		DAT1=C	A
+		D1=D1+	5
+		RTN
+
++		LC(N)	10		Output "' NULLLAM"
+		CON(5)	='
+		CON(5)	=NULLLAM
+		DAT1=C	10
+		D1=D1+	10
+		LC(5)	=ONE		Output count TWO - TWENTYTWO
+		A=A+A	A		count*2
+		C=C+A	A		+
+		A=A+A	A
+		A=A+A	A		count*4
+		C=C+A	A		+
+		DAT1=C	A
+		D1=D1+	5
+		LC(N)	10		Output "NDUPN DOBIND"
+		CON(5)	=NDUPN
+		CON(5)	=DOBIND
+		DAT1=C	10
+		D1=D1+	10
+		RTN
+
+**********************************************************************
+* Assemble "xROMID expr"
+**********************************************************************
+cxROMID		ST=1	qNEEDPASS2	Always 2 passes
+		GOSUBL	NextTok		Get next token on the line
+		?ST=0	qPASS2
+		GOYES	xromidpass1
+
+* Proper ROMID and TITLE have been output. Skip header
+
+xromidpass2	GOSUBL	Source+		Skip ROMID expr
+		D1=D1+	10		Skip DOLIB, size
+		A=0	A
+		A=DAT1	B		Title lenght
+		CD1EX
+		C=C+A	A
+		C=C+A	A
+		CD1EX
+		D1=D1+	2+3+10		Skip len1, ROMID, 2 links
+		D1=D1+	10		Skip 2 links
+		?A=0	A
+		RTNYES			Null title, skip done
+		D1=D1+	2		Skip len2
+		RTN
+
+DupliRomid	CERR	errDupRomid	"Duplicate ROMID"
+
+xromidpass1	?ST=1	qLIB
+		GOYES	DupliRomid
+		A=DAT0	B
+		LCASC	'#'
+		?A=C	B
+		GOYES	romid#		Try fetching a hex romid
+		GOSUBL	ParseDec	A[W]=romid
+		GONC	+
+InvalidRomid	BERR	errInvRomid	"Invalid ROMID"
+romid#		D0=D0+	2
+		B=B-1	A
+		GOC	InvalidRomid
+		GOSUBL	ParseBin
+		GOC	InvalidRomid	A[W]=romid
++		C=0	W
+		LC(3)	#7FF
+		?A>C	W
+		GOYES	InvalidRomid
+* Now D0 points past the romid number. Output header
+		CD1EX
+		D=C	A
+		GOSBVL	=D1=DSKTOP
+		D1=D1+	5
+		C=DAT1	A
+		C=C+CON	A,10		->pc start
+		CDEX	A
+		D1=C
+		?C#D	A
+		GOYES	BadMakerom	ROMID not first - error
+		LC(N)	12
+		CON(5)	=DOLIB
+		CON(5)	0		No size yet
+		CON(2)	0		No title yet
+		DAT1=C	12
+		D1=D1+	12
+		DAT1=A	X		Romid defined
+		D1=D1+	3
+		C=0	W		Clear 4 links
+		DAT1=C	10
+		D1=D1+	10
+		DAT1=C	10
+		D1=D1+	10
+		C=R2	A
+		CD1EX
+		D1=(2)	O_ROMID		Define ROMID
+		DAT1=A	X
+		D1=(2)	O_ROMID?	Define ROMID exists
+		LA(1)	1
+		DAT1=A	P
+		CD1EX
+		ST=1	qLIB		MAKEROM mode
+		RTN
+
+BadMakerom	CERR	errBadMakerom	"Bad MAKEROM Source"
+
+
+**********************************************************************
+* Assemble "xTITLE <title>"		Title is optional
+**********************************************************************
+cxTITLE		?ST=0	qPASS2
+		GOYES	xtitlepass1
+xtitlepass2	GOLONG	SkipLine	* Ignore on pass2 !
+
+* xTITLE assembly when ROMID has been defined
+
+DupliTitle	CERR	errDupTitle	"Duplicate TITLE"
+
+xtitlepass1	GOSUB	CkLibMode
+		C=R2	A
+		CD1EX
+		D1=(2)	O_TITLE?
+		C=DAT1	S
+		CD1EX
+		?C#0	S
+		GOYES	DupliTitle
+		GOSUBL	Source+
+		GOSUBL	SkipWhiteIn
+		RTNC			No title after all! Fine!
+		AD1EX			->pc
+		GOSBVL	=D1=DSKTOP	Check title is done before any code
+		D1=D1+	5
+		C=DAT1	A
+		C=C+CON	A,10		->library
+		D1=A			->pc
+		A=A-C	A
+		LC(5)	10+2+3+20
+		?A#C	A
+		GOYES	BadMakerom
+		D1=D1-	10
+		D1=D1-	10+3		->title location
+
+* Output title, set the lenght bytes, set romid & links
+
+		GOSUBL	GetLine		R2[A1] = ->line end
+		C=R2
+		GOSBVL	=CSRW5
+		D=C	A		->line end
+		AD0EX
+		D0=A
+		C=C-A	A
+		CSRB.F	A		titlechars
+		A=0	A
+		A=A-1	B		#000FF
+		?C>A	A
+		GOYES	LongTitleErr
+* Main loop allocates 300 nibbles, which is enough for title
+		CD1EX
+		B=C	A		->title
+		CD1EX
+-		GOSUBL	ParseChar	Assemble title into output
+		GOC	BadTitle	Failed to parse special char!
+		DAT1=A	B
+		D1=D1+	2
+		CD0EX
+		D0=C
+		?C<D	A
+		GOYES	-		Loop until end of line
+		CD1EX
+		D1=C
+		C=C-B	A
+		CSRB.F	A		Real chars in title
+		A=B	A
+		AD1EX
+		D1=D1-	2
+		DAT1=C	B		Set len1
+		D1=A
+		DAT1=C	B		Set len2
+		D1=D1+	2
+		A=R2	A		Now set ROMID & links back
+		AD1EX
+		D1=(2)	O_TITLE?	Set title exists
+		LC(1)	1
+		DAT1=C	P
+		D1=(2)	O_ROMID
+		C=DAT1	A
+		D1=A
+		DAT1=C	X
+		D1=D1+	3
+		C=0	W		Clear 4 links
+		DAT1=C	10
+		D1=D1+	10
+		DAT1=C	10
+		D1=D1+	10
+		RTN
+
+LongTitleErr	LERR	errLongTitle	"Too Long Title"
+BadTitle	LERR	errInvTitle	"Invalid Title"
+**********************************************************************
+* Assemble "xCONFIG <label>"		Label is optional
+**********************************************************************
+cxCONFIG	GOSUB	CkLibMode
+		?ST=1	qPASS2
+		GOYES	+
+		C=R2			Check if already defined
+		CD0EX
+		D0=(2)	O_CONFIG?
+		C=DAT0	S		Read old flag
+		A=0	A		Set flag, it certainly exists now
+		A=A+1	A
+		DAT0=A	1
+		CD0EX
+		?C#0	S
+		GOYES	duplicfgerr
++		GOSUBL	NextTok?	CS if no label!
+		RTNC
+		?ST=1	qPASS2
+		GOYES	cxconfig_p2
+		GOLONG	Source+		Ignore label in pass 1
+* Pass 2. Fetch value of label, fix config link field
+cxconfig_p2	GOSUBL	SymbolValue?	A[A] = ->symbol
+		GOC	noxlaberr
+		C=0	A
+		LC(2)	3+15		Offset to config link field after title
+		GOTO	cxconf/mesg
+noxlaberr	CERR	errUndefined	"Undefined Label"
+duplicfgerr	CERR	errDupConfig	"Duplicate Config"
+duplimsgerr	CERR	errDupMesg	"Duplicate Message Table"
+
+CkLibMode	?ST=1	qLIB
+		RTNYES
+LibModeErr	CERR	errLibMode	"Not in MAKEROM Mode"
+xlabtyperr	CERR	errWantLabel	"Label Expected"
+
+**********************************************************************
+* Assemble "xMESSAGE <label>"		Label is optional
+**********************************************************************
+cxMESSAGE	GOSUB	CkLibMode
+		?ST=1	qPASS2
+		GOYES	+
+		C=R2
+		CD0EX
+		D0=(2)	O_MESSAGE?
+		C=DAT0	S		Read old flag
+		A=0	A
+		A=A+1	A		Set flag to mark exists now for sure
+		DAT0=A	1
+		?C#0	S
+		GOYES	duplimsgerr
++		GOSUBL	NextTok?	CS if no label
+		RTNC
+		?ST=1	qPASS2
+		GOYES	cxmesg_p2
+		GOLONG	Source+		Ignore label in pass 1
+* Pass 2. Fetch value of label, fix config link field
+cxmesg_p2	GOSUBL	SymbolValue?	A[A] = ->symbol
+		C=0	A
+		LC(1)	3+5		
+		GOC	noxlaberr	Not defined - error
+cxconf/mesg	RSTK=C			'offset'
+		D0=A			OK - source+ will fix this
+		A=DAT0	B
+		LC(1)	SYMB_LABEL
+		?A#C	P
+		GOYES	xlabtyperr	Error if not label
+		D0=D0+	1+1		Skip type & length (5)
+		C=DAT0	A		C[A]=pcoff
+		GOSBVL	=D0=DSKTOP
+		D0=D0+	5
+		A=DAT0	A		->buffer
+		A=A+CON	A,10		->lib
+		C=C+A	A
+		D=C	A		->target
+		D0=A			->lib
+		D0=D0+	10		Skip prolog, size
+		GOSBVL	=TRAVERSE+	Skip title
+		C=RSTK			'offset'
+		AD0EX
+		C=C+A	A		Proper link
+		D0=C
+		CDEX	A
+		C=C-D	A		offset from link position
+		DAT0=C	A		Set it
+		GOLONG	Source+		And skip the label to continue
+
+
+**********************************************************************
+* Note:	All the NAME words below assume sufficient memory exists for
+*	defining *all* related symbols / variables.
+*	(See the Ensure call at start of this file.)
+**********************************************************************
+
+**********************************************************************
+* Assemble "EXTERNAL <label>"
+**********************************************************************
+cEXTERNAL	GOSUB	CkLibMode
+		GOSUBL	NextTok		B[A]=chars-1	D0=->label
+		GOSUB	CkNameLen	Error if too long label
+		?ST=0	qPASS2
+		GOYES	cexternal_p1
+		GOLONG	Source+		Ignore on pass2
+
+cexternal_p1	D=0	A		link = 0
+		GOTO	cext_entry
+**********************************************************************
+* Assemble "NULLNAME <label>"
+**********************************************************************
+cNULLNAME	GOSUB	CkLibMode
+		GOSUBL	NextTok		B[A]=chars-1	D0=->label
+		GOSUB	CkNameLen	Error if too long label
+		?ST=0	qPASS2
+		GOYES	cnullname_p1
+		GOLONG	Source+		Ignore on pass2
+
+cnullname_p1	A=R2	A		Increment nullnames
+		AD1EX
+		D1=(2)	O_NULLNAMES
+		C=DAT1	X
+		C=C+1	X
+		DAT1=C	X
+
+		GOSBVL	=D1=DSKTOP
+		D1=D1+	5
+		C=DAT1	A
+		C=C+CON	A,10		->library
+		D1=A			->pc
+		C=A-C	A		link
+		D=C	A		link
+cext_entry	D=0	S		Not visible
+		LC(1)	SYMB_ROMP
+		GOSUBL	AddSymbol
+
+* Add propsymbol for label in D0
+PropSymbol	GOSUB	Make~LAB	A[A] = ->~label
+		CD1EX
+		RSTK=C			->pc
+		D1=A			->~label
+		D1=(2)	O_ROMID
+		C=0	W
+		C=DAT1	X
+		D=C	W		[000:LID]
+		D1=(2)	O_TEMPLAB	->~label
+		C=RSTK			->pc
+		CD1EX			->pc
+		D0=C			->~label
+		B=B+1	A		chars++
+		LC(1)	SYMB_PROP
+		GOSUBL	AddSymbol
+		B=B-1	A		chars--
+		C=R0
+		D0=C			->label
+		GOLONG	Source+
+
+* Error if too long label
+CkNameLen	C=B	A
+		C=0	P
+		?C=0	A
+		RTNYES
+		CERR	errLongName	"Too Long Name"
+
+**********************************************************************
+
+* Create ~xlabel into TEMPLAB with no length field
+Make~XLAB	LCSTR	'~x'
+		A=R2	A
+		AD1EX
+		D1=(2)	O_TEMPLAB
+		DAT1=C	A
+		D1=D1+	4
+		GONC	++
+* Create xlabel into TEMPLAB with no length field
+MakeXLAB	LCASC	'x'
+		GOTO	+
+* Create ~label into TEMPLAB with no lenght field
+Make~LAB	LCASC	'~'
++		A=R2	A
+		AD1EX
+		D1=(2)	O_TEMPLAB
+		DAT1=C	B
+		D1=D1+	2
+++		C=DAT0	W
+		DAT1=C	W
+		D0=D0+	16
+		D1=D1+	16
+		C=DAT0	W
+		DAT1=C	W
+		D0=D0-	16
+		D1=(2)	O_TEMPLAB
+		AD1EX
+		RTN
+
+**********************************************************************
+* Assemble "xNAME <label>"	Label: "xlabel"	Hash: "label"
+**********************************************************************
+cxNAME		GOSUB	CkLibMode
+		GOSUBL	NextTok		B[A]=chars-1	D0=->label
+		GOSUB	CkNameLen	Error if too long label
+		?ST=0	qPASS2
+		GOYES	cxname_p1
+* Pass 2, just output propheader
+cxname_p2	GOSUB	Make~XLAB	A[A] = ->~label
+		D0=A
+		B=B+1	A		chars++
+		B=B+1	A		chars++
+		GOSUBL	SymbolValue?	A[A] = ->type
+		B=B-1	A		chars--
+		B=B-1	A		chars--
+		D0=A
+		D0=D0+	2
+		A=DAT0	6
+		DAT1=A	6		prop
+		D1=D1+	6
+		GOLONG	Source+
+
+* Pass1, output empty prop and define all related symbols
+cxname_p1	D1=D1+	6		Skip prop
+		GOSUB	XNames++
+		AD1EX
+		GOSBVL	=D1=DSKTOP
+		D1=D1+	5
+		C=DAT1	A
+		C=C+CON	A,10		->library
+		D1=A			->pc
+		C=A-C	A		link
+		D=C	A		link
+		D=0	S
+		D=D+1	S		visible
+		GOSUB	MakeXLAB	A[A] = ->xlabel
+		D0=A
+		B=B+1	A		chars++
+		ST=1	qXNAME		xNAME
+		LC(1)	SYMB_ROMP
+		GOSUBL	AddSymbol
+		B=B-1	A		chars--
+		A=R0	A
+		D0=A			->src
+
+* Add propsymbol for label in D0. Note that this cannot be common
+* with other tokens since ~xlabel must be used
+
+PropXSymbol	GOSUB	Make~XLAB	A[A] = ->~label
+		CD1EX
+		RSTK=C			->pc
+		D1=A			->~xlabel
+		D1=(2)	O_ROMID
+		C=0	W
+		C=DAT1	X
+		D=C	W		[000:LID]
+		D1=(2)	O_TEMPLAB	->~xlabel
+		C=RSTK			->pc
+		CD1EX			->pc
+		D0=C			->~xlabel
+		B=B+1	A		chars++
+		B=B+1	A		chars++
+		LC(1)	SYMB_PROP
+		GOSUBL	AddSymbol
+		B=B-1	A		chars--
+		B=B-1	A		chars--
+		C=R0
+		D0=C			->label
+		GOLONG	Source+
+
+XNames++	A=R2	A
+		AD1EX
+		D1=(2)	O_XNAMES
+		C=DAT1	X
+		C=C+1	X
+		DAT1=C	X
+		AD1EX
+		RTN
+**********************************************************************
+* Assemble "sNAME <label> <hash>"	Label: label	Hash: hash
+**********************************************************************
+csNAME		GOSUB	CkLibMode
+		GOSUBL	NextTok		B[A]=chars-1	D0=->label
+		GOSUB	CkNameLen	Error if too long label
+* Save label location and size
+		C=R2	A
+		CD0EX
+		D0=(2)	O_TEMPLAB
+		DAT0=C	A
+		D0=D0+	5
+		A=B	A
+		DAT0=A	A
+		CD0EX
+* Handle pass1 and pass2 separately
+		?ST=0	qPASS2
+		GOYES	csname_p1
+* Pass 2, just output propheader
+csname_p2	GOSUB	Make~LAB	A[A] = ->~label
+		D0=A
+		B=B+1	A		chars++
+		GOSUBL	SymbolValue?	A[A] = ->type
+		B=B-1	A		chars--
+		D0=A
+		D0=D0+	2
+		A=DAT0	6
+		DAT1=A	6		prop
+		D1=D1+	6
+		GOSUBL	NextTok		Get hash
+		GOLONG	Source+		And skip it
+* Pass 1, output empty prop and define all related symbols
+csname_p1
+* Get hashname
+		GOSUBL	NextTok		B[A]=chars-1	D0=->hash
+		GOSUB	CkNameLen
+		D1=D1+	6		Skip prop
+		GOSUB	XNames++
+* Now copy hashname into TEMPLAB, simultaneously fetching the saved values
+		A=R2	A
+		AD1EX			A[A] = ->pc
+		D1=(2)	O_TEMPLAB
+		C=DAT1	A		->label
+		R0=C.F	A		Restore ->src after NextTok
+		D=C	A		->label
+		C=B	A
+		DAT1=C	1		chars-1 in hash
+		D1=D1+	5
+		C=DAT1	A		lablen
+		B=C	A		lablen
+		D1=D1-	4
+		C=DAT0	W
+		DAT1=C	W
+		D0=D0+	16
+		D1=D1+	16
+		C=DAT0	W
+		DAT1=C	W
+		C=D	A
+		D0=C			->label
+* Now define values for the rompsymbol
+		GOSBVL	=D1=DSKTOP
+		D1=D1+	5
+		C=DAT1	A
+		C=C+CON	A,10		->library
+		D1=A			->pc
+		C=A-C	A		link
+		D=C	A		link
+		D=0	S
+		D=D+1	S		visible
+		ST=0	qXNAME		Not xNAME
+		LC(1)	SYMB_ROMP
+		GOSUBL	AddSymbol
+		GOSUB	PropSymbol	Add propsymbol next (skips label)
+		GOSUBL	NextTokHere	Get the hash again
+		GOLONG	Source+		And skip it
+
+**********************************************************************
+* Assemble "hNAME <label>"		Label: label	Hash: null
+**********************************************************************
+chNAME		GOSUB	CkLibMode
+		GOSUBL	NextTok		B[A]=chars-1	D0=->label
+		GOSUB	CkNameLen	Error if too long label
+		?ST=0	qPASS2
+		GOYES	chname_p1
+* Pass 2, just output propheader
+chname_p2	GOTO	cxname_p2	Same code as for xNAME
+* Pass1, output empty prop and define all related symbols
+chname_p1	D1=D1+	6		Skip prop
+		GOSUB	XNames++
+		AD1EX
+		GOSBVL	=D1=DSKTOP
+		D1=D1+	5
+		C=DAT1	A
+		C=C+CON	A,10		->library
+		D1=A			->pc
+		C=A-C	A		link
+		D=C	A		link
+		D=0	S
+		D=D-1	S		visible, but no hash
+		ST=0	qXNAME		Not xNAME
+		LC(1)	SYMB_ROMP
+		GOSUBL	AddSymbol
+		GOTO	PropSymbol	Add propsymbol next
+
+**********************************************************************
+* Assemble "tNAME <label> <hash>"
+**********************************************************************
+ctNAME		GOSUB	CkLibMode
+		GOSUBL	NextTok		B[A]=chars-1	D0=->label
+		GOSUB	CkNameLen	Error if too long label
+* Save label location and size
+		C=R2	A
+		CD0EX
+		D0=(2)	O_TEMPLAB
+		DAT0=C	A
+		D0=D0+	5
+		A=B	A
+		DAT0=A	A
+		CD0EX
+* Handle pass1 and pass2 separately
+		?ST=0	qPASS2
+		GOYES	ctname_p1
+* Pass 2, just skip the hash
+		GOSUBL	NextTok		B[A]=chars-1	D0=->hash
+		GOLONG	Source+
+
+tNameErr	CERR	errInvHash	"Invalid Hash Assignment"
+
+* Pass 1, set secondary hashes exist and define the secondary hash
+ctname_p1
+* First check the romp has been declared
+		GOSUBL	SymbolValue?	A[A] = ->type
+		GOC	tNameErr	Missing declaration
+		AD0EX
+		C=DAT0	B
+		AD0EX
+		LA(1)	SYMB_ROMP
+		?A#C	P
+		GOYES	tNameErr	Invalid type
+* Now get hash
+		GOSUBL	NextTok		B[A]=chars-1	D0=->hash
+		GOSUB	CkNameLen
+* Now copy hashname into TEMPLAB, simultaneously fetching the saved values
+		A=R2	A
+		AD1EX			A[A] = ->pc
+		D1=(2)	O_HASHES?	Set hashes exist
+		LC(1)	1
+		DAT1=C	P
+* Copy the hash to TEMPLAB, including the length
+		D1=(2)	O_TEMPLAB
+		C=DAT1	A		->label
+		D=C	A		->label
+		C=B	A
+		DAT1=C	B		chars-1 in hash
+		D1=D1+	5
+		C=DAT1	A
+		B=C	A		chars-1
+		D1=D1-	4
+		C=DAT0	W
+		DAT1=C	W
+		D0=D0+	16
+		D1=D1+	16
+		C=DAT0	W
+		DAT1=C	W
+		C=D	A
+		D0=C			->label
+		D1=A			->pc
+		GOSUBL	AddHash
+		C=R0	A		->hash
+		D0=C
+		GOSUBL	NextTokHere
+		GOLONG	Source+
+
+**********************************************************************
+* Finish library assembly after pass 1 (temporary code)
+**********************************************************************
+FinishLib1
+
+* Traverse symbols, setting proper command numbers to all symbols.
+* If propsymbol is found then next one is rompsymbol
+*	rompsymbol determines visibility, and thus actual command number
+*	for both symbols.
+* If hash symbol is found then its command number is found based on its
+* label, eg by fetching the corresponding rompsymbol. Since secondary
+* hashes can be defined anywhere this has to be done in a separate pass.
+*
+* R0[A] = ->srcmed	: Free to be used
+
+		A=R2	A
+		D0=A
+		D0=(2)	O_ROMPS
+		C=DAT0	X		romps
+		?C#0	X
+		GOYES	+
+		GOTO	finlib1_fixok	No romps - no traversing needed
+
++		D0=(2)	O_XNAMES
+		A=DAT0	X
+		ASL	A
+		ASL	A
+		ASL	W		A[M] = xname index (last+1)
+		D0=(2)	O_ROMPS
+		A=DAT0	X
+		R0=A			nullname index (last+1)
+
+		A=R2	A
+		LC(5)	O_HASHEND
+		A=A+C	A
+		D0=A			->HASHEND
+		C=DAT0	A
+		D=C	A		->buffer end
+		D0=(2)	O_NEXTNODE
+		C=DAT0	A
+		D0=C			->node (last created, lowest mem)
+* Now just traverse the symbols, fixing the command numbers
+* Expect to find a propsymbol first
+--		D0=D0+	5		Skip link
+		C=DAT0	B		chars-1 in label
+		P=C	0
+		CD0EX
+		C+P+1			(chars-1)+1
+		C+P+1			2*(chars-1)+2
+		C=C+1	A		2*chars+1
+		D0=C
+		P=	0
+		A=DAT0	B		type
+		LC(1)	SYMB_PROP
+		?A=C	P
+		GOYES	fixcmdhere
+* Skip the slot as is proper for the slot
+		GOSUBL	SkipNode
+skpnodeAGAIN	?C<D	A
+		GOYES	--		Continue until end of symbols
+		GONC	finlib1_fixok	Done fixing
+* Found propsymbol. Get visible? from next rompsymbol and fix both symbols
+fixcmdhere	D0=D0+	1+1+3		Skip type & valuelen & romid
+		CD0EX
+		B=C	A		->cmdnum (prop)
+		D0=C
+		D0=D0+	3+5		Skip cmdnum, rel
+		C=DAT0	B
+		P=C	0
+		CD0EX
+		C+P+1
+		C+P+1
+		D0=C
+		P=	0
+		D0=D0+	1+1+5+3		->visible? (romp)
+		C=DAT0	S		visible?
+		D0=D0-	3		->cmdnum (romp)
+		A=R0			[xname:nullname]
+		?C=0	S		Choose counter
+		GOYES	+
+		A=A-1	M
+		R0=A
+		ASR	W
+		ASR	A
+		ASR	A		xname index
+		GONC	++
++		A=A-1	X		nullname index
+		R0=A
+++		DAT0=A	X
+		C=B	A		->cmdnum (prop)
+		CD0EX
+		DAT0=A	X
+		LA(5)	3+1+1+2*16	cmdnum, visible?,chars,hash
+		C=C+A	A
+		D0=C
+		GONC	skpnodeAGAIN	And continue loop
+finlib1_fixok
+**********************************************************************
+* Now traverse all symbols again, getting cmdnum for secondary hashes
+**********************************************************************
+		P=	0
+		A=R2	A
+		D0=A
+		D0=(2)	O_HASHES?
+		C=DAT0	S		Secondary hashes?
+		?C#0	S
+		GOYES	+		Yes - fix their command numbers
+		GOTO	finlib1_link	No - create link table then
+
++		LC(5)	O_HASHEND
+		A=A+C	A
+		D0=A			->HASHEND
+		C=DAT0	A
+		D=C	A		->buffer end
+		D0=(2)	O_NEXTNODE
+		C=DAT0	A
+		D0=C			->node (last created, lowest mem)
+* Now just traverse the symbols, expecting to find a hashsymbol to fix
+--		D0=D0+	5		Skip link
+		C=DAT0	B		chars-1 in label
+		P=C	0
+		CD0EX
+		B=C	A		->lablen
+		C+P+1			(chars-1)+1
+		C+P+1			2*(chars-1)+2
+		C=C+1	A		2*chars+1
+		D0=C
+		P=	0
+		A=DAT0	B		type
+		LC(1)	SYMB_HASH
+		?A=C	P
+		GOYES	fixhashhere
+* Skip the slot as is proper for the slot
+		GOSUBL	SkipNode
+ovrnodeAGAIN	?C<D	A
+		GOYES	--		Continue until end of symbols
+		GOTO	finlib1_link	Done fixing, do link table next
+* Found hashsymbol, fetch command number for it B[A] = ->lablen
+fixhashhere	D0=D0+	1		Skip hash type
+		A=B	A		->lablen
+		AD0EX
+		R0=A.F	A		->cmdnum (hash)
+		A=0	A
+		A=DAT0	1
+		B=A	A		chars-1
+		D0=D0+	1		->label
+		DSL	W
+		DSL	W		Save ->bufend to D[A1]
+		DSL	W
+		DSL	W
+		DSL	W
+		GOSUBL	SymbolValue?
+* Symbol is known to be defined since tNAME checks for it.
+* Was necessary so that error position could be given!
+		DSR	W
+		DSR	W		Restore ->bufend to D[A1]
+		DSR	W
+		DSR	W
+		DSR	W
+		D0=A			->type
+		D0=D0+	1+5		Skip type, address
+		A=DAT0	X		cmdnum
+		C=R0.F	A
+		D0=C			->cmdnum (hash)
+		DAT0=A	X		Fixed
+		D0=D0+	3
+		C=DAT0	B
+		P=C	0
+		CD0EX
+		C+P+1
+		C+P+1
+		C=C+1	A
+		D0=C
+		GOTO	ovrnodeAGAIN
+
+finlib1_link
+**********************************************************************
+* Command numbers fixed. Now output link table
+**********************************************************************
+		P=	0
+		A=R2
+		D0=A
+		D0=(2)	O_ROMPS		How many romps
+		C=0	A
+		C=DAT0	X		romps
+		?C#0	A
+		GOYES	+
+		GOTO	finlib1_nolink
++		A=C	A
+		A=A+A	A
+		A=A+A	A
+		C=C+A	A		5*romps
+		C=C+CON	A,10		link table total size
+		GOSUBL	Free-		Allocate
+		LA(5)	=DOHSTR
+		DAT1=A	A
+		D1=D1+	5
+		C=C-CON	A,5
+		DAT1=C	A
+		D1=D1+	5
+		C=C-CON	A,5
+		AD1EX
+		B=A	A		->slot1
+		D1=A
+		GOSBVL	=WIPEOUT	Clear all slots
+* Set linktable link in the library header
+		GOSBVL	=D0=DSKTOP
+		D0=D0+	5
+		C=DAT0	A
+		C=C+CON	A,10		->lib
+		R0=C.F	A		->lib
+		D0=C
+		D0=D0+	10
+		GOSBVL	=TRAVERSE+
+		D0=D0+	3+10		Skip to link table pointer
+		AD0EX
+		D0=A
+		C=B	A		->slot1
+		C=C-A	A
+		C=C-CON	A,10
+		DAT0=C	A		Set the link
+* And now traverse all rompsymbols to assign the links
+		A=R2	A
+		LC(5)	O_HASHEND
+		A=A+C	A
+		D0=A			->HASHEND
+		C=DAT0	A
+		D=C	A		->buffer end
+		D0=(2)	O_NEXTNODE
+		C=DAT0	A
+		D0=C			->node (last created, lowest mem)
+* Now just traverse the symbols, expecting to find a rompsymbol
+--		D0=D0+	5		Skip link
+		C=DAT0	B		chars-1 in label
+		P=C	0
+		CD0EX
+		C+P+1			(chars-1)+1
+		C+P+1			2*(chars-1)+2
+		C=C+1	A		2*chars+1
+		D0=C
+		P=	0
+		A=DAT0	B		type
+		LC(1)	SYMB_ROMP
+		?A=C	P
+		GOYES	fixlinkhere
+* Skip the slot as is proper for the slot
+		GOSUBL	SkipNode
+lnknodeAGAIN	CD0EX
+		D0=C
+		?C<D	A
+		GOYES	--		Continue until end of symbols
+		GONC	finlib1_oklink	Done fixing, do link table next
+* Found rompsymbol, fetch command number for it B[A] = ->lablen
+fixlinkhere	D0=D0+	1+5		Skip romptype, address
+		A=0	A
+		A=DAT0	X		cmdnum
+		C=A	A
+		C=C+C	A
+		C=C+C	A
+		A=A+C	A		5*cmdnum
+		A=A+B	A		->slot
+		D1=A			->slot
+		D0=D0-	5
+		C=DAT0	A		offset from ->lib
+		?C=0	A		Ignore link if no location given
+		GOYES	+
+		A=R0.F	A		->lib
+		C=C+A	A		->romp
+		AD1EX			->slot
+		D1=A
+		C=C-A	A		offset from slot
+		DAT1=C	A
++		D0=D0+	5+3+1+1
+		D0=D0+	16
+		D0=D0+	16
+		GONC	lnknodeAGAIN	Continue loop
+finlib1_oklink	C=B	A		->slot1
+		C=C-CON	A,5
+		D1=C
+		A=DAT1	A		linktable lenght
+		A=A+C	A
+		D1=A			->linktable tail
+finlib1_nolink
+**********************************************************************
+* Now output hash table
+**********************************************************************
+
+* If no xnames or hashes exist then no work
+* Else:
+*	Init forward offsets to 0
+*	Init names offset to 5
+*	Init backwards offsets (*xnames) to 0
+*	Traverse all symbols
+*	If rompsymbol found then
+*		If first one for its length then fix the forward link
+*		Insert the name into the table
+*		Fix the backward offsets
+*		Set the link into the inserted name
+*	If hashsymbol found then
+*		If first one for its length then fix the forward link
+*		Insert the name into the table
+*		Fix the backward offsets
+*	Fix table length
+*	Fix name table length
+
+		C=R2
+		D0=C
+		D0=(2)	O_XNAMES
+		C=0	A
+		C=DAT0	X
+		?C#0	A
+		GOYES	+
+		D0=(2)	O_HASHES?
+		C=DAT0	S
+		?C#0	S
+		GOYES	+
+		GOTO	finlib1_nohash	No hash table 
+* Initial room needed = 10+16*5+5+xnames*5
++		A=C	A
+		A=A+A	A
+		A=A+A	A
+		A=A+C	A		5*xnames
+		LC(5)	10+16*5+5
+		C=C+A	A		need
+		GOSUBL	Free-
+		A=C	A
+		LC(5)	=DOHSTR
+		DAT1=C	A
+		D1=D1+	10
+		CD1EX
+		R0=C.F	A		->hash table body
+		D1=C
+		C=A	A
+		C=C-CON	A,10
+		GOSBVL	=WIPEOUT	Clear all the links
+		A=R0	A		->hash table body
+		LC(5)	16*5
+		A=A+C	A
+		D1=A			->nametable length
+		C=0	A
+		C=C-1	A		FFFFF to act as stop marker
+		DAT1=C	A
+		D1=D1+	5		->backward offsets
+
+* Set hashtable link in the library header
+		GOSBVL	=D0=DSKTOP
+		D0=D0+	5
+		C=DAT0	A
+		D0=C
+		D0=D0+	10
+		D0=D0+	10		->title
+		GOSBVL	=TRAVERSE+
+		D0=D0+	3		Skip to hash table pointer
+		AD0EX
+		D0=A
+		C=R0	A		->hash table body
+		C=C-A	A
+		C=C-CON	A,10
+		DAT0=C	A		Set the link
+* Now start the scan
+		A=R2	A
+		LC(5)	O_HASHEND
+		A=A+C	A
+		D0=A			->HASHEND
+		C=DAT0	A
+		D=C	A		->buffer end
+		D0=(2)	O_NEXTNODE
+		C=DAT0	A
+		D0=C			->node (last created, lowest mem)
+* Now just traverse the symbols, expecting to find a rompsymbol/hashsymbol
+--		D0=D0+	5		Skip link
+		C=DAT0	B		chars-1 in label
+		P=C	0
+		CD0EX
+		C+P+1			(chars-1)+1
+		C+P+1			2*(chars-1)+2
+		C=C+1	A		2*chars+1
+		D0=C
+		P=	0
+		A=DAT0	B		type
+		LC(1)	SYMB_ROMP
+		?A=C	P
+		GOYES	sethash1here
+		LC(1)	SYMB_HASH
+		?A=C	P
+		GOYES	sethash2here
+* Skip the slot as is proper for the slot
+		GOSUBL	SkipNode
+nxtnodeAGAIN	CD0EX
+		D0=C
+		?C<D	A
+		GOYES	--		Continue until end of symbols
+		GONC	finlib1_hashok	Done inserting, fix lengths
+
+* Found hashsymbol, insert hash
+sethash2here	D0=D0+	1		->cmdnum
+		A=DAT0	X		cmdnum
+		D0=D0+	3		->hash
+		ST=0	qTEMP		Flag hashsymbol (skip length)
+		GOSUB	InsertHash	Insert hash at D0, A[X]=cmdnum
+		GOTO	nxtnodeAGAIN
+
+* Found rompsymbol, insert hash & set backward link
+sethash1here	D0=D0+	1+5+3		->visible?
+		C=DAT0	S
+		?C#0	S
+		GOYES	+		visible - add hash
+-		D0=D0+	1+1
+		D0=D0+	16
+		D0=D0+	16
+		GONC	nxtnodeAGAIN	Continue at next node
++		C=C+1	S		CS if hNAME
+		GOC	-		Yep - ignore hash after all
+		D0=D0-	3
+		A=DAT0	X		cmdnum
+		D0=D0+	3+1
+		ST=1	qTEMP		Flag rompsymbol (skip 16 chars)
+		GOSUB	InsertHash	Insert hash at D0, A[X]=cmdnum
+* Go and set the backward link for this command
+* A[X] = cmdnum	B[A] = ->insert point	D1 = ->backward links
+		C=0	A
+		C=A	X
+		A=C	A
+		A=A+A	A
+		A=A+A	A
+		A=A+C	A		5*cmdnum
+		CD1EX
+		A=A+C	A		->back link
+		D1=A
+		A=A-B	A		link
+		DAT1=A	A
+		D1=C
+		GOTO	nxtnodeAGAIN
+
+* Fix hash table size and nametable size
+finlib1_hashok	A=R0.F	A		->linktable
+		LC(5)	16*5
+		A=A+C	A		->nametable length
+		CD1EX
+		D1=C
+		C=C-A	A		offset to backward offsets
+		AD1EX
+		DAT1=C	A		Fix nametable length
+		D1=A
+		A=R2.F	A
+		AD1EX
+		D1=(2)	O_XNAMES
+		C=0	A
+		C=DAT1	X		xnames
+		D1=A
+		A=C	A
+		A=A+A	A
+		A=A+A	A
+		A=A+C	A		5*xnames
+		CD1EX			->backward offsets
+		C=C+A	A		->linktable end
+		A=R0.F	A
+		A=A-CON	A,5		->linktable lenght
+		D1=A
+		C=C-A	A		length
+		DAT1=C	A
+		C=C+A	A
+		D1=C			->linktable end
+finlib1_nohash
+
+**********************************************************************
+* And finally allocate CRC for the library
+**********************************************************************
+		GOSUBL	Free-4
+		C=0	A		Make sure there is no way
+		DAT1=C	4		to accidentally read DOHSTR
+		D1=D1+	4
+		GOSBVL	=D0=DSKTOP
+		D0=D0+	5
+		C=DAT0	A
+		C=C+CON	A,15		->liblength
+		D0=C
+		AD1EX
+		D1=A
+		C=C-A	A
+		C=-C	A
+		DAT0=C	A		Fix lib length
+		RTNCC
+
+**********************************************************************
+* Insert hash into hash table
+* Entry:
+*	D0    = ->hashlen, hash
+*	D1    = ->backward offsets
+*	A[X]  = cmdnum
+*	R0[A] = ->hashtable (forward offsets)
+* Exit:
+*	D0    = ->hashtail
+*	D1    = ->backward offsets (new)
+*	B[A]  = ->insert point
+*	A[X]  = cmdnum
+* Uses: A[W] B[W] C[W] D[5-15] D0 D1 P
+**********************************************************************
+InsertHash
+
+* 1) Allocate memory
+		C=0	A
+		C=DAT0	1		chars-1
+		C=C+1	A		chars
+		C=C+C	A		nibbles
+		C=C+CON	A,2+3		len,cmdnum
+		GOSUBL	Free-
+* 2) Find location of insert & fix fwd offset if necessary
+		B=A	A		B[X]=cmdnum
+		BSL	A
+		BSL	A
+		BSL	W
+		BSL	W
+		BSL	W		B[7-5]=cmdnum
+		DSL	W
+		DSL	W
+		DSL	W
+		DSL	W
+		DSL	W		D[A1]= saved D[A]
+		C=0	A
+		C=DAT0	1		chars-1
+		A=C	A
+		A=A+A	A
+		A=A+A	A
+		C=C+A	A		chars*5-5
+		A=R0.F	A		->links (fwd)
+		A=A+C	A		->fwd link
+* Now:	A[A]    = ->fwd link
+*	B[7-5]  = cmdnum
+*	D1      = ->backward links
+*	D0	= ->hashlength
+* Now we must fetch the insertion point for the current hash *and*
+* fix all the offsets for the longer hashes if non-zero
+
+* Calculate needed slot size for the fixing
+		C=0	A
+		C=DAT0	1		chars-1
+		C=C+C	A		2*(chars-1)
+		C=C+CON	A,2+2+3		Total slot size
+		D=C	A		Need
+* Get insertion point
+		AD1EX			A[A] = ->backs	D1 = ->fwdoff
+		C=DAT1	A		fwdlink
+		?C#0	A
+		GOYES	inshsh_now	Non-zero fwdlink, get it & fix
+* Found zero link. Scan forwards for a non-zero one. Zero links can be
+* skipped since they don't need fixing
+		CD1EX			Save the offset location
+		B=C	A		B[A] = ->fwdoff
+		D1=C
+-		D1=D1+	5	<-------+
+		C=DAT1	A		|
+		?C=0	A		|
+		GOYES	-	--------+	Continue until non-zero
+		C=C+1	A
+		C=C-1	A		CS if FFFFF stopper
+		GONC	inshsh_late
+* Found stopper, used ->backs as insertion point
+		C=B	A		->fwdoff
+		D1=C
+		C=A-C	A		->backs - ->fwdoff
+		DAT1=C	A		Set the fwdoff
+		C=A	A		->insert point = ->backs
+		D1=A			->backs
+		GONC	inshsh_here	And insert
+
+* Found non-zero further link, get insertion point from it and fix the
+* remaining offsets
+inshsh_late	AD1EX
+		C=C+A	A		->insert point
+		CBEX	A		B[A] = ->insert point	C[A]=->fwdoff
+		AD1EX			A[A] = ->backs
+		D1=C			D1   = ->fwdoff
+		C=C-B	A
+		C=-C	A		fwdoff to set
+		DAT1=C	A
+* Just continue, below will do unnecessary work in traversing
+* the zero links again but that is ok.
+
+
+* Found non-zero link. Use it to get insertion point, then fix remaining
+* offsets
+inshsh_now	AD1EX
+		C=C+A	A
+		B=C	A		B[A] = ->insert point
+		AD1EX			A[A] = ->backs
+-		D1=D1+	5	<-------+
+		C=DAT1	A		|	fwdoff
+		?C=0	A		|
+		GOYES	-	--------+	zero - no fixing needed
+		C=C+D	A		|	fix, CS if overflow
+		GOC	+	---+	|	CS: Found the FFFFF stopper
+		DAT1=C	A	   |	|	Write fixed fwdoff
+		GONC	-	---|----+	And continue
++		C=B	A	<--+		C[A] = ->insert point
+		D1=A				D1   = ->backs
+
+* Now:	D0   = ->hashlength
+*	D1   = ->backward offsets
+*	C[A] = ->insert point
+*	D[A] = slot size needed
+*	B[7-5] = cmdnum
+
+inshsh_here	B=C	A		->insert point
+		C=R2.F	A
+		CD1EX
+		D1=(2)	O_XNAMES
+		A=0	A
+		A=DAT1	X		xnames
+		D1=C
+		C=A	A
+		C=C+C	A
+		C=C+C	A
+		C=C+A	A		5*xnames
+		AD1EX
+		C=C+A	A		->hash table end
+		D1=C
+* Move backward links, fixing them at the same time
+--		D1=D1-	5
+		CD1EX
+		D1=C
+		?C<A	A
+		GOYES	bckmoveok
+		C=DAT1	A
+		?C=0	A
+		GOYES	++		No fix for empty links
+		AD1EX
+		C=A-C	A		->target
+		?C>=B	A		Above insertion point?
+		GOYES	+		Yes - no change
+		C=A-C	A		Old offset
+		C=C+D	A		Increment by slot size
+		AD1EX
+		GONC	++
++		C=A-C	A		Old offset	A-(A-C) = C
+		AD1EX			->slot
+++		CD1EX
+		C=C+D	A
+		CD1EX
+		DAT1=C	A
+		CD1EX
+		C=C-D	A
+		CD1EX
+		GOTO	--
+
+* Backward links moved & fixed. Now move all hashes above insertion
+* point upwards. Easy way out is just to copy nibbles up until
+* ->insert point has been reached
+
+bckmoveok	C=A	A		->backward offsets (old)
+		C=C-1	A
+		D1=C
+-		?C<B	A
+		GOYES	+
+		C=DAT1	S
+		C=C+D	A		->where to move
+		CD1EX
+		DAT1=C	S
+		C=C-1	A
+		D1=C
+		GONC	-
+
+* Now just write the hash to the insertion point
++		C=B	A		->insert point		
+		D1=C
+		C=0	A
+		C=DAT0	1		chars-1
+		D0=D0+	1		->hash
+		C=C+1	A		chars
+		DAT1=C	B
+		D1=D1+	2
+		C=C-1	A
+		P=C	0		chars-1
+		C=DAT0	WP
+		DAT1=C	WP		Copy first half
+		CD0EX
+		C+P+1
+		CD1EX
+		C+P+1
+		D0=C
+		C=DAT1	WP		Copy second half
+		DAT0=C	WP
+		CD0EX
+		C+P+1
+		CD1EX
+		C+P+1
+		D0=C
+* See if we need to skip until the end of a rompsymbol
+		?ST=0	qTEMP
+		GOYES	+		Done skipping if hashsymbol
+		C=0	A		Skip rest of fixed size slot in
+		CPEX	0		a rompsymbol
+		C=-C-1	P
+		AD0EX
+		A=A+C	A
+		A=A+C	A
+		AD0EX
++		P=	0
+* Write command number as last item of the slot
+		C=B	W
+		CSR	W
+		CSR	W
+		CSR	W
+		CSR	A
+		CSR	A
+		DAT1=C	X		command number
+* And restore things to normal
+		ACEX	A
+		C=C+D	A
+		D1=C			->backward offsets (new)
+		DSR	W		Restore old D[A]
+		DSR	W
+		DSR	W
+		DSR	W
+		DSR	W
+		RTNCC
+
+**********************************************************************
+* Finish library assembly after pass 2
+**********************************************************************
+FinishLib2
+		LC(5)	=DOHSTR
+		P=	16-2		Skip 2 tables if there are any
+-		A=DAT1	A
+		?A#C	A
+		GOYES	+
+		D1=D1+	5
+		A=DAT1	A
+		CD1EX
+		C=C+A	A
+		CD1EX
+		P=P+1
+		GONC	-
++		P=	0
+		GOSBVL	=D0=DSKTOP
+		D0=D0+	5
+		A=DAT0	A		->buf
+		D0=A
+		D0=D0+	15		->liblen
+		A=DAT0	A		liblen
+		A=A-CON	A,4
+		GOSBVL	=DoCRC
+		DAT0=A	4
+		D0=D0+	4
+		AD0EX
+		D1=A			->libend
+		RTN
+**********************************************************************

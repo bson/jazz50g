@@ -1,0 +1,131 @@
+Saturn Loader, Ver. version 3.0.8, 12/07/02
+
+
+Output Module:
+Module=extable.o
+  Start=00000 End=3876D Length=3876E   Symbols=  73 References= 142
+  Date=Thu Aug 12 19:50:24 2010   Title=
+
+
+Source modules:
+Module=_head.o
+  Start=00000 End=00032 Length=00033
+  Date=Thu Aug 12 19:50:24 2010   Title=                                        Thu Aug 12 19:50:24 2010
+
+Module=_table.o
+  Start=00033 End=00147 Length=00115
+  Date=Thu Aug 12 19:50:24 2010   Title=                                        Thu Aug 12 19:50:24 2010
+
+Module=extablefile.o
+  Start=00148 End=38706 Length=385BF
+  Date=Thu Aug 12 19:50:24 2010   Title=                                        Thu Aug 12 19:50:24 2010
+
+Module=_message.o
+  Start=38707 End=38769 Length=00063
+  Date=Thu Aug 12 19:50:24 2010   Title=                                        Thu Aug 12 19:50:24 2010
+
+Module=_end.o
+  Start=3876A End=3876D Length=00004
+  Date=Thu Aug 12 19:50:24 2010   Title=                                        Thu Aug 12 19:50:24 2010
+
+Saturn Cross Reference Listing
+
+#>HXS                            *       - 004D4
+
+?SEMI                            *       - 0051D
+
+CK1&Dispatch                     *       - 004B5 004FE 00547 0056D
+CONFIG                           * 386DF - 0002E 00143
+CompareACbBytes                  *       - 002E0 003DB
+
+D1=DSKTOP                        *       - 00760 00A04
+DO#EXIT                          *       - 004E3 0052C
+DOARRY                           *       - 38707
+DOBINT                           *       - 004D9 00522 386E4 386F3
+DOCODE                           *       - 0014F 005A0 006D8 0082D 0097C
+DOCOL                            *       - 004B0 004BF 004F9 00508 00542 00568
+                                 + 00577 0069F 006B9 00943 0095D 386DF
+DOCSTR                           *       - 007A2 00A4D 38711
+DOHSTR                           *       - 00033 00102
+DOLIB                            *       - 00000
+DOMEMERR                         *       - 00824 00ACF
+DOROMP                           *       - 004C4 00512 00551 0058B 006A9 006C3
+                                 + 0094D 00967
+
+ERRSET                           *       - 006A4 00948
+ERRTRAP                          *       - 006B4 00958
+ErrjmpC                          *       - 005E2
+
+GARBAGE                          *       - 006BE 00962
+GETPTR                           *       - 005D4 00673 0068D 00803 0081D 008BD
+                                 + 00925 00AAE 00AC8
+
+HXS>#                            *       - 0050D
+HasH102                          * 00033 - 0001F
+
+LIB102                           * 00005 -
+LinK102                          * 00102 - 00029
+
+MAKE$N                           *       - 00900
+MAKERAM$                         *       - 006EB 0098F
+MOVEDOWN                         *       - 005F3 007D0 008E2 0091E 00A7B
+Messages                         * 38707 - 00024
+
+ONE                              *       - 0057C
+
+POP#                             *       - 00839
+PORT2EOS                         = 80540 -
+Push#TLoop                       *       - 00696
+PushFLoop                        *       - 0067A 008C4
+PushTLoop                        *       - 0093A
+
+ROMID102                         = 00102 -
+ROMPTAB                          = 8611D - 005FA 006FF 0084A 009A3
+RomId                            = 00102 -
+
+SAVPTR                           *       - 005B4 006E4 00843 00988
+SEMI                             *       - 004E8 004ED 00531 00536 0055C 00596
+                                 + 0059B 006CE 006D3 00972 00977 38702
+SEVEN                            *       - 00581
+SUB$                             *       - 00586
+SYS102                           * 0001C -
+SYSEND102                        * 3876E - 00005
+Shrink$List                      *       - 007FC 00AA7
+
+TOSRRP                           *       - 386EE 386FD
+
+asmgetnear                       * 00986 -
+
+case                             *       - 004CF
+
+getadr                           * 005A0 - 00125
+getname                          * 0082D - 00134
+getnames                         * 0069F - 0012A
+getnames2                        * 006D8 - 0012F
+getnear                          * 00943 - 00139
+getnear2                         * 0097C - 0013E
+
+hxs                              *       - 00503
+
+str                              *       - 004BA 0054C 00572
+
+xGETADR                          * 004B0 - 00111
+xGETNAME                         * 004F9 - 00116
+xGETNAMES                        * 00542 - 0011B
+xGETNEAR                         * 00568 - 00120
+xnop                             * 0014F - 0010C
+
+~CONFIG                          = 0B102 -
+~getadr                          = 05102 - 004C9
+~getname                         = 08102 - 00517
+~getnames                        = 06102 - 00556
+~getnames2                       = 07102 - 006AE 006C8
+~getnear                         = 09102 - 00590
+~getnear2                        = 0A102 - 00952 0096C
+~xGETADR                         = 01102 - 004AA
+~xGETNAME                        = 02102 - 004F3
+~xGETNAMES                       = 03102 - 0053C
+~xGETNEAR                        = 04102 - 00562
+~xnop                            = 00102 - 00149
+
+/SLOAD:  End of Saturn Loader Execution

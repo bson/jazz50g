@@ -1,0 +1,519 @@
+**********************************************************************
+* Han:	further dispatch of BUSCC opcodes;
+*	on the HP48, BUSCC was ignored (?)
+*
+* See also disinstr.a ( dispatch on 81Bx )
+**********************************************************************
+* BUSCC	80BF|n|<d>|
+**********************************************************************
+* n=7	t=F	: SETFLD<d>
+* n=E	t=F	: ARMSYS
+* n=F	t=F	: ARMSAT
+**********************************************************************
+* BUSCC	80B|t|n|h...
+**********************************************************************
+* n=0	t=0,5-8	: RPL2 BEEP2 MOVEDN MOVEUP CRTMP
+*	t=A,B	: KEYDN GOSLOW
+* n=1	t=0-7	: OFF GETTIME SETTIME RESETOS AUTOTEST NATIVE? SERIAL
+* n=2	t=8-C	: HS=1 HSCREEN WSCREEN MIDAPP? BIGAPP?
+* n=3	t=0-4	: CONFIGD UNCNFGD REFRESHD SETLNED SETOFFD
+* 	t=8	: ?HST=1
+* n=5	t=0,1,6	: REMON REMOFF OUTBYT
+* n=6	t=0,1	: ACCESSSD PORTTAG?
+* n=8	t=0-A	: r=s + - * / % ~ -r < > ^
+**********************************************************************
+* 80B|t|n|h				A[0]=t	A[1]=n
+**********************************************************************
+* Han:	entry:	D0 -> t
+*	exit: 	A[0] = n; dispatch according to n
+*	 	after dispatch, C[0] = t and D0 -> h
+DItyp30_
+		P=	0			* safety
+		GOSUB	DIpass30
+		CON(3)	(DItyp30n0)-(*)
+		CON(3)	(DItyp30n1)-(*)
+		CON(3)	(DItyp30n2)-(*)
+		CON(3)	(DItyp30n3)-(*)
+		CON(3)	(DItyp30nx)-(*)		no  80B_4
+		CON(3)	(DItyp30n5)-(*)
+		CON(3)	(DItyp30n6)-(*)
+		CON(3)	(DItyp30n7)-(*)
+		CON(3)	(DItyp30n8)-(*)
+		CON(3)	(DItyp30nx)-(*)		no  80B_9
+		CON(3)	(DItyp30nx)-(*)		no  80B_A
+		CON(3)	(DItyp30nx)-(*)		no  80B_B
+		CON(3)	(DItyp30nx)-(*)		no  80B_C
+		CON(3)	(DItyp30nx)-(*)		no  80B_D
+		CON(3)	(DItyp30nE)-(*)
+		CON(3)	(DItyp30nF)-(*)		
+
+DIpass30
+		D0=D0+	1
+		C=0	A
+		C=DAT0	P		* C[0] = n
+		A=C	A
+		C=C+C	B
+		A=C+A	B               * A[B] = 3n
+		C=RSTK
+		C=C+A	A               * C[A] = tab + 3n
+		CD0EX
+		A=DAT0	3		* A.A = offset
+		CD0EX
+		A=A+C	A		* A.A = ->subroutine
+		D0=D0-	1		* D0 -> t
+		C=DAT0	A		* C[0] = t
+		D0=D0+	2		* point past n
+		PC=A			* Always CC
+
+**********************************************************************
+* BUSCC	80Bt0h...	| n=0		C[0] = t	D0 -> h
+**********************************************************************
+* t=0 RPL2	t=4 ???		t=8 CRTMP	t=C ???
+* t=1 ARM_LA5	t=5 BEEP2	t=9 ARM_BEEP	t=D ???
+* t=2 ARM_TSTF	t=6 MOVEDN	t=A KEYDN	t=E ???
+* t=3 ARM_FLSE	t=7 MOVEUP	t=B GOSLOW	t=F ???
+*
+* Notes:	ARM_LA5		#0BD67
+*		ARM_TSTF	test sys flag	example: =DoStdKeys?
+*		ARM_FLSE	=FALSE		(not added)
+*		ARM_BEEP	#017A8		(called by PUSHKEY)
+**********************************************************************
+DItyp30n0	C=C-1	P
+		GONC	dorest_n0
+		LCSTR	'RPL2'
+DIwrite4	DAT1=C	8
+		D1=D1+	8
+		RTN
+
+* Han:	ARM overwrite of LA(5) =SysNib1
+*	this is a base address for all internal system flags
+arm_la5		LCSTR	'ARM_LA5\t'	* 80824|0CE08 -> 80B10|01E08
+		DAT1=C	W		* =SysNib1 : #80EC0 (see #0BD67)
+		D1=D1+	16
+		A=DAT0	A		* try to load entry
+		C=0	A
+		LC(2)	#B0		* fix the offset
+		A=A+C	A
+		D0=D0+	5		* skip overwritten jump offset
+		GOLONG	DIgentry
+
+DIwrite5	DAT1=C	10
+		D1=D1+	10
+		RTN
+
+DIwrite8	DAT1=C	W
+		D1=D1+	16
+		RTN
+
+dorest_n0	?C=0	P
+		GOYES	arm_la5
+		P=	15-11
+		C+P+1
+		CPEX	0		* P = (t-1)+5
+
+DO80B	MACRO
++	P=P+1
+	GONC	+
+	LCSTR	'$2'	
+	GOC	DIwrite$1
+DO80B	ENDM
+
+		DO80B	6,GOSLOW	* t=B
+		DO80B	5,KEYDN		* t=A
+		DO80B	8,ARM_BEEP	* t=9	unofficial
+		DO80B	5,CRTMP		* t=8
+		DO80B	6,MOVEUP	* t=7		
+*		DO80B	6,MOVEDN	* t=6
++		P=P+1
+		GONC	+
+		LCSTR	'MOVEDN'
+DIwrite6	DAT1=C	12
+		D1=D1+	12
+		RTN		
+
+
++		P=P+1			* t=5
+		GONC	DItyp30nx
+		LCSTR	'BEEP2'
+		GOTO	DIwrite4
+
+DItyp30nx	D0=D0-	5		* reset D0
+		P=	5-1
+		GOLONG	DIfail		
+		
+
+**********************************************************************
+* BUSCC	80Bt1h...	| n=1		C[0] = t	D0 -> h
+**********************************************************************
+* t=0 OFF	t=2 SETTIME	t=4 AUTOTEST	t=6 --- (?infrared?)
+* t=1 GETTIME	t=3 RESETOS	t=5 NATIVE?	t=7 SERIAL
+**********************************************************************
+DItyp30n1	?CBIT=1	3
+		GOYES	DItyp30nx
+
+		P=	14-7
+		C+P+1			* P = t + 8
+		CPEX	0
+
+		DO80B	6,SERIAL	* t=7
++		P=P+1			* t=6
+		GOC	DItyp30nx
+		P=P+1			* t=5
+		GONC	+
+		LCSTR	'NATIVE?\t'
+		DAT1=C	W
+		D1=D1+	16
+		P=	2-1
+		GOLONG	DImemhex
++		P=P+1			* t=4
+		GONC	+
+		LCSTR	'AUTOTEST'
+		DAT1=C	W
+		D1=D1+	16
+		RTN
+		DO80B	7,RESETOS	* t=3
+		DO80B	7,SETTIME	* t=2
+		DO80B	7,GETTIME	* t=1
++		P=P+1			* t=0
+		GONC	+
+		LCSTR	'OFF'
+		DAT1=C	6
+		D1=D1+	6
+		RTN
++		GOTO	DItyp30nx	* P=0 implicit in DItyp30nx
+DIwrite7	DAT1=C	14
+		D1=D1+	14
+		RTN
+**********************************************************************
+* BUSCC	80Bt2h...	| n=2		C[0] = t	D0 -> h
+**********************************************************************
+* t=8 -> HS=1	fs	h=	XM:1, SB:2, SR:4, MP:8, HS:otherwise
+* t>9			t=	HSCREEN:9, WSCREEN: A, MIDAPP?:B, BIGAPP?:C
+*		unofficial	ON_KEYS:D, >KEYTIM:F
+**********************************************************************
+DItyp30n2	A=C	P
+		LC(1)	8
+		?A>C	P
+		GOYES	+
+
+		GOTO	dit30hst	* A[0] = t
+
+* Han:	could be smaller/faster using disptach with P=t
+* disassemble case where 9 <= t <= F
++		C=A	P
+		P=C	0
+		P=P+1
+		GONC	+
+ 		LCSTR	'>KEYTIM'
+-		GOC	DIwrite7
++		P=P+1
+		GOC	dihstfail
++		P=P+1
+		GONC	+
+		LCSTR	'ON_KEYS'
+		GOC	-
++		P=P+1
+		GONC	+
+		LCSTR	'BIGAPP?'
+		GOC	-
++		P=P+1
+		GONC	+
+		LCSTR	'MIDAPP?'
+		GOC	-
++		P=P+1
+		GONC	+
+		LCSTR	'WSCREEN'
+		GOC	-
++		P=P+1
+		GONC	dihstfail
+		LCSTR	'HSCREEN'
+		GOC	-
+
+dihstfail	D0=D0-	5		* wrong opcode; reset D0
+		P=	5-1
+		GOLONG	DIfail
+
+
+dit30hstmask	A=DAT0	1		* A[0] = h (fs)
+		LC(1)	1		* check if XM of HST
+		?C#A	P		* not XM?
+		GOYES	+
+		LCSTR	'XM'
+		GONC	++
++		C=C+C	P
+		?C#A	P		* not SB?
+		GOYES	+
+		LCSTR	'SB'
+		GONC	++
++		C=C+C	P
+		?C#A	P		* not SR?
+		GOYES	+
+		LCSTR	'SR'
+		GONC	++
++		C=C+C	P
+		?C#A	P		* not MP?
+		RTNYES
+		LCSTR	'MP'
+++		DAT1=C	4
+		D1=D1+	4
+		LCSTR	'=1'
+		DAT1=C	4
+		D1=D1+	4
+		D0=D0+	1
+		RTNCC
+
+dit30hst	?A#C	P		* C[0] = 8
+		GOYES	dihstfail
+		GOSUB	dit30hstmask	* check special HST
+		RTNNC
+
+* Han:	Ok, do regular HS as:	'HS=1 fs'
+dit30hstfs
+		LCSTR	'HS=1\t'
+		DAT1=C	10
+		D1=D1+	10
+		A=DAT0	P
+		D0=D0+	1		* h part of opcode; fix D0
+		GOLONG	DInib0-15
+
+**********************************************************************
+* BUSCC	80Bt3h...	| n=3		C[0] = t	D0 -> h
+**********************************************************************
+* t=0-4			t=	CONFIGD:0 UNCNFGD:1 REFRESHD:2
+*				SETLNED:3 SETOFFD:4
+* t=8 -> ?HS=1	fs	h=0-15
+**********************************************************************
+DItyp30n3	A=C	P
+		LC(1)	8
+		?C#A	P		* ?HS=1 fs branch?
+		GOYES	dit30no?hst
+		GOSUBL	DIbranch
+		GOSUB	dit30hstmask
+		RTNNC
+		GOC	dit30hstfs
+
+* Han:	may be smaller/faster if we use dispatch with P=t
+dit30no?hst	LC(1)	5
+		?A>C	P
+		GOYES	di?hstfail
+
+		C=A	P
+		P=	14-4
+		C+P+1
+		CPEX	0
+
+		P=P+1
+		GONC	+
+		LCSTR	'SETOFFD'
+		GOC	++
++		P=P+1
+		GONC	+
+		LCSTR	'SETLNED'
+		GOC	++
++		P=P+1
+		GONC	+
+		LCSTR	'REFRESHD'
+		DAT1=C	W
+		D1=D1+	16
+		RTN
+
+di?hstfail	D0=D0-	5
+		P=	5-1
+		GOLONG	DIfail
+
++		P=P+1
+		GONC	+
+		LCSTR	'UNCNFGD'
+		GOC	++
++		P=P+1
+		GONC	di?hstfail
+		LCSTR	'CONFIGD'
+++		DAT1=C	14
+		D1=D1+	14
+		RTN
+
+**********************************************************************
+* BUSCC	80Bt5h...	| n=5		C[0] = t	D0 -> h
+**********************************************************************
+* t=0 REMON	t=1 REMOFF	t=6 OUTBYT
+**********************************************************************
+DItyp30n5
+		C=C-1	P
+		GONC	+
+		LCSTR	'REMON'
+		DAT1=C	10
+		D1=D1+	10
+		RTN
++		C=C-1	P
+		GONC	+
+		LCSTR	'REMOFF'
+-		DAT1=C	12
+		D1=D1+	12
+		RTN
++		A=C	P
+		LC(1)	4		* 6-2 = 4
+		?A=C	P
+		GOYES	+
+--		GOTO	di?hstfail
++		LCSTR	'OUTBYT'
+		GOC	-
+		
+**********************************************************************
+* BUSCC	80Bt6h...	| n=6		C[0] = t	D0 -> h
+**********************************************************************
+* t=0 ACCESSSD		t=1 PORTTAG?
+**********************************************************************
+DItyp30n6
+		C=C-1	P
+		GONC	+
+		LCSTR	'ACCESSSD'
+		GOC	++
++		C=C-1	P
+		GONC	--		* borrow exit from DItyp30n5
+		LCSTR	'PORTTAG?'
+++		DAT1=C	W
+		D1=D1+	16
+		RTN
+		
+**********************************************************************
+* BUSCC	80Bt7h...	| n=7		C[0] = t	D0 -> h
+**********************************************************************
+* t=F	h=1-7 becomes 8-F
+**********************************************************************
+DItyp30n7	C=C+1	P
+*		GOC	+
+*		GOTO	di?hstfail	* borrow an exit
+		GONC	--
++		A=DAT0	P
+		?ABIT=1	3
+		GOYES	+
+		D0=D0-	5
+		P=	6-1
+		GOLONG	DIfail
++		LCSTR	'SETFLD'
+		DAT1=C	12
+		D1=D1+	12
+		D0=D0+	1		* update D0 -> past h
+		LC(1)	7
+		A=A-C	P
+*		P=	7-7
+		GOLONG	DInib0-15
+
+**********************************************************************
+* BUSCC	80BtEh...	| n=14		C[0] = t	D0 -> h
+**********************************************************************
+* t=F
+**********************************************************************
+DItyp30nE
+		C=C+1	P
+		GONC	+
+		LCSTR	'ARMSYS'
+--		DAT1=C	12
+		D1=D1+	12
+		RTN
+* Just use exit from DItyp30nF
+*+		GOTO	di?hstfail	* borrow another exit
+
+**********************************************************************
+* BUSCC	80BtFh...	| n=15		C[0] = t	D0 -> h
+**********************************************************************
+* t=F
+**********************************************************************
+DItyp30nF
+		C=C+1	P
+		GONC	+
+		LCSTR	'ARMSAT'
+		GOC	--		* borrow an exit
++		GOTO	di?hstfail	* borrow another exit
+		
+**********************************************************************
+* BUSCC	80Bt8hf...	| n=8		C[0] = t	D0 -> h
+**********************************************************************
+* unary operators	t=0,6,7
+*
+* r = A, B, C, D according to lower 2 bits of h
+* s = A, B, C, D depending on upper 2 bits of h
+* f = field selector (fs)
+*
+* t determines which type of operation
+* 0 (copy)	4 r=r/s fs	8 r=r<s fs
+* 1 r=r+s fs	5 r=r%s fs	9 r=r>s fs
+* 2 r=r-s fs	6 r=~s  fs	A r=r^s fs
+* 3 r=r*s fs    7 r=-s
+**********************************************************************
+DItyp30n8	B=C	P		* B[0] = t
+		A=DAT0	P		* A[0] = h
+		GOSUBL	DIabcd
+		GOSUBL	DIchr=
+		?B=0	P
+		GOYES	+		-->-----+
+		LC(1)	6			|
+		?C=B	P			|
+		GOYES	+		-->-----+
+		C=C+1	P			|
+		?C=B	P			|
+		GOYES	+          	-->-----+
+		GOSUBL	DIabcd			|
++		C=B	P		<-------+
+		P=	14-10
+		C+P+1
+		CPEX	0
+
+* Han:	math operation based on carry
+DOMOP	MACRO
++		P=P+1
+		GONC	+
+		LCASC	'$1'
+		GOC	++
+DOMOP	ENDM
+
+		DOMOP	^
+		DOMOP	>
+		DOMOP	<
+		DOMOP	-
+		DOMOP	-		* ~ (output as -s-1)
+		DOMOP	%
+		DOMOP	/
+		DOMOP	*
+		DOMOP	-
++		P=P+1
+		GONC	+
+		LCASC	'+'
+++		DAT1=C	B
+		D1=D1+	2
++		P=	0
+		GOSUB	DIs=abcd
+		A=B	P
+		LC(1)	6
+		?C#A	P		* did we have ~ operator?
+		GOYES	+
+		LCSTR	'-1'
+		DAT1=C	4
+		D1=D1+	4
++		LCASC	'\t'
+		DAT1=C	B
+		D1=D1+	2
+
+		D0=D0+	1
+		C=DAT0	P		* C[0] = f
+		D0=D0+	1
+		B=C	P
+		GOLONG	DIflda
+
+DIs=abcd	LC(2)	#41		* 'A' = #41
+		?ABIT=0	3		* AB or CD?
+		GOYES	+
+		C=C+1	P
+
+		?ABIT=0	2		* C or D?
+		GOYES	++		
+		C=C+1	P
+
++		?ABIT=0	2		* A or B?
+		GOYES	+
+++		C=C+1	P
+
++		DAT1=C	B
+		D1=D1+	2
+		RTN
+

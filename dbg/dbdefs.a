@@ -1,0 +1,220 @@
+**********************************************************************
+*		DBpar Definitions
+**********************************************************************
+
+DBMAGIC		EQU #77575558
+
+*DBADDRGX	EQU #806A0	\ 32 free nibbles follow
+*DBADDRSX	EQU #70520	/
+
+* This is where we save the call into DB; we also save table data
+* here, too (->rtab, ->dtab, and ->cfgaddr)
+DBADDRGX	EQU #80900	Han: let's try TopicVar31
+
+
+* Load DBpar address to register
+DADDR	MACRO	$label,$reg
+  IFSTREQ	'A'$2'
+	 C=R4.F	A
+  ELSE
+	 A=R4.F	A
+  ENDIF
+
+x IFSTREQ	'A'$2'
+	LA(5)	$1
+	A=A+C	A
+x ELSE
+y  IFSTREQ	'C'$2'
+	LC(5)	$1
+	C=C+A	A
+y  ELSE
+	$2=(5)	$1
+	C$2EX
+	C=C+A	A
+	C$2EX
+y  ENDIF
+x ENDIF	
+DADDR	ENDM
+
+**********************************************************************
+
+* This is where R4[A] points
+
+		ABASE	0
+DBBUF		ALLOC	0
+
+* Debugger flags
+
+gSERVER?	EQU 0	#01
+gECHO?		EQU 1	#02
+gASCII?		EQU 2	#04
+gDUMP1?		EQU 3	#08
+gLOCKS?		EQU 4	#10
+gTABS?		EQU 5	#20
+gCYCLES?	EQU 6	#40	Toggle opcode/cycles display
+gTEXT?		EQU 7	#80
+
+* Bit			Description
+*
+* gSERVER?		Server mode off/on; copy of user flag 32
+* gECHO?		Server echo off/on; copy of user flag 33
+*			Ignored if not in server mode
+* gASCII?		Hex/ASCII output
+* gDUMP1?		Shifts dumps by 1 nybble
+* gLOCKS?		No automatic shifts between text and pict
+* gTABS?		Enable RPL.TAB & DIS.TAB
+* gTEXT?		Text is the current screen
+
+* gOPTMASK is a mask of flags that are accessible as [CST] toggles.
+
+gOPTMASK	EQU #04!#08!#10!#20!#40	* ascii,dump1,locks,tabs,cycles
+
+gFLAGS		ALLOC	2		* Flag bits
+
+* Saturn registers. The PC is within 16 nybbles of DBBUF, so are the
+* carry flag and P registers.
+
+REG_CRY		ALLOC	1		* Carry bit
+REG_P		ALLOC	1		* P
+REG_PC		ALLOC	5		* PC
+REG_A		ALLOC	16		* A
+REG_B		ALLOC	16		* B
+REG_C		ALLOC	16		* C
+REG_D		ALLOC	16		* D
+REG_R0		ALLOC	16		* R0
+REG_R1		ALLOC	16		* R1
+REG_R2		ALLOC	16		* R2
+REG_R3		ALLOC	16		* R3
+REG_R4		ALLOC	16		* R4
+REG_D0		ALLOC	5		* D0
+REG_D1		ALLOC	5		* D1
+REG_ST		ALLOC	3		* ST (only 3 nibbles saved)
+REG_HST		ALLOC	1		* HST (SB only)
+REG_MODE	ALLOC	1		* HEX (0) or DEC (1) mode
+REG_RSTK	ALLOC	8*5		* Return stack
+
+cyc_size	EQU 8
+gTOT_CYCLES	ALLOC	cyc_size	* Total cycles since the start * ZZZ
+gCUR_CYCLES	ALLOC	cyc_size	* Current cycles counter * ZZZ
+
+gSAVER0_R3	ALLOC	4*5		* For saving R0-R3
+gOWN_RSTK	ALLOC	6*5		* For saving our own return stack
+
+* Other variables
+
+gFONT1		ALLOC	5		* Small font grob address
+gFONT2		ALLOC	5		* Medium font grob address
+gRTAB		ALLOC	5		* RPL.TAB
+gDTAB		ALLOC	5		* DIS.TAB
+
+* Han:	added for entries lib
+gCFGADR		ALLOC	5		* addr to config RPL.TAB lib
+
+gMARK		ALLOC	5		* Mark address
+gFONTSIZE	ALLOC	1		* Clear if small font
+gSCREEN		ALLOC	1		* Screen number
+g4SBSCREEN	ALLOC	1		* Screen 4 subscreen number
+g4CONREL	ALLOC	2		* Screen 4 con/rel format
+g4D0D1		ALLOC	1		* Screen 4 D0/D1 format
+g4D0orSTK	ALLOC	1		* Screen 4 D0/STK format
+
+inbufsize	EQU	128
+gOUTBUF		ALLOC	2*inbufsize	* 128-character i/o line buffer
+
+gSYSREGS	ALLOC	4*5	* The HP48 system registers
+gDISADDR	ALLOC	5	* Disassembler address (PC of instruction)
+
+** Instruction buffers
+
+gINSTR		ALLOC	2*64	* 64-char buffer for current instruction
+
+* Do not change the order of the following
+
+gICYCLES	ALLOC	3	* Cycles the instr takes
+gISIZE		ALLOC	2	* Size of current instruction
+gINEXT		ALLOC	5	* Address of next instruction
+gIST		ALLOC	2	* Emulator bits for the current instruction
+
+iexec_size	EQU	256
+gIEXEC		ALLOC	iexec_size	* Instruction execution buffer
+
+* Eight-slot breakpoint table
+
+db_bpt		ALLOC	8*(5+7+2)
+	
+* Ten-slot watchpoint table
+
+gWATCHTABLE	ALLOC	10*5
+
+* ARG data
+
+gARG?		ALLOC	1		* Address prefix presence flag
+gARG		ALLOC	5		* Address prefix
+
+* Single-step data
+
+* The single step bits are used as follows:
+
+sSTEPDEEP	EQU 1			* Deep (1) or shallow (0) step
+sSTEPARG	EQU 2			* ARG present
+sSTEPDISP	EQU 3			* Display during ARG
+
+gSTEPST		ALLOC	3		* Single-step status bits
+
+* DB stack, used for saving random 5-nybble data
+
+SPSIZE		EQU 2			* Stack pointer size
+gSTACKPTR	ALLOC	SPSIZE		* Positive offset of stack pointer
+
+DBSTACKSIZE	EQU	24*5
+gSTACK		ALLOC	DBSTACKSIZE	* 24-level stack
+
+* Reader data
+
+gREADCHARS	ALLOC	5		* Number of chars in buffer
+gREADDELIM	ALLOC	2		* End-of-line delimiter (usually CR)
+
+* End of data
+
+REGSWAPSIZE	EQU	(gSAVER0_R3)-(REG_CRY)
+gSWAPMEM	ALLOC	REGSWAPSIZE
+
+DBBUFSIZE	ALLOC	0
+
+** Offsets for IEXEC catch code (inside the catch buffer!)
+
+		ABASE	0
+SREG_D0		ALLOC	5		* Saved D0
+SREG_CRY	ALLOC	1		* Saved Carry
+SREG_C		ALLOC	8		* Saved C.8
+SREG_A		ALLOC	8		* Saved A.8
+SREG_D		ALLOC	5		* Saved D[A]
+SREG_R4		ALLOC	5		* Saved R4[A]
+SREG_P		ALLOC	1		* Saved P
+SREG_MODE	ALLOC	1		* Saved DEC[1]/HEX[0] mode
+SREG_HST	ALLOC	1		* Saved HST [SB only. rest clear] (*)
+
+** Breakpoint slot offsets
+
+		ABASE	0
+gBPTADDR	ALLOC	5		* Breakpoint address
+gBPTOPCODE	ALLOC	7		* Breakpoint opcode
+gBPTCOUNT	ALLOC	2		* Breakpoint counter
+BPTSIZE		ALLOC	0
+
+** Watchpoint offsets
+
+** Not currently used. Instead, only a table of addresses is used.
+
+		ABASE	0
+gWATCHADDR	ALLOC	5		* Watchpoint address
+gWATCHPREV	ALLOC	5		* Previous contents
+gWATCHMASK	ALLOC	5		* Mask
+gWATCHTAG	ALLOC	5		* Pattern to look for
+WATCHSIZE	ALLOC	0
+
+watchent MACRO
+	BSS	4*5
+watchent ENDM
+
+**********************************************************************

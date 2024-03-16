@@ -1,0 +1,365 @@
+**********************************************************************
+*		JAZZ	- Read code for xDB
+**********************************************************************
+
+**
+** Read line. Editing characters are recognized: ^U and ^X deletes the
+** line, ^H and ^? deletes a character, ^R rewrites the line, and ^W
+** deletes a word (NYI). A delimiter terminates the input. The buffer
+** is NUL-terminated, and so (buffer_size-1) characters will be read,
+** maximum. The end-of-line delimiter is not included in the buffer.
+** ^Gs are emitted if the buffer is full.
+**
+** In:
+**	D1	= Address of input buffer
+**	A.A	= Size of input buffer
+**	C.A	= Address of ASCIZ prompt string (0 if none)
+**	R0.B	= End-of-line delimiter (usually CR)
+**	ST:2	= Enable parity
+**	ST:3	= Enable echo/edit
+**	ST:4	= LF-to-CRLF conversion off/on
+**
+** Out:
+**	D1	= Address of next char in buffer (set to NUL)
+**	C.A	= Number of characters read
+**
+** Used:
+**	R0,R1	= Used by write routines
+**	R2.A	= Free counter - 1
+**	R3.A	= Current buffer address
+**
+
+* A.A = gREADCHARS
+
+GetReadChars
+	DADDR	gREADCHARS,D0
+	A=DAT0	A
+	RTNCC
+
+* gREADCHARS = A[A]
+
+SetReadChars
+	C=A	A
+	DADDR	gREADCHARS,D0
+	ACEX	A
+	DAT0=A	A
+	RTNCC
+
+* A[B] = gREADDELIM
+
+GetReadDelim
+	DADDR	gREADDELIM,D0
+	A=DAT0	B
+	RTNCC
+
+* gREADDELIM = A[B]
+
+SetReadDelim
+	C=A	A
+	DADDR	gREADDELIM,D0
+	ACEX	A
+	DAT0=A	B
+	RTNCC
+
+ReadLine
+	?A=0	A
+	RTNYES			Null buffer - ignore
+	A=A-1	A
+	R2=A			R2[A] = buffer size - 1
+	RSTK=C			Save prompt address on RSTK
+	AD1EX
+	R3=A			R3[A] = Current buffer address
+
+	A=0	A
+	GOSUB	SetReadChars	Reset read counter
+	A=R0.F	B
+	GOSUB	SetReadDelim	Set up delimiter
+	ST=1	4		Enable autoCr on LF
+
+* Echo prompt and buffer, and continue reading
+
+read_reread
+	?ST=0	3
+	GOYES	ReadChar	Skip update if no echo
+
+	C=RSTK
+	RSTK=C			C[A] = prompt string addr
+	A=C	A		A[A] = ->prompt
+	GOSUB	WriteAsciz	Write prompt
+
+	GOSUB	GetReadChars	A[A] = character count
+	C=A	A		C[A] = character count
+	A=R3			A[A] = current buffer address
+
+	A=A-C	A
+	A=A-C	A		A[A] = start of buffer
+	GOSUB	WriteAscic	Write buffer
+
+* Read next character
+
+ReadChar
+*	GOSBVL	=POPUART	A[B] = next character
+	GOSUB	POPUART
+	GOC	ReadChar	Buffer empty - continue
+	?A=0	B
+	GOYES	ReadChar	Ignore BREAK/NUL
+
+	?ST=0	2
+	GOYES	+		No parity - skip check
+	B=A	B		Save char in B[B]
+*	GOSBVL	=do_parity	Add parity to A[B]
+	GOSUBL	do_parity
+	?A=B	B
+	GOYES	+		Check OK - continue
+	LAASC	'?'		No OK - substitute with ?
++	ABIT=0	7
+	R0=A			R0[B] = character
+
+	GOSUB	GetReadDelim	A[B] = delimiter
+	C=A	B		C[B] = delimiter
+	A=R0.F	B		A[B] = character
+	?A#C	B
+	GOYES	++		Not end-of-line - continue
+
+	?ST=0	3
+	GOYES	+		No new line if no echo
+	GOSUB	WriteCRLF	New line
++	C=R3
+	D1=C			D1 = buffer address
+	C=0	B
+	DAT1=C	B		NUL terminate
+	C=RSTK			Pop off prompt address
+	GOSUB	GetReadChars
+	C=A	A		C[A] = characters read
+	RTNCC			Return
+
+++	C=A	B
+	D=C	B		D[B] = character code
+	ADDR	ReadKeyTable,C	C[A] = ->key switch table
+	D1=C			D1 = ->key swicth table
+
+-	C=DAT1	B		C[B] = character code
+	D1=D1+	2		Advance to offset
+	?C=D	B
+	GOYES	+		Match - dispatch
+	D1=D1+	3		No match - loop
+	?C#0	B
+	GOYES	-
+	GONC	++		Not in table - self insert
++	C=0	A
+	C=DAT1	X		C[A] = offset
+	AD1EX
+	C=C+A	A		C[A] = address
+	PC=C			Dispatch
+
+* Key was not in table, insert it
+
+++	LCASC	' '		Make control codes "?"
+	?D>=C	B
+	GOYES	read_ins_char
+	LCASC	'?'
+	D=C	B
+
+* Insert key regardless of code
+
+read_ins_char
+	C=R3
+	D1=C			D1 = ->buffer address
+	C=R2			C[A] = free counter
+	C=C-1	A
+	GONC	+		Still space left
+	LC(2)	#7		No - ring bell and continue
+	GOC	++
++	R2=C
+	GOSUB	GetReadChars
+	A=A+1	A		Increment character counter
+	GOSUB	SetReadChars
+	C=D	B
+	DAT1=C	B		Add character to buffer
+	D1=D1+	2		Advance buffer pointer t next char
+	AD1EX
+	R3=A			R3[A] = buffer address
+
+++	?ST=0	3
+	GOYES	+		Don't echo if echo disabled
+	GOSUB	WriteC		Echo character in C[B]
++	GOTO	ReadChar	Read next char
+
+
+* Han:	POPUART from HP48 ROM
+POPUART
+	D1=(5)	=uart_buf_end
+	A=DAT1	A
+	?A=0	B
+	RTNYES
+	A=A+1	M
+	A=A-1	B
+	DAT1=A	A
+	A=A-1	M
+	ASR	A
+	ASR	A
+	ASR	A
+	A=A+A	A
+	D1=(4)	=uart_buffer
+	CD1EX
+	C=C+A	A
+	CD1EX
+	A=DAT1	B
+	RTNCC	
+
+
+** Control code switch table. Each entry consists of a byte and a
+** 3-nybble forward offset.
+
+RKENT	MACRO
+	CON(2)	$1
+	CON(3)	($2)-(*)
+RKENT	ENDM
+
+ReadKeyTable
+	RKENT	'U'-#40,ReadKill
+	RKENT	'X'-#40,ReadKill
+	RKENT	'H'-#40,ReadErase
+	RKENT	127,ReadErase
+	RKENT	'R'-#40,ReadRewrite
+	RKENT	'W'-#40,ReadDelWord
+	RKENT	'M'-#40,ReadNewline
+	CON(2)	0
+
+** Erase word.
+** We first erase all blank and LFs before the point, after which we 
+** erase everything up to a blank/LF
+
+ReadDelWord
+	ST=0	7
+	GOSUB	eras10			Erase blanks
+	ST=1	7
+	GOSUB	eras10			Erase letters
+	GOTO	ReadChar		Continue reading
+
+** Erase phase. If ST:7 = 1, we erase letters, otherwise blanks.
+** Returns with carry set if out of chars, otherwise clear
+
+eras10	GOSUB	GetReadChars		A[A] = character count
+	?A=0	A
+	RTNYES				Nothing left to erase
+	C=R3				C[A] = current buffer address
+	D0=C
+	D0=D0-	2			D0 = ->last char in buffer
+	A=DAT0	B			A[B] = last char
+
+	LCASC	' '
+	?ST=1	7			Deterime type of test
+	GOYES	+
+	?C<A	B
+	GOYES	eras40			Non blank, end of phase
+	GONC	++			Continue
++	?C>=A	B
+	GOYES	eras40			Non-letter, end of phase
+++	GOSUB	ReadEraseChr		Erase char
+	GOTO	eras10			Keep erasing
+eras40	RTNCC
+
+** New line.
+** Add an LF to the buffer and echo CR-LF.
+
+ReadNewline
+	?ST=0	3
+	GOYES	+			Don't echo CR LF if echo is disabled
+	GOSUB	WriteCR
++	LCASC	'\n'
+	D=C	B			D[B] = LF
+	GOTO	read_ins_char		Insert D[B] (LF)
+
+WriteCR
+	LC(2)	13
+	GOTO	WriteC
+
+** Rewrite line
+
+ReadRewrite
+	?ST=0	3
+	GOYES	+			Just continue if no echo
+	LCASC	'R'			Echo ^R
+	GOSUB	WriteCircum
+	GOSUB	WriteCRLF		New line
++	GOTO	read_reread		Echo buffer and continue
+
+** Write ^ then character in C[B]
+
+WriteCircum
+	RSTK=C				Save character
+	LCASC	'^'			Initial circumflex
+	GOSUB	WriteC
+	C=RSTK				Restore character
+	GOTO	WriteC			Write it
+
+** Kill line
+
+ReadKill
+	GOSUB	GetReadChars		A[A] = character counter
+	C=A	A			C[A] = character counter
+	?C=0	A
+	GOYES	rkil30			Nothing in buffer - ignore
+	A=R3				A[A] = buffer address
+	C=C+C	A			Char count to byte offset
+	A=A-C	A			Move pointer to beginning of buffer
+	CSRB.F	A			Back to character counter
+	R3=A				R3[A] = start of buffer
+
+	A=R2				A[A] = characters free
+	A=A+C	A			Add character count to free count
+	R2=A
+	?ST=0	3			Don't erase on screen if no echo
+	GOYES	+
+-	RSTK=C				Save counter
+	GOSUB	WriteBSPCB
+	C=RSTK				Restore counter
+	C=C-1	A
+	?C#0	A
+	GOYES	-			Loop
+
++	A=0	A			Clean character counter
+	GOSUB	SetReadChars
+
+rkil30	GOTO	ReadChar		Continue reading
+
+** Write BS-SPC-BS sequence to erase character
+
+WriteBSPCB
+	GOSUB	WriteBS			BS
+	GOSUB	WriteSPC		SPC
+	GOTO	WriteBS			BS
+
+WriteBS
+	LC(2)	8
+	GOTO	WriteC
+
+WriteSPC
+	LCASC	' '
+	GOTO	WriteC
+
+* Erase single character
+
+ReadErase
+	GOSUB	ReadEraseChr
+	GOTO	ReadChar		Continue reading characters
+
+ReadEraseChr
+	GOSUB	GetReadChars		A[A] = character counter
+	A=A-1	A			One char less in buffer
+	RTNC				Was zero - ignore
+	GOSUB	SetReadChars		Update character counter
+
+	C=R2				C[A] = free counter
+	C=C+1	A
+	R2=C				Increment chars free
+	C=R3				Buffer pointer
+	C=C-1	A
+	C=C-1	A			Back to previou character
+	R3=C
+	?ST=0	3			Continue if no echo
+	RTNYES
+	GOTO	WriteBSPCB		Erase character on screen
+
+**********************************************************************

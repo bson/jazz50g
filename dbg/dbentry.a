@@ -1,0 +1,240 @@
+**********************************************************************
+*		JAZZ	- Entry code for xDB
+**********************************************************************
+
+**********************************************************************
+**
+** Main debugger. Takes one of the following stack configurations:
+**	
+**	ADDR:		True:		False:		CODE
+**	9: #
+**	8: #pc						8: code
+**	7: #2		7: #3		7: #4		7: #1
+**
+**	Common bottom stack:
+**	
+**	6: FontGrob
+**	5: rtab?
+**	4: rtab
+**	3: dtab
+**	2: dtab?
+**	1: #flags
+**
+** Where `flags' is the mode of operation:
+**
+**	#0	Local, display
+**	#1	Serial (echo on)
+**	#3	Protocol (echo off)
+**
+**********************************************************************
+
+* Set next thread to Terminator
+
+*	GOSUBL	GetTerminator		C[A] = ->Terminator
+*	CD0EX				D0 = ->clean-up code object
+*	R0=C				R0 = original D0
+
+* Then set up R4[A] to point to data block and IEXEC for catching state.
+
+	CD0EX
+	RSTK=C				Push D0
+	CD1EX
+	RSTK=C				Push D1
+
+	GOSUBL	FindDBPAR		Setup R4[A] to point to data
+	GOSUBL	EraseDBPAR		Clear data area
+
+	DADDR	gIEXEC,C		C[A] = ->iexec
+	D1=C				D1 = ->iexec
+	R1=C				R1 = ->iexec
+
+	GOSUBL	CatchThis		Add catch code to IEXEC
+	ADDR	Catcher,C		Cont. addr after state has been saved
+	GOSUBL	CatchMe			Add 'GOTO Catcher' to IEXEC
+
+	C=RSTK
+	D1=C				Pop D1
+	C=RSTK
+	D0=C				Pop D0
+	C=R1
+	RSTK=C				Push ->iexec so we can start with RTN
+
+* Get tabs from RAM placed by DBHOOK
+
+	CD1EX				save D1 in C[A]
+	D1=(5)	(DBADDRGX)-10
+	A=DAT1	A			dtab
+	GOSBVL	=ASLW5
+	D1=D1+	5
+	A=DAT1	A			rtab
+	GOSBVL	=ASLW5
+        CD1EX				restore D1
+
+* Get first three arguments from stack
+
+	GOSBVL	=POP#			A[A] = flags
+	ABIT=0	gASCII?			Not in ASCII mode
+	R3=A	W			R3[W] = flags | rtab | dtab
+
+*	A=DAT1	A			Pop Font6x8
+*	D1=D1+	5
+*	D=D+1	A
+*	LC(5)	10+#20*16		Offset to char #20
+
+* get cfg addr for entry lib
+	CD1EX				save D1 in C[A]
+	D1=(5)	(DBADDRGX)-15
+	A=DAT1	A
+	GOSBVL	=ASLW5
+
+	D1=(5)	(=SystemFont)+5+5+4	point to font name length
+	A=DAT1	B
+	A=A+1	A
+	A=A+1	A
+	A=A+A	A			A[A] = 2 + font name len + 2
+	CD1EX				restore D1, C[A] -> fontname len
+	A=A+C	A
+	LC(5)	#20*16			offset to char #20
+	A=A+C	A
+	GOSBVL	=ASLW5
+
+*	A=DAT1	A			Pop Font4x6
+*	D1=D1+	5
+*	D=D+1	A
+*	LC(5)	10+#1F*6		Offset to char #1F
+	LC(5)	(=MINI_FONT)+#1F*6
+	A=C	A
+	R2=A	W			R2[W] = fnt1 fnt2 cfgadr
+
+	GOSBVL	=POP#			A[A] = mode (1-4)
+	LC(1)	#4			4: False (ignore)
+	?A#C	P
+	GOYES	+
+*	C=R0				C[A] = original D0
+*	D0=C				D0 = original D0
+	GOVLNG	=Loop
+
++	C=C-1	P
+	?A=C	P
+	GOYES	++			3: In-line code
+
+	C=C-1	P
+	?A=C	P
+	GOYES	+			2: #addr
+
+* Argument is code object
+
+	A=DAT1	A			A[A] = ->codeob
+	D1=D1+	5
+	D=D+1	A
+	A=A+CON	A,10			Skip prolog and size
+	R1=A				DB PC = code object
+	RTN
+
+* Retrieve DB PC and DB A from RPL stack
+
++	GOSBVL	=POP#			A[A] = DB PC
+	R1=A				R1 = DB PC
+	GOVLNG	=POP#			A[A] = DB A, transfer to iexec
+
+* Retrieve CODE object following MLDB call
+
+++	C=B	A			C[A] = RPL stack ptr
+	CD0EX				D0 = RPL stack ptr, C[A] = ->termcode
+	D0=D0-	5
+	A=DAT0	A			A[A] = ->code
+	CD0EX				D0 = ->termcode, C[A] = RPL stack ptr
+	RSTK=C				Push RPL stack ptr
+	AD0EX				A[A] = ->termcode, D0 = ->code
+	C=A	A
+	RSTK=C				Push ->termcode
+	A=DAT0	A			A[A] = type
+	LC(5)	=DOCODE
+	?A=C	A
+	GOYES	+			Assert CODE object
+	D0=(5)	10			Zero lastrom-word
+	GOSBVL	=SAVEWORD
+	C=RSTK
+	D0=C				->termcode
+*	C=R0
+*	D0=C				D0 = original D0
+	GOVLNG	=SetTypeErr		(=SETTYPEERR)+5
+
+* Was code object
+* At this point: D0=->code RSTK0=->termcode RSTK1=->SP
+
++	D0=D0+	5			D0 = ->code size
+	AD0EX
+	D0=A				A[A] = ->code size
+	C=DAT0	A			C[A] = code size
+	A=A+C	A			A[A] = ->token after CODE
+
+	D0=D0+	5			D0 = ->instr
+	CD0EX				C[A] = ->sintr
+	R1=C				R1[A] = ->instr (DB PC)
+
+	C=RSTK
+	D0=C				D0 = ->termcode
+	AD0EX				A[A] = ->termcode D0 = ->tokne after
+	C=RSTK				C[A] = RPL stack ptr
+	CD0EX				C[A] = ->token after D0 = RPL stack
+
+	DAT0=C	A			Set RL return to token after code
+	D0=A				D0 = ->termcode
+	A=R1				A[A] = ->instr (for DB A)
+	RTN				Transfer to iexec
+
+* At this point we have just returned from iexec
+
+Catcher
+	GOSUBL	Recollect		Collect saturn state and save
+	GOSUB	Trigger:		Load registers back
+
+	GOSUBL	SavPtr			Save system regs (with original D0)
+
+	GOSUBL	GetFlags		D0 = ->gFLAGS
+	A=R3				A[A] = flags
+	ABIT=1	gTEXT?			Flag text display
+	DAT0=A	B			Set gFLAGS
+
+	GOSUB	GetData			D0 = ->DBBUF
+
+	AD0EX
+	LC(5)	(gFONT1)-(DBBUF)
+	A=A+C	A
+	D0=A				D0 = ->gFONT1
+	A=R2	W			fnt1 fnt2
+
+	DAT0=A	A			Save ->fnt1
+	GOSBVL	=ASRW5
+	D0=D0+	(gFONT2)-(gFONT1)
+	DAT0=A	A			Save ->fnt2
+	
+	GOSBVL	=ASRW5
+	D0=D0+	(gCFGADR)-(gFONT2)
+	DAT0=A	A			save cfg address
+	D0=D0-	(gCFGADR)-(gFONT2)
+	
+	A=R3	W			flags | rtab | dtab
+	GOSBVL	=ASRW5
+	D0=D0+	(gRTAB)-(gFONT2)
+	DAT0=A	A			Save ->rtab
+	GOSBVL	=ASRW5
+	D0=D0+	(gDTAB)-(gRTAB)
+	DAT0=A	A			Save ->dtab
+
+	C=R1				C[A] = address
+	GOSUBL	SetPC			Set DB PC
+
+	ST=1	1			Return via RET
+	GOSUBL	DbgDisp1		Set display format to screen 1
+	GOTO	DbgMainEntry		Go debug
+
+* Load registers and transfer to return address
+
+Trigger:
+	C=RSTK
+	A=C	A
+	GOLONG	Trigger			Load saturn state, transfer to A[A]
+
+**********************************************************************

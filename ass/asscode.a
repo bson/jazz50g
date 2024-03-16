@@ -1,0 +1,5101 @@
+**********************************************************************
+*		Machine Language Assembler
+**********************************************************************
+
+**********************************************************************
+* Assemble source line
+* Entry:
+* R0	->line
+* R1	->srcloc	->srcend
+* R2	->status	->lineend
+* R3	->tab		->bankconfig
+* R4	->free
+* D0	->line
+* D1	->pc
+**********************************************************************
+
+
+**********************************************************************
+
+WhatLine?
+
+* 1st ensure room for a label & a big mnemonic (NIBASC)
+* 1 + 2*16 + 2 + 1 + 80 = 116
+		LC(5)	200
+		GOSUBL	Ensure
+
+* Try getting label from start of line
+
+		GOSUBL	ThisTokLen	B[A] = toklen, FFFFF if empty
+		B=B+1	A
+		GOC	NotCol1		Nothing in column1
+		B=B-1	A
+* Got something in column 1
+		GOSUB	?Commented	Comment line?
+		GOSUB	?Delimiter	"ENDCODE" / "RPL" / ...
+		GOSUB	?Pseudo		EQU, = etc ?
+		GOSUB	Label?		Add label, advance past it
+
+* Now try getting an opcode
+
+NotCol1		GOSUBL	NextTokHere?
+		GONC	AssMnemonic
+		GOLONG	SourceLine+	No mnemonic to assemble
+AssMnemonic
+
+* First some special cases..
+		GOSUB	?Goyes		Check if needed..
+		GOSUB	?Delimiter	Try Delim again..
+		GOSUB	?Macro		Attempt a macro
+		GOLONG	Mnemonic	Must be a normal opcode then..
+
+**********************************************************************
+* This special entry first sets up lineend variable so that only the
+* current token is shown in the error
+**********************************************************************
+CheckThisSymbol	?ST=1	qPASS2		Already done in pass1
+		RTNYES
+		CD0EX
+		D0=C
+		C=C+B	A
+		C=C+B	A
+		C=C+1	A
+		C=C+1	A		->token end
+		GOSBVL	=CSLW5
+		C=R2.F	A
+		R2=C	W
+
+**********************************************************************
+* Error if symbol is reserved RPL token or entry in RPL.TAB
+* For hptools.s removing the tests reduces execution time by 10% !
+**********************************************************************
+CheckSymbol	?ST=1	qPASS2		Already done in pass1
+		RTNYES
+		GOSUBL	CtrlWord?
+		GONC	ckserrCtrl
+		GOSUBL	Entry?
+		RTNC
+ckserrExtern	LERR	errExternal	"Label Already External"
+ckserrCtrl	LERR	errReserved	"Label Reserved"
+
+CheckReserved	?ST=1	qPASS2		Already done in pass1
+		RTNYES
+		GOSUBL	CtrlWord?
+		RTNC
+		GONC	ckserrCtrl
+
+**********************************************************************
+* Check if assembly line is a comment line
+* If so then skips the line and returns to AssCode loop
+**********************************************************************
+?Commented	A=DAT0	B
+		LCASC	'*'
+		?A#C	B
+		RTNYES			Not comment line - return
+		C=RSTK			Pop return address
+		GOLONG	SourceLine+
+
+**********************************************************************
+* Check if special token needing label, like "=", "EQU"
+* Input: R1[A] = srcloc
+* since Expression uses it
+**********************************************************************
+?Pseudo		GOSUBL	Source+		Skip label
+		C=B	A		Save lablen
+		RSTK=C
+		GOSUBL	NextTokHere?	D0 = ->token B[A] = toklen
+		GONC	pseudo_maybe
+
+pseudo_fail	P=	0
+		C=R1	A		get srcloc to ->src
+		D0=C
+		R0=C	A		set srcmed to srcloc
+		C=RSTK			Restore lablen
+		B=C	A
+		RTN
+
+* Check if token is pseudo-class
+
+PSEU_=		EQU 0
+PSEU_EQU	EQU 1
+PSEU_ALLOC	EQU 2
+PSEU_MACRO	EQU 3		unused value
+PSEU_MICRO	EQU 4		unused value
+PSEU_ENDM	EQU 5		unused value
+PSEU_REG	EQU 6		unused value
+
+pseudo_maybe	A=DAT0	W		Read in the token already
+		C=A	W		High nibbles the same
+		C=B	A
+		CPEX	0
+		?C#0	A
+		GOYES	pseudo_fail
+		?P=	5-1
+		GOYES	pseudo_5
+		?P=	4-1
+		GOYES	pseudo_4
+		?P=	3-1
+		GOYES	pseudo_3
+		?P=	2-1
+		GOYES	pseudo_fail
+
+* 1-char mnemonic:	{ = }
+		P=	0
+		LCASC	'='
+		?A#C	B
+		GOYES	pseudo_fail
+		P=	PSEU_=
+		GOTO	ass_equate
+
+* 4-char mnemonic:	{ ENDM }
+
+pseudo_4	P=	0
+		LCSTR	'ENDM'
+		?A#C	W
+		GOYES	pseudo_fail
+		LERR	errMissMacro	"MACRO Missing"
+
+* 3-char mnemonic:	{ EQU REG }
+
+pseudo_3	P=	0
+		LCSTR	'EQU'
+		?A=C	W
+		GOYES	+
+		LCSTR	'REG'
+		?A#C	W
+		GOYES	pseudo_fail
+		GOTO	ass_reg
++		P=	PSEU_EQU
+		GOC	ass_equate
+
+* 5-char mnemonic:	{ ALLOC MACRO MICRO }
+
+pseudo_5	P=	0
+		LCSTR	'ALLOC'
+		?A=C	W
+		GOYES	++
+		LCSTR	'MACRO'
+		?A#C	W
+		GOYES	+
+		GOTO	ass_macro
++		LCSTR	'MI'		'MICRO'
+		?A#C	W
+		GOYES	+
+		GOTO	ass_micro
++		GOTO	pseudo_fail
+++		P=	PSEU_ALLOC
+
+**********************************************************************
+* Handle equate type pseudo mnemonic: = EQU ALLOC
+**********************************************************************
+
+ass_equate	C=P	15
+		P=	0
+		R1=C.F	S		Save pseudo type
+		C=RSTK
+		A=C	A		lablen
+		C=RSTK			Pop return address
+		C=A	A
+		RSTK=C			lablen
+
+* Now parse following expression
+* R1[A] = srcloc = ->label
+* RSTK = lablen
+
+		GOSUBL	Source+		Skip opcode
+		GOSUBL	Expression	D[W] = value
+		GONC	+		Must be resolvable on pass1
+		LERR	errExpr		"Unresolved Expression"
+
++		R0=C			Save value to R0
+		C=R1.F	A
+		D0=C			D0 = ->label
+		C=RSTK
+		B=C	A		B[A] = lablen
+
+* Check label validity
+
+		A=DAT0	B
+		LCASC	'='
+		?A=C	B
+		GOYES	+		Remove it
+		LCASC	':'
+		?A#C	B
+		GOYES	++
++		D0=D0+	2
+		B=B-1	A
+		GONC	++
+		GOTO	LabLen0Err	"Empty Label"
+++		C=0	A
+		LC(1)	15
+		?B<=C	A
+		GOYES	+
+		GOTO	LabLenErr	"Too Long Label"
++
+* Now dispatch on pseudo type
+*	R0   = value
+*	D0   = ->label	B[A] = lablen
+
+		C=R1.F	S
+		P=C	15
+		?P=	PSEU_ALLOC
+		GOYES	ass_alloc
+		?P=	PSEU_=
+		GOYES	ass_=
+		GOTO	ass_EQU
+
+* label ALLOC expr	==> label = abase ; abase += expr
+
+ass_alloc	P=	0
+		?ST=1	qPASS2
+		GOYES	alloc_done	Ignore ALLOC on pass 2
+		GOSUB	CheckSymbol	Error if reserved
+		A=R2	A		Set value = abase
+		AD1EX
+		D1=(2)	O_ABASE
+		C=DAT1	A
+		D1=A
+* alloc symb are 16nibs value -> we should clear the highest nibbles
+		D=0	W
+		D=C	A		abase
+		LC(1)	SYMB_EQU
+		GOSUBL	AddSymbol
+		A=R2	A
+		AD1EX
+		D1=(2)	O_ABASE
+		C=DAT1	A		abase
+		AR0EX.F	A		expr
+		C=C+A	A
+		DAT1=C	A		abase++
+		AR0EX.F	A
+		D1=A
+alloc_done	GOLONG	SourceLine+	Done
+
+* label = expr
+
+ass_=		P=	0
+		GOSUB	CheckReserved	Error if reserved
+		?ST=1	qPASS2		Already checked in pass1
+		GOYES	+
+		GOSUBL	Entry?		Check if same value
+		GONC	ass_oldEQU
++		C=R0
+		D=C	W		expr
+		LC(1)	SYMB_=
+		GOSUBL	AddSymbol
+		GOLONG	SourceLine+
+* label EQU expr
+
+ass_EQU		P=	0
+		GOSUB	CheckReserved	Error if reserved
+		?ST=1	qPASS2		Already checked in pass1
+		GOYES	+
+		GOSUBL	Entry?		Check if same value
+		GONC	ass_oldEQU
++		C=R0
+		D=C	W		expr
+		LC(1)	SYMB_EQU
+		GOSUBL	AddSymbol
+-		GOLONG	SourceLine+
+ass_oldEQU	C=0	W
+		C=A	A		extended addr
+		A=R0			expr
+		?A=C	W
+		GOYES	-		Same value is ok
+		GOTO	ckserrExtern	"Label Already External"
+
+**********************************************************************
+* Define macro
+**********************************************************************
+
+errnoendm	LERR	errMissEndm	"ENDM Missing"
+erremptymac	LERR	errEmptyMac	"Empty Macro"
+
+
+*	<label> MICRO <definition>
+
+ass_micro	C=RSTK
+		A=C	A		lablen
+		C=RSTK			Pop return address
+		C=A	A
+		RSTK=C			lablen
+		D0=D0+	10		Skip 'MICRO'
+		CD0EX
+		D0=C
+		GOSBVL	=CSLW5
+		R0=C			[00000]	->nextline
+		GOSUBL	SkipLine	D0 points to newline
+		GOTO	SetMacro
+
+* Note how in above D0 points to newline but in the ENDM code
+* D0 points to the start of ENDM line. This way both can exit
+* by using SkipLine (which aborts immediately for MICRO)
+
+
+*	<label>	MACRO
+*		<definition>
+*	<label>	ENDM
+
+ass_macro	C=RSTK
+		A=C	A		lablen
+		C=RSTK			Pop return address
+		C=A	A
+		RSTK=C			lablen
+		GOSUBL	SkipLine	Skip to next line (CS if none)
+		GOC	errnoendm
+		CD0EX
+		D0=C
+		GOSBVL	=CSLW5
+		CD0EX
+		D0=C
+		R0=C
+
+* Now:
+*	D0    =	->nextline
+*	R0[A] = ->srcmed (line after MACRO)
+*	R0[A1]= ->macro (..)
+*	R1[A] = ->srcloc (->label)
+*	RSTK  =	lablen
+
+		GOSUBL	EndToD		D[A] = ->srcend
+ScanEndmLoop
+		GOSUBL	AtEnd?		CS if end
+		GOC	errnoendm	Error if so
+		GOSUBL	ThisTokLen	B[A] = toklen, FFFFF = none
+		B=B+1	A
+		GOC	+		No label
+		GOSUBL	Source+		Skip label
++		GOSUBL	NextTokHere?	Search next token on the line
+		GONC	+		Test for ENDM
+		D0=D0+	2		No tokens - skip newline
+		GONC	ScanEndmLoop	And continue
+-		GOSUBL	SkipLine
+		D0=D0+	2		Skip \n too
+		GONC	ScanEndmLoop
+
++		C=0	A
+		LC(1)	4-1
+		?B#C	A
+		GOYES	-
+		A=DAT0	8
+		C=A	W
+		LCSTR	'ENDM'
+		?A#C	W
+		GOYES	-
+
+* Found ENDM, scan back until newline to extract properly
+		LCASC	'\n'
+-		A=DAT0	B
+		D0=D0-	2
+		?A#C	B
+		GOYES	-
+		D0=D0+	4		->endm line
+
+* Now D0 contains the end address for the define.
+* Setup the call to defining the macro
+
+SetMacro	C=R0
+		D=C	W		D[A1] = ->macro
+		GOSBVL	=CSRW5
+		AD0EX
+		C=A-C	A
+		D=C	A		nibbles in macro
+		AR1EX.F	A		R1[A] = ->srcloc (->macroend)
+		D0=A			->label
+		C=RSTK
+		B=C	A		lablen
+		D=0	S		No substitutions for now..
+
+* Must not forget to to check the label length
+		C=0	A
+		LC(1)	8
+		?B>C	A
+		GOYES	macronameerr
+
+		?ST=1	qPASS2		Ignore if pass2
+		GOYES	+
+		LC(1)	SYMB_MACRO
+		GOSUBL	AddSymbol
++		A=R1
+		D0=A			->endm line
+		GOLONG	SkipLine	Done
+
+macronameerr	GOTO	LabLenErr	"Too Long Label"
+
+**********************************************************************
+* Define scratch register macros:
+*	<label>	REG	<Rn>
+*	==>
+*		A=<label>	<label>=A
+*		C=<label>	<label>=C
+**********************************************************************
+
+ass_regbad	GOLONG	InvRegComb
+
+
+* D0    = ->"REG"
+* R0[A]	= ->srcmed  (eg ->"REG")
+* 
+
+ass_reg		C=RSTK
+		A=C	A		lablen
+		C=RSTK			pop return address
+		C=0	A		Check name length
+		LC(1)	6-1
+		?B>C	A
+		GOYES	macronameerr
+		C=A	A
+		RSTK=C			lablen
+
+		D0=D0+	6		Skip 'REG'
+		GOSUBL	NextArg		Errors if none given
+		C=0	A
+		LC(1)	2-1		Must be 2 chars
+		?B#C	A
+		GOYES	ass_regbad
+		A=DAT0	A
+		LCASC	'R'
+		?A#C	B
+		GOYES	ass_regbad
+		ASR	A
+		ASR	A
+		LCASC	'4'
+		?A>C	B
+		GOYES	ass_regbad
+		LC(1)	'0'
+		C=A-C	B		A[0] = 0-4 for Rn
+		GOC	ass_regbad
+		D=C	A		D[0] = 0-4
+
+* Now start defining the macros	
+		A=R1
+		D0=A			->label
+		C=RSTK
+		B=C	A		lablen
+
+* One more check - cannot allow A-D as the label
+
+		?B#0	P
+		GOYES	+
+		A=DAT0	B
+		LCASC	'A'
+		?A<C	B
+		GOYES	+
+		LCASC	'D'
+		?A<=C	B
+		GOYES	ass_regbad
++
+
+* Ignore macro definition in 2nd pass
+
+		?ST=0	qPASS2
+		GOYES	+
+		GOLONG	SourceLine+	No need to do again
+
+* Create D[W] argument only once
+
++		A=DAT0	12		label is max 6 chars
+		C=R2
+		D0=C
+		D0=(2)	O_TEMPLAB
+		DAT0=A	12
+
+		LC(2)	(O_TEMPLAB)+2*8	->macro 'line'
+		GOSBVL	=CSLW5
+		C=0	S		Always non-expandable
+		CDEX	W
+		R1=C.F	A		R1[0] = 0-4 for Rn
+
+		B=B+1	A		+ 2 chars for Rn and '='
+		B=B+1	A
+
+* Define <label>=A
+
+		CD0EX			Skip label
+		C=C+B	A
+		C=C+B	A
+		CD0EX
+		D0=D0-	2
+		LCSTR	'=A'
+		DAT0=C	A
+		D0=(2)	(O_TEMPLAB)+2*8
+		LCSTR	'\tR0=A'
+		DAT0=C	10
+		D0=D0+	4
+		A=R1
+		DAT0=A	1		'Rn'
+		D0=(2)	O_TEMPLAB
+		C=0	A
+		LC(1)	2*5		5 chars
+		D=C	A
+		LC(1)	SYMB_MACRO
+		GOSUBL	AddSymbol
+
+* Define <label>=C
+
+		CD0EX			Skip label
+		C=C+B	A		
+		C=C+B	A
+		CD0EX
+		LCSTR	'C'
+		DAT0=C	B
+		D0=(2)	(O_TEMPLAB)+2*8+2*4
+		DAT0=C	B
+		D0=(2)	O_TEMPLAB
+		C=0	A
+		LC(1)	2*5		5 chars
+		D=C	A
+		LC(1)	SYMB_MACRO
+		GOSUBL	AddSymbol
+
+* Define A=<label>
+		A=DAT0	12		max 6 chars
+		LCSTR	'A='
+		DAT0=C	A
+		D0=D0+	4
+		DAT0=A	12
+		D0=(2)	(O_TEMPLAB)+2*8+2
+		LCSTR	'A=R0'
+		DAT0=C	8
+		D0=D0+	6
+		A=R1
+		DAT0=A	1		'Rn'
+		D0=(2)	O_TEMPLAB
+		C=0	A
+		LC(1)	2*5		5 chars
+		D=C	A
+		LC(1)	SYMB_MACRO
+		GOSUBL	AddSymbol
+
+* Define C=<label>
+		LCSTR	'C'
+		DAT0=C	B
+		D0=(2)	(O_TEMPLAB)+2*8+2
+		DAT0=C	B
+		D0=(2)	O_TEMPLAB
+		C=0	A
+		LC(1)	2*5		5 chars
+		D=C	A
+		LC(1)	SYMB_MACRO
+		GOSUBL	AddSymbol
+
+		GOLONG	SourceLine+
+
+**********************************************************************
+* Assemble token as a macro
+**********************************************************************
+
+wrongmacro	LERR	errInvUse	"Invalid use of Symbol"
+macrooverflow	LERR	errFlowDef	"DEFINE Depth Overflow"
+
+?Macro
+
+* Speedup by testing for O_MACROS
+
+		A=R2
+		LC(5)	O_MACROS
+		A=A+C	A
+		AD0EX
+		C=DAT0	B
+		D0=A
+		?C=0	P
+		RTNYES			No macros defined - no need to test
+
+		GOSUBL	SymbolValue?	Macro (Label/Symbol/Defined)
+		RTNC			No such symbol
+		C=RSTK			Pop return stack
+
+* Now A[A] = ->type field. Check the type is ok.
+
+		CD1EX
+		D=C	A		->pc
+
+		D1=A			->type
+		A=DAT1	B
+		LC(1)	SYMB_MACRO
+		?A#C	P
+		GOYES	wrongmacro	Not macro - error
+		D1=D1+	1		->macroflag
+
+* Increase & Check include depth
+
+		C=R2
+		CD0EX
+		D0=(2)	O_INCL_DEPTH
+		A=DAT0	A
+		A=A+1	A		incl_depth++
+		DAT0=A	A
+		CD0EX
+		LC(5)	INCLMAX
+		?A>=C	A
+		GOYES	macrooverflow
+
+* Now either expand macro or simply include it
+
+domacro		A=DAT1	B
+		D1=D1+	1		->macro
+		?A#0	P
+		GOYES	domacro+	Do macro with expansion
+
+* Do regular macro just like a defined string
+
+		GOSUBL	SourceLine+	No arguments expected
+		AD0EX
+		R0=A			->srcmed for continuing
+		C=D	A
+		CD1EX			D1 = ->pc
+		R3=C.F	A		->macro
+		GOLONG	IncludeExit
+
+* Do expansion macro
+
+domacro+	LERR	errImplement
+
+**********************************************************************
+* Assemble token as label
+**********************************************************************
+Label?
+
+* Check if label starts with a label type indicator
+
+		A=DAT0	B
+		LCSTR	'='
+		?A=C	B
+		GOYES	labskp1
+		LCSTR	':'
+		?A#C	B
+		GOYES	SetLabel
+labskp1		D0=D0+	2
+		B=B-1	A
+		GONC	SetLabel	Label still non-null
+LabLen0Err	LERR	errEmpLab	"Empty Label"
+LabLenErr	LERR	errLongLabel	* "Too Long Label"
+
+* Common entry for "LABEL <label>" and ml labels
+SetLabel	C=0	A
+		LC(1)	15
+		?B>C	A
+		GOYES	LabLenErr	"Too Long Label"
+
+* If PASS2 then skip the reserved test
+
+		?ST=1	qPASS2		We really don't need to check this
+		GOYES	+		if the label value changes, the size
+		GOSUB	CheckSymbol	Check if reserved
+		AD1EX			Now define PC OFFSET as value for label
+		GOSBVL	=D1=DSKTOP
+		D1=D1+	5
+		C=DAT1	A
+		D1=A
+		C=A-C	A
+		C=C-CON	A,10		PC OFF
+		D=0	W
+		D=C	A
+		LC(1)	SYMB_LABEL
+		GOSUBL	AddSymbol
+* Continue by skipping to the next token
++		GOSUBL	CheckGenerator	Do generator increment if needed
+		GOLONG	Source+		Skip label
+
+**********************************************************************
+* Assemble GOYES/RTNYES
+* If qBRANCH is on then error if neither is found
+* Else error if either is found
+* Else return
+**********************************************************************
+?Goyes		C=0	A
+		LC(1)	5-1
+		?B=C	A
+		GOYES	maybeGOYES
+		LC(1)	6-1
+		?B=C	A
+		GOYES	maybeRTNYES
+* Check if we should have gotten either one
+NeedBrErr?	?ST=0	qBRANCH
+		RTNYES
+		LERR	errWantGoyes	"GOYES Expected"
+NeedBrErr	LERR	errWantGoyes	* "GOYES Expected"
+BrNotNowErr	LERR	errDontGo	* "GOYES Without Test"
+
+maybeRTNYES	A=DAT0	12
+		C=A	W
+		LCSTR	'RTNYES'
+		?A#C	W
+		GOYES	NeedBrErr?
+		?ST=0	qBRANCH
+		GOYES	BrNotNowErr	Didn't need it!
+		C=RSTK			Pop return address
+		ST=0	qBRANCH		No more branch
+		C=0	B		Write 00 & continue
+		GOLONG	SourceLine+2
+
+maybeGOYES	A=DAT0	10
+		C=A	W
+		LCSTR	'GOYES'
+		?A#C	W
+		GOYES	NeedBrErr?
+		?ST=0	qBRANCH
+		GOYES	BrNotNowErr	Didn't want GOYES!
+		C=RSTK			Pop return address
+		D0=D0+	10
+		GOSUBL	LabelHere	Next as label
+		GOC	PassGoyes	Ignore this time, sNEEDPASS2 is set
+		P=	2-1
+		GOSUBL	CheckOff	Check offset fits in 2 nibbles
+		DAT1=A	B
+PassGoyes	D1=D1+	2
+		ST=0	qBRANCH
+		GOLONG	SourceLine+		
+
+**********************************************************************
+* Assemble special words that or can start start in column 1
+* "RPL"			* Errors if ENDCODE expected
+* "CODE"		* Errors always
+* "ENDCODE"		* Errors if ENDCODE not expected
+* "ASSEMBLE"		* Ok always, just ignored
+**********************************************************************
+?Delimiter	C=0	A
+		LC(1)	3-1
+		?B=C	A
+		GOYES	maybeRPL
+		LC(1)	4-1
+		?B=C	A
+		GOYES	maybeCODE
+		LC(1)	7-1
+		?B=C	A
+		GOYES	maybeENDCODE
+		LC(1)	8-1
+		?B#C	A
+		RTNYES
+
+** "ASSEMBLE" ?
+
+maybeASSEMBLE	A=DAT0	16
+		LCSTR	'ASSEMBLE'
+		?A#C	W
+		RTNYES
+*		ST=1	qASSEMBLE	Already set
+		GONC	IsDelim
+
+** "RPL" ?
+
+maybeRPL	A=DAT0	6
+		C=A	W
+		LCSTR	'RPL'
+		?A#C	W
+		RTNYES
+		?ST=1	qCODE
+		GOYES	DelimRplErr
+		ST=0	qASSEMBLE
+IsDelim		C=RSTK			Pop return stack address
+		GOSUB	NeedBrErr?
+		GOLONG	SourceLine+	Advance line
+DelimRplErr	GOLONG	ImplemErr	"Not Implemented"
+
+** "CODE" ?
+
+maybeCODE	A=DAT0	8
+		C=A	W
+		LCSTR	'CODE'
+		?A#C	W
+		RTNYES
+		GOSUB	NeedBrErr?
+		GOTO	DelimRplErr
+
+** "ENDCODE" ?
+
+DelimECodeErr	LERR	errDontEndcode	* "ENDCODE Not Expected"
+
+maybeENDCODE	A=DAT0	14
+		C=A	W
+		LCSTR	'ENDCODE'
+		?A#C	W
+		RTNYES
+		GOSUB	NeedBrErr?
+		C=RSTK			Pop return address
+		?ST=0	qCODE
+		GOYES	DelimECodeErr
+
+* Add label for ENDCODE to symbol buffer
+
+		?ST=0	qPASS2		Don't add if 2nd pass
+		GOYES	+
+		GOTO	IgnCodFix	Also ignores backward fix
+
+* Now create label for pass2 purposes
+
++		GOSBVL	=D0=DSKTOP
+		D0=D0+	5
+		A=DAT0	A		->$buffer
+		A=A+CON	A,10
+		CD1EX
+		D1=C
+		C=C-A	A		PC OFFSET
+		D=C	A		value
+		A=R2
+		D0=A
+		D0=(2)	O_CODELAB	Create label from codelab
+		A=DAT0	A
+		ASL	W
+		ASL	W
+		A=A+1	W		CODELAB special ID!
+		D0=(2)	O_TEMPLAB
+		DAT0=A	6
+		C=0	A
+		LC(1)	3-1		3 chars
+		B=C	A
+		LC(1)	SYMB_CODELAB
+		GOSUBL	AddSymbol
+* Now if sNEEDPASS2 is not set go back and fix the code size field
+		?ST=1	qNEEDPASS2
+		GOYES	IgnCodFix
+
+* Fetch pcoff for last code size field from status buffer
+* D0 free to go since SourceLine+ doesn't use it
+
+		GOSBVL	=D0=DSKTOP
+		D0=D0+	5
+		A=DAT0	A		->$buffer
+		A=A+CON	A,10		->pc0
+		C=R2
+		D0=C
+		D0=(2)	O_CODEADDR
+		C=DAT0	A		C[A] = pcoff
+		A=A+C	A		A[A] = ->codesize
+		D0=A			D0 = ->codesize
+		CD1EX			C[A] = ->pc
+		D1=C
+		C=C-A	A		C[A] = codesize
+		DAT0=C	A		* Fix codesize
+
+IgnCodFix	ST=0	qCODE		No more code
+		ST=0	qASSEMBLE	No more machine language
+		GOLONG	SourceLine+	Advance line
+
+
+**********************************************************************
+* Assemble possible mnemonic. If not recognized then error since
+* all other possibilities have been checked already.
+* Input:	D0   = ->opcode
+*		B[A] = toklen
+* Note:		Code assumes there is enough memory for LA(16)
+*		NIBHEX, NIBASC etc have to check memory though
+*
+*		Added check for new opcodes of length 8
+*		REFRESHD, AUTOTEST, ACCESSSD, PORTTAG?		Han
+**********************************************************************
+oprefreshd	GOSUBL	SourceLine:5
+		REFRESHD
+opautotest	GOSUBL	SourceLine:5
+		AUTOTEST
+opaccesssd	GOSUBL	SourceLine:5
+		ACCESSSD
+opporttag?	GOSUBL	SourceLine:5
+		PORTTAG?
+
+CheckLen8	A=DAT0	W
+		LCSTR	'REFRESHD'
+		?A=C	W
+		GOYES	oprefreshd
+		LCSTR	'AUTOTEST'
+		?A=C	W
+		GOYES	opautotest
+		LCSTR	'ACCESSSD'
+		?A=C	W
+		GOYES	opaccesssd
+		LCSTR	'PORTTAG?'
+		?A=C	W
+		GOYES	opporttag?
+		GONC	notmnemonic				
+
+MnemLen8?	C=C+1	A
+		?B=C	A
+		GOYES	CheckLen8	
+
+notmnemonic	GOLONG	InvOpErr	"Invalid Mnemonic"
+
+Mnemonic	?B=0	A		* Only lenghts 2-7 are in tables
+		GOYES	notmnemonic
+		C=0	A
+		LC(1)	7-1
+		?B>C	A
+*		GOYES	notmnemonic
+		GOYES	MnemLen8?
+
+		A=0	A
+		A=DAT0	B		* Only leading chars ?-X are possible
+		LCASC	'X'
+		?A>C	B
+		GOYES	notmnemonic
+		LCASC	'?'
+		?A<C	B
+		GOYES	notmnemonic
+
+* Now dispatch
+		A=A-C	B		?-X to 0-25
+		B=B-1	A		0-6
+		C=A	A
+		A=A+A	A		2*c
+		A=A+C	A		3*c
+		A=A+A	A		6*c
+		A=A+B	A		6*c+l
+		GOSUB	PassMnemTab
+
+* Following are too long for dispatch. If needed then make notmnemonic check
+* them:
+*	NOTREACHED	CLRCARRY	SETCARRY
+*	IFANYCARRY	IFCARRYCLR	IFCARRYSET
+
+	CON(4)	0	AssOp?2
+	REL(4)	AssOp?3
+	REL(4)	AssOp?4
+	REL(4)	AssOp?5
+	CON(4)	0	AssOp?6
+	REL(4)	AssOp?7
+	CON(4)	0	AssOp@2
+	CON(4)	0	AssOp@3
+	CON(4)	0	AssOp@4
+	CON(4)	0	AssOp@5
+	CON(4)	0	AssOp@6
+	CON(4)	0	AssOp@7
+	CON(4)	0	AssOpA2
+	REL(4)	AssOpA3
+	REL(4)	AssOpA4
+	REL(4)	AssOpA5
+	REL(4)	AssOpA6
+	REL(4)	AssOpA7
+	CON(4)	0	AssOpB2
+	REL(4)	AssOpB3
+	REL(4)	AssOpB4
+	REL(4)	AssOpB5
+	REL(4)	AssOpB6
+	REL(4)	AssOpB7
+	CON(4)	0	AssOpC2
+	REL(4)	AssOpC3
+	REL(4)	AssOpC4
+	REL(4)	AssOpC5
+	REL(4)	AssOpC6
+	REL(4)	AssOpC7
+	CON(4)	0	AssOpD2
+	REL(4)	AssOpD3
+	REL(4)	AssOpD4
+	REL(4)	AssOpD5
+	REL(4)	AssOpD6
+	REL(4)	AssOpD7
+	CON(4)	0	AssOpE2
+	REL(4)	AssOpE3
+	REL(4)	AssOpE4
+	REL(4)	AssOpE5
+	CON(4)	0	AssOpE6
+	CON(4)	0	AssOpE7
+	CON(4)	0	AssOpF2
+	CON(4)	0	AssOpF3
+	CON(4)	0	AssOpF4
+	CON(4)	0	AssOpF5
+	CON(4)	0	AssOpF6
+	CON(4)	0	AssOpF7
+	CON(4)	0	AssOpG2
+	REL(4)	AssOpG3
+	REL(4)	AssOpG4
+	REL(4)	AssOpG5
+	REL(4)	AssOpG6
+	REL(4)	AssOpG7
+	CON(4)	0	AssOpH2
+	CON(4)	0	AssOpH3
+	REL(4)	AssOpH4
+	CON(4)	0	AssOpH5
+	REL(4)	AssOpH6
+	REL(4)	AssOpH7
+	REL(4)	AssOpI2
+	CON(4)	0	AssOpI3
+	CON(4)	0	AssOpI4
+	REL(4)	AssOpI5
+	REL(4)	AssOpI6
+	REL(4)	AssOpI7
+	CON(4)	0	AssOpJ2
+	CON(4)	0	AssOpJ3
+	REL(4)	AssOpJ4
+	CON(4)	0	AssOpJ5
+	CON(4)	0	AssOpJ6
+	CON(4)	0	AssOpJ7
+	CON(4)	0	AssOpK2
+	CON(4)	0	AssOpK3
+	CON(4)	0	AssOpK4
+	REL(4)	AssOpK5
+	CON(4)	0	AssOpK6
+	CON(4)	0	AssOpK7
+	REL(4)	AssOpL2
+	CON(4)	0	AssOpL3
+	REL(4)	AssOpL4
+	REL(4)	AssOpL5
+	REL(4)	AssOpL6
+	REL(4)	AssOpL7
+	CON(4)	0	AssOpM2
+	CON(4)	0	AssOpM3
+	REL(4)	AssOpM4
+	CON(4)	0	AssOpM5
+	REL(4)	AssOpM6
+	REL(4)	AssOpM7
+	CON(4)	0	AssOpN2
+	CON(4)	0	AssOpN3
+	REL(4)	AssOpN4
+	REL(4)	AssOpN5
+	REL(4)	AssOpN6
+	REL(4)	AssOpN7
+	CON(4)	0	AssOpO2
+	REL(4)	AssOpO3
+	CON(4)	0	AssOpO4
+	REL(4)	AssOpO5
+	REL(4)	AssOpO6
+	CON(4)	0	AssOpO7
+	REL(4)	AssOpP2
+	REL(4)	AssOpP3
+	REL(4)	AssOpP4
+	REL(4)	AssOpP5
+	REL(4)	AssOpP6
+	CON(4)	0	AssOpP7
+	CON(4)	0	AssOpQ2
+	CON(4)	0	AssOpQ3
+	CON(4)	0	AssOpQ4
+	CON(4)	0	AssOpQ5
+	CON(4)	0	AssOpQ6
+	CON(4)	0	AssOpQ7
+	CON(4)	0	AssOpR2
+	REL(4)	AssOpR3
+	REL(4)	AssOpR4
+	REL(4)	AssOpR5
+	REL(4)	AssOpR6
+	REL(4)	AssOpR7
+	CON(4)	0	AssOpS2
+	CON(4)	0	AssOpS3
+	REL(4)	AssOpS4
+	REL(4)	AssOpS5
+	REL(4)	AssOpS6
+	REL(4)	AssOpS7
+	CON(4)	0	AssOpT2
+	CON(4)	0	AssOpT3
+	CON(4)	0	AssOpT4
+	REL(4)	AssOpT5
+	CON(4)	0	AssOpT6
+	CON(4)	0	AssOpT7
+	CON(4)	0	AssOpU2
+	CON(4)	0	AssOpU3
+	CON(4)	0	AssOpU4
+	CON(4)	0	AssOpU5
+	REL(4)	AssOpU6
+	CON(4)	0	AssOpU7
+	CON(4)	0	AssOpV2
+	CON(4)	0	AssOpV3
+	CON(4)	0	AssOpV4
+	CON(4)	0	AssOpV5
+	CON(4)	0	AssOpV6
+	CON(4)	0	AssOpV7
+	CON(4)	0	AssOpW2
+	CON(4)	0	AssOpW3
+	CON(4)	0	AssOpW4
+	CON(4)	0	AssOpW5
+	CON(4)	0	AssOpW6
+	REL(4)	AssOpW7
+	CON(4)	0	AssOpX2
+	CON(4)	0	AssOpX3
+	REL(4)	AssOpX4
+	CON(4)	0	AssOpX5
+	CON(4)	0	AssOpX6
+	CON(4)	0	AssOpX7
+PassMnemTab	C=RSTK
+		A=A+A	A
+		A=A+A	A
+		C=C+A	A
+		CD0EX
+*		A=0	A		4(6*c+l) = 0-#270, upper nibs are 0!
+		A=DAT0	4
+		CD0EX
+		?A=0	A
+		GOYES	+
+		C=C+A	A
+		RSTK=C			* Dispatchee
+		D0=D0+	2		* Skip leading char which is known
+		A=DAT0	W		* Read the rest
+		C=A	W		* And in C for ease..
+		RTN			* Always CC
++		GOLONG	InvOpErr
+
+**********************************************************************
+*		Individual Dispatchees!!
+**********************************************************************
+
+**********************************************************************
+*	?P#	n	88naa
+*	?P=	n	89naa
+**********************************************************************
+AssOp?3		LCSTR	'P='
+		?A=C	A
+		GOYES	assP=
+		LCSTR	'P#'
+		?A=C	A
+		GOYES	assP#
+		GOLONG	InvOpErr
+assP#		LCHEX	88
+		GOC	+
+assP=		LCHEX	98
++		DAT1=C	B
+		D1=D1+	2
+		D0=D0+	6		Skip ?P=
+		ST=1	qBRANCH
+		GOLONG	AssNib15	Parse expr as 0-15
+
+**********************************************************************
+*	?r=s	fs	8Ataa | 9ftaa	f:low 3 bits, bit3: A/B group
+*	?r#s	fs	8Ataa | 9ftaa
+*	?r=0	fs	8Ataa | 9ftaa
+*	?r#0	fs	8Ataa | 9ftaa
+*	?r>s	fs	8Btaa | 9ftaa
+*	?r<s	fs	8Btaa | 9ftaa
+**********************************************************************
+AssOp?4		D0=D0+	6		Skip 3 chars
+		ST=1	qBRANCH		All test intructions
+		GOSUBL	Reg>Pat
+		D=C	P
+
+		ASR	W
+		ASR	A		last 2 chars
+		ST=0	qTEMP		Assume = or #
+		LCASC	'#'	#23
+		?A=C	B
+		GOYES	op?r#
+		LCASC	'='	#3D
+		?A=C	B
+		GOYES	op?r=
+		ST=1	qTEMP		Flag < >
+		LC(1)	'<'	#3C
+		?A=C	B
+		GOYES	op?r<
+		LC(1)	'>'	#3E
+		?A=C	B
+		GOYES	op?r>
+op?4err		GOLONG	InvOpErr
+
+* Now we may have ?r>s	: 8Bt or 9ft, f=fs|8 and t=comb(rs)
+op?r>		GOSUBL	NextReg>Pat
+		GOTO	op?4_50
+* Now we may have ?r<s	: 8Bt or 9ft	f=fs|8 and t=comb(sr)
+op?r<		GOSUBL	NextReg>Pat
+		CDEX	P		Just reverse rs and do ?r>s code
+		GOTO	op?4_50
+* Now we may have ?r=0 or ?r=s
+op?r=		ASR	A
+		ASR	A
+		LCASC	'0'
+		?A=C	B
+		GOYES	op?r=0
+* Now we have ?r=s	: 8At or 9ft	f=fs and t = low2(comb(rs))
+op?r=s		GOSUBL	Reg>Pat
+		DSL	A
+		D=C	P		rs
+		GOSUBL	CombineAB	C[0] = comb
+		GOC	op?4cmberr
+		CBIT=0	2		remove order
+		GONC	op?4_80
+* Now we have ?r=0	: 8At or 9ft	f=fs and t=r|8
+op?r=0		LC(1)	8
+		C=C!D	P		t
+		GOC	op?4_80
+* Now we may have ?r#0 or ?r#s
+op?r#		ASR	A
+		ASR	A
+		LCASC	'0'
+		?A=C	B
+		GOYES	op?r#0
+* Now we have ?r#s	: 8At or 9ft	f=fs, t = low2(comb(rs))|4
+op?r#s		GOSUBL	Reg>Pat
+		DSL	A
+		D=C	P		rs
+		GOSUBL	CombineAB	C[0] = comb
+		GOC	op?4cmberr
+		CBIT=1	2		t
+		GONC	op?4_80
+
+op?4cmberr	GOLONG	InvRegComb	"Invalid Reg Combination"
+
+* Now we have ?r#0	: 8At or 9ft	f=fs, t=r|8|4
+op?r#0		LC(1)	8!4
+		C=C!D	P
+* Common exits after bit settings are done:
+
+op?4_80		RSTK=C
+		GOSUBL	FieldHere	B[0] = fs
+		C=RSTK
+		CSL	A		t0
+		C=B	P		tf
+		GOTO	op?4_60		The rest is the same
+op?4_50		DSL	A
+		D=C	P		rs
+		GOSUBL	CombineAB	C[0] = comb
+		GOC	op?4cmberr
+		RSTK=C
+		GOSUBL	FieldHere	B[0] = fs
+		C=RSTK
+		CSL	A		t0
+		C=B	P		tf
+		CBIT=1	3		fs|8
+op?4_60		CSL	A
+		LCHEX	9		tf9
+		B=B+1	P
+		GONC	+
+		LCHEX	A8		Choose 'A' field group
+		?ST=0	qTEMP
+		GOYES	+
+		LCHEX	B8
++		GOLONG	SourceLine+3
+
+**********************************************************************
+*	?ST=0	n	86naa
+*	?ST#1	n	86naa
+*	?ST=1	n	87naa
+*	?ST#0	n	87naa
+*	?HS=0	n	83naa
+*	?XM=0		831aa
+*	?SB=0		832aa
+*	?SR=0		834aa
+*	?MP=0		838aa
+*	?HS=1	n	80B83naa				* new
+*	?XM=1		80B831aa				* new
+*	?SB=1		80B832aa				* new
+*	?SR=1		80B834aa				* new
+*	?MP=1		80B838aa				* new
+*	?r>=s	fs	8Btaa
+*	?r<=s	fs	8Btaa
+**********************************************************************
+AssOp?5		ST=1	qBRANCH		All tests
+		LCSTR	'ST'
+		?A=C	A
+		GOYES	op?st
+		LCSTR	'MP'
+		?A=C	A
+		GOYES	op?mp
+		LCSTR	'SR'
+		?A=C	A
+		GOYES	op?sr
+		LCSTR	'SB'
+		?A=C	A
+		GOYES	op?sb
+		LCSTR	'XM'
+		?A=C	A
+		GOYES	op?xm
+		LCSTR	'HS'
+		?A=C	A
+		GOYES	op?hs
+		GOTO	op?r<=>s
+
+* Assemble ?ST=0 (aka ?ST#1) = 86naa and ?ST=1 (aka ?ST#0) = 87naa
+op?st		D0=D0+	4		Skip 'ST'
+		A=DAT0	A
+		D0=D0+	4
+		C=A	A
+		LCSTR	'=0'
+		?A=C	A
+		GOYES	op?st=0
+		LCSTR	'#'
+		?A=C	A
+		GOYES	op?st=1
+		LCSTR	'=1'
+		?A=C	A
+		GOYES	op?st=1
+		LCSTR	'#'
+		?A#C	A
+		GOYES	op?5err
+op?st=0		LCHEX	68
+-		DAT1=C	B
+		D1=D1+	2
+		GOLONG	AssNib15
+op?st=1		LCHEX	78
+		GOC	-
+
+* Assemble ?HS=0 n and the special cases
+op?mp		P=	8
+		GOC	op?hs
+op?sr		P=	4
+		GOC	op?hs
+op?sb		P=	2
+		GOC	op?hs
+op?xm		P=	1
+op?hs		C=P	15
+		P=	0
+		D0=D0+	4		Skip 'HS'
+*		LCHEX	38		Write HS test
+*		DAT1=C	B
+*		D1=D1+	2
+		A=DAT0	A
+		C=A	A
+		LCSTR	'=0'
+		?A#C	A
+		GOYES	+
+ 		LCHEX	38		?HS=0
+ 		DAT1=C	B
+ 		D1=D1+	2
+		GONC	++
++		LCSTR	'=1'
+		?A=C	A
+		GOYES	+
+
+op?5err		GOLONG	InvOpErr
+
++		LCHEX	38B08		?HS=1
+		DAT1=C	A
+		D1=D1+	5
+++		?C=0	S
+		GOYES	op?hs=0/1
+		DAT1=C	S
+		D1=D1+	1
+		GOLONG	SourceLine+
+op?hs=0/1	D0=D0+	4		Skip '=0' or '=1'
+		GOLONG	AssNib15
+
+* Only this one left	: 8Btaa or 9ftaa
+
+op?r<=>s	GOSUBL	Reg>Pat
+		D=C	P		r
+		D0=D0+	2
+		A=DAT0	A
+		D0=D0+	4
+		C=A	A
+		LCSTR	'<='
+		?A=C	A
+		GOYES	op?r<=
+		LCSTR	'>='
+		?A#C	A
+		GOYES	op?5err
+op?r>=		A=DAT0	B
+		GOSUBL	Reg>Pat
+op?r>=100	D0=D0+	2
+		DSL	B
+		D=C	P
+		GOSUBL	CombineAB	C[0] = t
+		GOC	op?5cmberr
+		RSTK=C
+		GOSUBL	FieldHere	B[0] = fs
+		C=RSTK
+		CBIT=1	3		t
+		CSL	B
+		C=B	P		fs
+		CBIT=1	3		tf
+		CSL	X
+		LCHEX	9		tf9
+		B=B+1	P
+		GONC	+
+		LCHEX	B8
++		GOLONG	SourceLine+3
+op?r<=		A=DAT0	B
+		GOSUBL	Reg>Pat
+		CDEX	P
+		GOTO	op?r>=100
+op?5cmberr	GOLONG	InvRegComb	"Invalid Reg Combination"
+
+**********************************************************************
+*	?ABIT=0	n	8086naa		?ABIT#1
+*	?ABIT=1	n	8087naa		?ABIT#0
+*	?CBIT=0	n	808Anaa		?CBIT#1
+*	?CBIT=1	n	808Bnaa		?CBIT#0
+**********************************************************************
+AssOp?7		ST=1	qBRANCH		All tests
+		GOSUBL	Reg>Pat
+		D=C	P		r
+		D0=D0+	2
+		A=DAT0	6
+		D0=D0+	6
+		C=A	W
+		LCSTR	'BIT'
+		?A#C	W
+		GOYES	op?7err
+		A=DAT0	A
+		D0=D0+	4
+		C=A	A
+		LCSTR	'=0'
+		?A=C	A
+		GOYES	op?rbit=0
+		LCSTR	'#'
+		?A=C	A
+		GOYES	op?rbit=1
+		LCSTR	'=1'
+		?A=C	A
+		GOYES	op?rbit=1
+		LCSTR	'#'
+		?A#C	A
+		GOYES	op?7err
+op?rbit=0	P=P-1
+op?rbit=1	LCHEX	67
+		P=	0
+		CDEX	P
+		?CBIT=1	0		B or D ?
+		GOYES	op?5cmberr	Yes - invalid
+		C=C+C	P		0|2 -> 0|4
+		C=C+D	P
+		LAHEX	808
+		DAT1=A	A
+		D1=D1+	3
+		DAT1=C	B
+		D1=D1+	1
+		GOLONG	AssNib15
+op?7err		GOLONG	InvOpErr
+**********************************************************************
+*	ABS
+**********************************************************************
+AssOpA3		LCSTR	'BS'
+		?A=C	A
+		GOYES	opabs
+*		P=	0
+		GOLONG	opGeneralAD3
+opabs		GOLONG	ImplemErr	"Not Implemented"
+
+**********************************************************************
+*	A=IN		802
+*	A=PC		81B4
+
+*	ASLC		81s
+*	ASRC		81s
+*	ASRB		81s
+*	A=Rn		11s
+*	A=-A	fs	Bft
+*	ArEX	fs	Aft
+**********************************************************************
+AssOpA4		LCSTR	'=IN'
+		?A=C	W
+		GOYES	opa=in
+		LCSTR	'=PC'
+		?A=C	W
+		GOYES	opa=pc
+*		P=	0
+		GOLONG	opGeneralAD4
+opa=pc		GOSUBL	SourceLine:4
+		A=PC
+opa=in		GOSUBL	SourceLine:3
+		A=IN
+**********************************************************************
+*	ABASE	expr
+*	APCEX		81B6
+**********************************************************************
+AssOpA5		LCSTR	'BASE'
+		?A=C	W
+		GOYES	opabase
+		LCSTR	'PCEX'
+		?A=C	W
+		GOYES	opapcex
+*		P=	0
+		GOLONG	opGeneralAD5
+
+opapcex		GOSUBL	SourceLine:4
+		APCEX
+
+opabase		D0=D0+	8
+		GOSUBL	Expression
+		GOC	errabase?
+		D=0	A		Check if > FFFFF
+		?D#0	W
+		GOYES	errabase>
+		A=R2.F	A
+		AD0EX
+		D0=(2)	O_ABASE
+		DAT0=C	A
+		AD0EX
+		GOLONG	SourceLine+
+errabase?	LERR	errExpr		"Unresolved Expression"
+errabase>	LERR	errBig#
+
+**********************************************************************
+*	ABIT=0	n	8084n
+*	ABIT=1	n	8085n
+*	ASC(n)
+*	ARMSYS		80BFE					* new
+*	ARMSAT		80BFF					* new
+**********************************************************************
+AssOpA6		LCSTR	'BIT=0'
+		?A=C	A
+		GOYES	opA6BIT
+		LCSTR	'RMSYS'
+		?A=C	A
+		GOYES	oparmsxx
+		C=A	W
+		LCSTR	'SC('
+		?A=C	W
+		GOYES	opA6ASC
+*		P=	0
+opA6general	GOLONG	opGeneralAD6
+
+opA6BIT		?A=C	W
+		GOYES	opabit=0
+		LCSTR	'BIT=1'
+		?A#C	W
+		GOYES	opA6err
+
+opabit=1	LCHEX	5808
+		GONC	+
+opabit=0	LCHEX	4808
++		DAT1=C	A
+		D1=D1+	4
+		D0=D0+	10
+		GOLONG	AssNib15
+
+oparmsxx	?A=C	W
+		GOYES	oparmsys
+		LCSTR	'RMSAT'
+		?A#C	W
+		GOYES	opA6err
+oparmsat	GOSUB	SourceLine:5
+		ARMSAT
+		
+oparmsys	GOSUB	SourceLine:5
+		ARMSYS		
+
+opA6err		GOTO	InvOpErr
+
+opA6ASC		D0=D0+	8
+		ST=0	qTEMP		Flag no minus
+		GOTO	opASCentry
+
+**********************************************************************
+*	A=A+CON	fs,n	818frn
+*	A=A-CON	fs,n	818frn
+*	ARnEX.F	fs	81Afrn
+*	ASCM(n)
+**********************************************************************
+AssOpA7		LCSTR	'ASCM('
+		?A=C	W
+		GOYES	opascmx
+*		P=	0
+		GOLONG	opGeneralAD7
+opascmx		D0=D0+	10
+		ST=1	qTEMP		Flag minus
+opASCentry	GOSUBL	Size>Pat	C[0] = 0-4 for 1-5
+		GOTO	ImplemErr
+**********************************************************************
+*	BSS	expr
+**********************************************************************
+AssOpB3		LCSTR	'SS'
+		?A=C	A
+		GOYES	opbss
+		P=	1	'B'
+		GOLONG	opGeneralAD3
+
+opbss		D0=D0+	4
+		GOSUBL	Expression
+		GONC	+
+		LERR	errExpr		"Unresolved Expression"
++		D=0	A
+		?D#0	W
+		GOYES	errbss>
+		GOSUBL	Free-
+		GOSBVL	=WIPEOUT
+		GOTO	SourceLine+		
+errbss>		LERR	errBig#
+**********************************************************************
+AssOpB4		P=	1	'B'
+		GOLONG	opGeneralAD4
+**********************************************************************
+*	BUSCB		8083
+*	BUSCD		808D
+*	BUSCC		80B	disabled due to new BUSCC opcodes
+*	BEEP2		80B50					* new
+**********************************************************************
+AssOpB5		LCSTR	'USCB'
+		?A#C	A
+		GOYES	+
+		?A=C	W
+		GOYES	opbuscb
+		LCSTR	'USCD'
+		?A=C	W
+		GOYES	opbuscd
+		LCSTR	'EEP2'
+		?A=C	W
+		GOYES	opbeep2
++		P=	1	'B'
+		GOLONG	opGeneralAD5
+
+opbuscb		GOSUB	SourceLine:4
+		BUSCB
+opbuscd		GOSUB	SourceLine:4
+		BUSCD
+opbeep2		GOSUB	SourceLine:5
+		BEEP2
+**********************************************************************
+AssOpB6		P=	1	'B'
+		GOLONG	opGeneralAD6
+**********************************************************************
+*	BIGAPP?		80BC2					* new
+**********************************************************************
+AssOpB7		LCSTR	'IGAPP?'
+		?A=C	W
+		GOYES	opbigapp?
+		P=	1	'B'
+		GOLONG	opGeneralAD7
+opbigapp?	GOSUB	SourceLine:5
+		BIGAPP?
+**********************************************************************
+*	C=P	n	80Cn
+**********************************************************************
+AssOpC3		LCSTR	'=P'
+		?A=C	A
+		GOYES	opc=p
+		P=	2	'C'
+		GOLONG	opGeneralAD3
+
+opc=p		D0=D0+	4
+		LCHEX	C08
+		DAT1=C	X
+		D1=D1+	3
+		GOLONG	AssNib15
+**********************************************************************
+*	C=ST		09
+*	C=IN		803
+*	C=ID		806
+*	CPEX	n	80Fn
+*	C=PC		81B5		
+**********************************************************************
+AssOpC4		LCSTR	'=ST'
+		?A#C	B
+		GOYES	opC4not=
+		?A=C	W
+		GOYES	opc=st
+		LCSTR	'=IN'
+		?A=C	W
+		GOYES	opc=in
+		LCSTR	'=ID'
+		?A=C	W
+		GOYES	opc=id
+		LCSTR	'=PC'
+		?A#C	W
+		GOYES	opC4general
+opc=pc		GOSUB	SourceLine:4
+		C=PC
+opc=st		GOSUB	SourceLine:2
+		C=ST
+opc=in		GOSUB	SourceLine:3
+		C=IN
+opc=id		GOSUB	SourceLine:3
+		C=ID
+
+opC4not=	LCSTR	'PEX'
+		?A=C	W
+		GOYES	opcpex
+opC4general	P=	2	'C'
+		GOLONG	opGeneralAD4
+
+opcpex		D0=D0+	6
+		LCHEX	F08
+		DAT1=C	X
+		D1=D1+	3
+		GOLONG	AssNib15
+**********************************************************************
+*	CLRST		08
+*	CSTEX		0B
+*	C+P+1		809
+*	CPCEX		81B7
+*	CRTMP		80B80					* new
+**********************************************************************
+AssOpC5		LCSTR	'='
+		?A=C	B
+		GOYES	opC5general
+		LCSTR	'RTMP'
+		?A=C	W
+		GOYES	opcrtmp
+		LCSTR	'+P+1'
+		?A=C	W
+		GOYES	opc+p+1
+		LCSTR	'LRST'
+		?A=C	W
+		GOYES	opclrst
+		LCSTR	'STEX'
+		?A=C	W
+		GOYES	opcstex
+		LCSTR	'PC'
+		?A=C	W
+		GOYES	opcpcex
+opC5general	P=	2	'C'
+		GOLONG	opGeneralAD5
+
+opcrtmp		GOSUB	SourceLine:5
+		CRTMP
+opc+p+1		GOSUB	SourceLine:3
+		C+P+1
+opclrst		GOSUB	SourceLine:2
+		CLRST
+opcstex		GOSUB	SourceLine:2
+		CSTEX
+opcpcex		GOSUB	SourceLine:4
+		CPCEX
+**********************************************************************
+*	C=RSTK		07
+*	CONFIG		805
+*	CBIT=0	n	8088n
+*	CBIT=1	n	8089n
+*	CLRHSN	n	82n
+*	CLRHST		82F
+*	CON(n)	expr			1<=n<=9
+**********************************************************************
+AssOpC6		LCSTR	'=RSTK'
+		?A=C	W
+		GOYES	opc=rstk
+		LCSTR	'ONFIG'
+		?A=C	W
+		GOYES	opconfig
+		LCSTR	'LRHST'
+		?A=C	W
+		GOYES	opclrhst
+		LCSTR	'LRHSN'
+		?A=C	W
+		GOYES	opclrhsn
+		LCSTR	'BIT=0'
+		?A=C	W
+		GOYES	opcbit=0
+		LCSTR	'BIT=1'
+		?A=C	W
+		GOYES	opcbit=1
+		C=A	W
+		LCSTR	'ON('
+		?A=C	W
+		GOYES	opconx
+		P=	2	'C'
+		GOLONG	opGeneralAD6
+opc=rstk	GOSUB	SourceLine:2
+		C=RSTK
+opconfig	GOSUB	SourceLine:3
+		CONFIG
+opclrhst	GOSUB	SourceLine:3
+		CLRHST
+opclrhsn	LCHEX	28
+		DAT1=C	B
+		D1=D1+	2
+		D0=D0+	10
+--		GOLONG	AssNib15
+opcbit=0	LCHEX	8808
+-		DAT1=C	4
+		D1=D1+	4
+		D0=D0+	10
+		GONC	--
+opcbit=1	LCHEX	9808
+		GOC	-
+opconx		D0=D0+	8
+		A=DAT0	B
+		LCSTR	')'
+		?A#C	B
+		GOYES	opC6err
+		D0=D0-	2
+		A=DAT0	B
+		D0=D0+	4
+		LCASC	'9'
+		?A>C	B
+		GOYES	opC6err
+		LC(1)	'1'
+		C=A-C	B
+		GOC	opC6err
+		RSTK=C
+		GOSUBL	Expression
+		A=C	W
+		C=RSTK
+		P=C	0
+		DAT1=A	WP
+		CD1EX
+		C+P+1
+		D1=C
+		GOTO	SourceLine+
+opC6err		GOTO	InvOpErr
+
+**********************************************************************
+*	CRnEX.F	fs	81Afrn
+*	C=C+CON	fs,n	818frn
+*	C=C-CON	fs,n	818frn
+*	C=C+P+1		809
+*	CSTRING
+*	CLRFLAG
+*	CHARMAP
+*	CONFIGD		80B03					* new
+**********************************************************************
+AssOpC7		LCSTR	'=C+P+1'
+		?A=C	W
+		GOYES	opc=c+p+1
+		LCSTR	'STRING'
+		?A=C	W
+		GOYES	opcstring
+		LCSTR	'LRFLAG'
+		?A=C	W
+		GOYES	opclrflag
+		LCSTR	'HARMAP'
+		?A=C	W
+		GOYES	opcharmap
+		LCSTR	'ONFIGD'
+		?A=C	W
+		GOYES	opconfigd
+		P=	2	'C'
+		GOLONG	opGeneralAD7
+opc=c+p+1	GOSUB	SourceLine+3
+		C+P+1
+opclrflag	ST=0	qTEMP		Indicate CLR
+		D0=D0+	12		Skip 12 chars
+		GOLONG	opdoflag	And do the common code
+opcharmap	GOTO	ImplemErr
+opconfigd	GOSUB	SourceLine:5
+		CONFIGD
+opcstring	D0=D0+	12
+		GOSUBL	SkipToFld
+
+* LineEnd>R0 now passes into CheckNibaLen and AssAsc>Mem
+		GOSUBL	LineEnd>R0
+*		GOSUBL	CheckNibaLen
+*		GOSUBL	AssAsc>Mem
+
+		GOC	+
+		GOSUBL	Free-2
+		GOSUB	SourceLine:2
+		CON(2)	0
++		GOLONG	InvNibaErr
+**********************************************************************
+AssOpD3		P=	3	'D'
+		GOLONG	opGeneralAD3
+**********************************************************************
+*	Dn=r		13t
+**********************************************************************
+AssOpD4		LCSTR	'1'
+		?A>C	B
+		GOYES	opD4general
+		LC(1)	'0'
+		C=A-C	B
+		GONC	opDn=r
+opD4general	P=	3	'D'
+		GOLONG	opGeneralAD4
+**********************************************************************
+*	DEBUG		Special GOSBVL to internal DB breakpoint
+*	Dn=rS		13t
+**********************************************************************
+AssOpD5
+		LCSTR	'EBUG'
+		?A#C	W
+		GOYES	opD5regular
+*
+		LCHEX	F8		'GOSBVL'
+		DAT1=C	B
+		D1=D1+	2
+*		D0=(5)	=IRAM@
+*		C=DAT0	S
+*		C=C+C	S		CS if GX
+*
+		LC(5)	DBADDRGX
+*		GOC	+
+*		LC(5)	DBADDRSX
+*+
+		GOLONG	SourceLine+5
+*
+* Do not use next because DB doesn't know how to handle it.
+*		
+*		GOC	+		Handle GX
+*		A=PC
+*		LC(5)	(SxDbg)-(*)
+*		GONC	++
+*+		A=PC
+*		LC(5)	(GxDbg)-(*)
+*++		C=C+A	A		Debugger entry address
+*		GOLONG	SourceLine+5
+
+
+opD5regular	LCSTR	'1'
+		?A>C	B
+		GOYES	opD5general
+		LCSTR	'0'
+		C=A-C	B
+		GONC	opDn=rS
+opD5general	P=	3	'D'
+		GOLONG	opGeneralAD5
+opDn=rS		CBIT=1	3		0-1 -> 8-9
+opDn=r		D=C	P		Save 0|1 and S
+		ASR	W
+		ASR	W		last 2|3 chars
+		LCSTR	'='
+		?A#C	B
+		GOYES	opD5err
+		GOSUBL	NextReg>Pat
+		B=C	P		B[0] = reg
+		C=D	P
+		?CBIT=0	3		Need to veryfy trailing S?
+		GOYES	+
+		ASR	A
+		ASR	A
+		LCSTR	'S'
+		?A#C	B
+		GOYES	opD5err
++		C=D	P		0|1 & S
+		B=B-1	P
+		GOC	opDn=A
+		B=B-1	P
+		GOC	opDn=B
+		B=B-1	P
+		GOC	opDn=C
+opDn=D
+opDn=B		GOTO	InvRegComb
+opDn=C		CBIT=1	2
+opDn=A		CSL	B
+		CSL	X
+		LCHEX	31		13t
+		GOLONG	SourceLine+3
+opD5err		GOTO	InvOpErr
+
+
+**********************************************************************
+*	Dn=(2)	expr	19nn
+*	Dn=(4)	expr	1Annnn
+*	Dn=(5)	expr	1Bnnnnn
+*	Dn=HEX
+*	D0=D0+	n	16n
+*	D1=D1+	n	17n
+*	D0=D0-	n	18n
+*	D1=D1-	n	1Cn
+*	DATn=r	fs	14t|15tf
+**********************************************************************
+AssOpD6		LCSTR	'AT'
+		?A=C	A
+		GOYES	opD6DAT
+		LCSTR	'1'
+		?A>C	B
+		GOYES	+
+		LCSTR	'0'
+		?A>=C	B
+		GOYES	opD6Dn
++		P=	3	'D'
+		GOLONG	opGeneralAD6
+
+opD6DAT		D0=D0+	6
+		A=DAT0	A
+		LCSTR	'='
+		?A#C	B
+		GOYES	opD6err
+		GOSUBL	NextReg>Pat
+		D=C	P	reg
+		D0=D0-	2
+		A=DAT0	B
+		D0=D0+	6
+		LCSTR	'1'
+		?A>C	B
+		GOYES	opD6err
+		LC(1)	'0'
+		C=A-C	B
+		GOC	opD6err
+		GOLONG	opDATNentry	C[0]=t D[0]=reg
+
+opD6Dn		C=A-C	B
+		D=C	P		Dn
+		D0=D0+	2
+		A=DAT0	6
+		C=A	W
+		LCSTR	'=('
+		?A=C	A
+		GOYES	opDn=x
+		LCSTR	'=D'
+		?A=C	A
+		GOYES	opDn=D?
+		LCSTR	'=HEX'
+		?A#C	W
+		GOYES	opD6err
+opDn=HEX	GOTO	ImplemErr
+opD6err		GOTO	InvOpErr
+
+opDn=D?		D0=D0+	4
+		A=DAT0	B
+		D0=D0+	2
+		LCSTR	'1'
+		?A>C	B
+		GOYES	opD6err
+		LC(1)	'0'
+		C=A-C	B
+		GOC	opD6err
+		?C#D	P
+		GOYES	opD6cmberr
+		A=DAT0	B
+		D0=D0+	2
+		LCSTR	'+'		#2B
+		?A=C	B
+		GOYES	opDn=Dn+
+		LC(1)	'-'		#2D
+		?A=C	B
+		GOYES	opDn=Dn+
+		GONC	opD6err
+
+
+opD6cmberr	GOTO	InvRegComb
+
+
+opDn=x		D0=D0+	6
+		GOSUBL	Size>Pat	C[0] = 0-4 for 1-5
+		P=C	0
+		?P=	1-1
+		GOYES	opDn=xerr
+		?P=	3-1
+		GOYES	opDn=xerr
+		P=	0
+		RSTK=C			Save size: [1 3 4]
+		CSRB.F	P		[1 3 4] -> [0 1 2]
+		C=C+CON	B,9		[0 1 2] -> [9 A B]
+		D=D+D	P		Add D0|D1
+		D=D+D	P
+		C=C+D	P
+		CSL	A
+		LCHEX	1
+		DAT1=C	B
+		D1=D1+	2
+		GOSUBL	Expression
+		C=RSTK
+		P=C	0
+		C=D	A
+		DAT1=C	WP
+		CD1EX
+		C+P+1
+		D1=C
+		GOTO	SourceLine+
+opDn=xerr	GOTO	InvOpErr
+
+* D0=D0+ & D1=D1+
+opDn=Dn+	C=C+D	P		B,C or D,E
+		P=C	0
+		LCHEX	678C00
+		P=	0
+		CSL	A
+		C=C+1	B
+		DAT1=C	B		16|17|18|1C
+		D1=D1+	2
+*		GOLONG	AssNib16
+* Added new feature, argument range 1-256
+* For example D1=D1+ 34 is output as D1=D1+ 16, D1=D1+ 16, D1=D1+ 2
+		GOSUBL	Expression
+		GONC	+
+		GOTO	SourceLine+1	Assume 1-16
++		GOSUBL	Check1-256
+		D1=D1-	2
+		A=DAT1	B		Dn+
+		D1=D1+	2
+		ASL	X
+		A=A-1	P		16 Dn+
+-		C=C-CON	B,16		Write full 10s
+		GOC	+
+		DAT1=A	X
+		D1=D1+	3
+		GONC	-
++		GOLONG	SourceLine+1	Write last instruction
+
+**********************************************************************
+* Dn=Dn+r	Macro
+**********************************************************************
+-		P=	3	'D'
+		GOLONG	opGeneralAD7
+opD7err		GOTO	InvOpErr
+
+AssOpD7		LCSTR	'1'
+		?A>C	B
+		GOYES	-
+		LC(1)	'0'
+		?A<C	B
+		GOYES	-
+		B=A	P		Dn
+		D0=D0+	2
+		A=DAT0	A
+		C=A	A
+		LCSTR	'=D'
+		?A#C	A
+		GOYES	opD7err
+		D0=D0+	4
+		A=DAT0	B
+		LCSTR	'1'
+		?A>C	B
+		GOYES	opD7err
+		LC(1)	'0'
+		?A<C	B
+		GOYES	opD7err
+		?A#B	P
+		GOYES	opD7err
+		D0=D0+	2
+		A=DAT0	B
+		D0=D0+	2
+		LCSTR	'+'
+		?A=C	B
+		GOYES	+
+		B=B+1	P
+		B=B+1	P		Set bit 2
+		LCSTR	'-'
+		?A#C	B
+		GOYES	opD7err
++		A=DAT0	B
+		LCSTR	'P'		#50
+		?A=C	B
+		GOYES	+
+		GOSUBL	Reg>Pat
+		GONC	++
++		LC(1)	4		'P'
+++		A=0	A
+		A=C	P
+		A=A+A	A
+		A=A+A	A		4*
+		A=A!B	P		+/- and Dn
+		
+*	00000	D0=D0+A		CD0EX	C=C+A	CD0EX
+*	00001	D1=D1+A		CD1EX	C=C+A	CD1EX
+*	00010	D0=D0-A		CD0EX	C=C-A	CD1EX
+*	00011	D1=D1-A		CD0EX	C=C-A	CD1EX
+*	00100	D0=D0+B		CD0EX	C=C+B	CD0EX
+*	00101	D1=D1+B		CD1EX	C=C+B	CD1EX
+*	00110	D0=D0-B		CD0EX	C=C-B	CD0EX
+*	00111	D1=D1-B		CD1EX	C=C-B	CD1EX
+*	01000	D0=D0+C		AD0EX	A=A+C	AD0EX
+*	01001	D1=D1+C		AD1EX	A=A+C	AD1EX
+*	01010	D0=D0-C		AD0EX	A=A-C	AD0EX
+*	01011	D1=D1-C		AD1EX	A=A-C	AD1EX
+*	01100	D0=D0+D		CD0EX	C=C+D	CD1EX
+*	01101	D1=D1+D		CD1EX	C=C+D	CD1EX
+*	01110	D0=D0-D		CD0EX	C=C-D	CD0EX
+*	01111	D1=D1-D		CD1EX	C=C-D	CD1EX
+*	10000	D0=D0+P		CD0EX	C+P+1	CD0EX
+*	10001	D1=D1+P		CD1EX	C+P+1	CD1EX
+*	10010	D0=D0-P		CD0EX	C=-C	C+P+1	C=-C	CD0EX
+*	10011	D1=D1-P		CD1EX	C=-C	C+P+1	C=-C	CD1EX
+
+		LCHEX	631	CD0EX
+		?ABIT=0	0
+		GOYES	+
+		C=C+1	XS	CD1EX
++		?ABIT=0	3
+		GOYES	+
+		?ABIT=1	2
+		GOYES	+
+		CBIT=0	10	ADnEX
++		DAT1=C	X
+		D1=D1+	3
+		D=C	A	rDnEX
+		?ABIT=1	4
+		GOYES	opD7dnp
+		LCHEX	C
+		?ABIT=0	1
+		GOYES	+
+		LCHEX	E
++		DAT1=C	B
+		D1=D1+	1
+		LCHEX	2
+		?ABIT=1	2
+		GOYES	+
+		?ABIT=0	3
+		GOYES	++
++		ASRB.F	P
+		ASRB.F	P	reg
+		ABIT=1	3	9AB
+		C=A	A
+++		DAT1=C	B
+		D1=D1+	1
+		C=D	A
+		GOTO	SourceLine+3
+
+opD7dnp		?ABIT=0	1
+		GOYES	+
+		LCHEX	AF		C=-C A
+		DAT1=C	B
+		D1=D1+	2
++		LCHEX	AF908		C=-C|C+P+1
+		DAT1=C	A
+		D1=D1+	3
+		?ABIT=0	1
+		GOYES	+
+		D1=D1+	2
++		C=D	A
+		GOTO	SourceLine+3
+
+**********************************************************************
+*		JUMP TABLE IN THE MIDDLE
+**********************************************************************
+InvOpErr	P=	0
+		LERR	errMnemonic	"Invalid Mnemonic"
+InvRegComb	P=	0
+		LERR	errInvRegs	"Invalid Reg Combination"
+ImplemErr	P=	0
+		LERR	errImplement	"Not Implemented"
+DatFldErr	P=	0
+		LERR	errWantArg	* "Argument Field Expected"
+HexErr		P=	0
+		LERR	errInvHex	* "Invalid Hex Field"
+
+**********************************************************************
+* Some entries to save code size.
+**********************************************************************
+SourceLine:6	C=RSTK
+		D0=C
+		C=DAT0	6
+SourceLine+6	DAT1=C	6
+		D1=D1+	6
+		GONC	SourceLine+
+SourceLine:5	C=RSTK
+		D0=C
+		C=DAT0	A
+SourceLine+5	DAT1=C	A
+		D1=D1+	5
+		GONC	SourceLine+
+SourceLine:4	C=RSTK
+		D0=C
+		C=DAT0	A
+SourceLine+4	DAT1=C	4
+		D1=D1+	4
+		GONC	SourceLine+
+SourceLine:3	C=RSTK
+		D0=C
+		C=DAT0	A
+SourceLine+3	DAT1=C	X
+		D1=D1+	3
+		GONC	SourceLine+
+SourceLine:2	C=RSTK
+		D0=C
+		C=DAT0	B
+SourceLine+2	DAT1=C	B
+		D1=D1+	2
+		GONC	SourceLine+
+SourceLine:1	C=RSTK
+		D0=C
+		C=DAT0	B
+SourceLine+1	DAT1=C	1
+		D1=D1+	1
+**********************************************************************
+* Done this line, go to next using the saved ->lineend
+**********************************************************************
+SourceLine+	P=	0		* Assume P=0
+		A=R2
+		GOSBVL	=ASRW5		* A[A] = ->lineend
+		D0=A
+		D0=D0+	2		* Skip '\n'
+		RTN			* Return to AssCode
+
+**********************************************************************
+*	END			???????????
+**********************************************************************
+AssOpE3		LCSTR	'ND'
+		?A#C	A
+		GOYES	+
+		D0=(5)	#FFFFF
+		RTN
+**********************************************************************
+*	ELSE
+**********************************************************************
+AssOpE4		LCSTR	'LSE'
+		?A#C	W
+		GOYES	+
+		GOLONG	ass_else
+**********************************************************************
+*	EJECT
+*	ENDIF
+**********************************************************************
+AssOpE5		LCSTR	'JECT'
+		?A=C	W
+		GOYES	opeject
+		LCSTR	'NDIF'
+		?A#C	W
+		GOYES	+
+		GOLONG	ass_endif
++		GOTO	InvOpErr
+opeject		GOTO	SourceLine+	Ignore EJECT
+
+**********************************************************************
+*	GOC	label	4aa
+**********************************************************************
+AssOpG3		D0=D0+	4
+		LCSTR	'OC'
+		?A=C	A
+		GOYES	opgoc
+		GOTO	InvOpErr
+opgoc		LCHEX	4
+opgoc_entry	DAT1=C	B
+		D1=D1+	1
+		GOSUBL	LabelHere
+		GOC	+
+		P=	2-1
+		GOSUBL	CheckOff
+		DAT1=A	B
++		D1=D1+	2
+		GOTO	SourceLine+
+**********************************************************************
+*	GONC	label	5aa
+*	GOTO	label	6aaa
+**********************************************************************
+AssOpG4		D0=D0+	6
+		LCSTR	'ONC'
+		?A=C	W
+		GOYES	opgonc
+		LCSTR	'OTO'
+		?A=C	W
+		GOYES	opgoto
+		GOTO	InvOpErr
+opgonc		LCHEX	5
+		GOC	opgoc_entry
+opgoto		LCHEX	6
+		DAT1=C	B
+		D1=D1+	1
+		GOSUBL	LabelHere
+		GOC	opgotopass
+opgotoin	P=	3-1
+		GOSUBL	CheckOff
+		DAT1=A	X
+opgotopass	D1=D1+	3
+		GOTO	SourceLine+
+**********************************************************************
+*	GOSUB	label	7aaa
+**********************************************************************
+AssOpG5		D0=D0+	8
+		LCSTR	'OSUB'
+		?A=C	W
+		GOYES	opgosub
+		GOTO	InvOpErr
+opgosub		LCHEX	7
+		DAT1=C	B
+		D1=D1+	1
+		GOSUBL	LabelHere
+		GOC	opgotopass
+		A=A-CON	A,3
+		GOTO	opgotoin
+**********************************************************************
+*	GOSLOW		80BB0					* new
+*	GOLONG	label	8Caaaa
+*	GOVLNG	label	8Daaaaa
+*	GOSUBL	label	8Eaaaa
+*	GOSBVL	label	8Faaaaa
+**********************************************************************
+AssOpG6		LCSTR	'OSLOW'
+		?A#C	W
+		GOYES	+
+opgoslow	GOSUB	SourceLine:5
+		GOSLOW
++		D0=D0+	10
+		LCSTR	'OVLNG'
+		?A=C	W
+		GOYES	opgovlng
+		LCSTR	'OLON'
+		?A=C	W
+		GOYES	opgolong
+		LCSTR	'OSBVL'
+		?A=C	W
+		GOYES	opgosbvl
+		LCSTR	'OSUB'
+		?A=C	W
+		GOYES	opgosubl
+		GOTO	InvOpErr
+
+opgolong	LCHEX	C8
+		DAT1=C	B
+		D1=D1+	2
+		GOSUBL	LabelHere
+		GOC	opgolongpass
+opgolongin	P=	4-1
+		GOSUBL	CheckOff
+		DAT1=A	A
+opgolongpass	D1=D1+	4
+		GOTO	SourceLine+
+opgosubl	LCHEX	E8
+		DAT1=C	B
+		D1=D1+	2
+		GOSUBL	LabelHere
+		GOC	opgolongpass
+		A=A-CON	A,4
+		GOTO	opgolongin
+
+opgovlng	LCHEX	D8
+-		DAT1=C	B
+		D1=D1+	2
+		GOSUBL	Expression
+		GOC	opgovlngpass
+		GOSUBL	CheckAbsolute
+opgovlngpass	C=D	A
+		GOTO	SourceLine+5
+opgosbvl	LCHEX	F8
+		GOC	-
+**********************************************************************
+*	GOSHORT	label
+*	GETTIME		80B11					* new
+**********************************************************************
+AssOpG7		LCSTR	'OSHORT'
+		?A=C	W
+		GOYES	opgoshort
+		LCSTR	'ETTIME'
+		?A=C	W
+		GOYES	opgettime
+		GOTO	InvOpErr
+opgoshort	GOTO	ImplemErr
+opgettime	GOSUBL	SourceLine:5
+		GETTIME
+**********************************************************************
+*	HS=0	n	82n
+*	HS=1	n	80B82n					* new
+**********************************************************************
+AssOpH4		LCSTR	'S=0'
+		?A=C	W
+		GOYES	ophs=0
+		LCSTR	'S=1'
+		?A=C	W
+		GOYES	ophs=1
+		GOTO	InvOpErr
+ophs=0		LCHEX	28
+		DAT1=C	B
+		D1=D1+	2
+-		D0=D0+	6
+		GOLONG	AssNib15
+ophs=1		LCHEX	28B08
+		DAT1=C	A
+		D1=D1+	5
+		GOTO	-
+**********************************************************************
+*	HEX(n)	'ascii'			????????
+**********************************************************************
+AssOpH6		LCSTR	'EX('
+		?A=C	W
+		GOYES	ophexx
+opH6err		GOTO	InvOpErr
+ophexx		D0=D0+	8
+		ST=0	qTEMP		Flag HEX(x)
+		GONC	opHEXentry
+**********************************************************************
+*	HEXM(n)	'ascii'			???????
+*	HSCREEN		80B92					* new
+**********************************************************************
+AssOpH7		LCSTR	'EXM('
+		?A#C	W
+		GOYES	+
+		D0=D0+	10
+		ST=1	qTEMP		Flag HEXM(x)
+opHEXentry	GOSUBL	Size>Pat	C[0] = 0-4
+		GOTO	ImplemErr
++		LCSTR	'SCREEN'
+		?A#C	W
+		GOYES	opH6err
+ophscreen	GOSUB	SourceLine:5
+		HSCREEN
+**********************************************************************
+*	IF	<expr>
+**********************************************************************
+AssOpI2		LCSTR	'F'
+		?A#C	B
+		GOYES	+
+		GOLONG	ass_if
+**********************************************************************
+*	INTON		8080
+**********************************************************************
+AssOpI5		LCSTR	'NTON'
+		?A=C	W
+		GOYES	opinton
++		GOTO	InvOpErr
+opinton		GOSUB	SourceLine:4
+		INTON
+**********************************************************************
+*	INTOFF		808F
+*	INC(n)		??????????????????
+*	INCLOB
+**********************************************************************
+AssOpI6		LCSTR	'NTOFF'
+		?A=C	W
+		GOYES	opintoff
+		LCSTR	'NCLOB'
+		?A=C	W
+		GOYES	opinclob
+		C=A	A
+		LCSTR	'NC('
+		?A=C	W
+		GOYES	opincx
+		GOTO	InvOpErr
+opintoff	GOSUB	SourceLine:4
+		INTOFF
+opincx		D0=D0+	8
+		GOSUBL	Size>Pat	C[0] = 0-4
+		GOTO	ImplemErr
+
+opinclob	D0=D0+	10
+		GOSUBL	NextTokHere
+		GOLONG	DoInclob
+**********************************************************************
+*	INCLUDE
+**********************************************************************
+AssOpI7		LCSTR	'NCLUDE'
+		?A=C	W
+		GOYES	opinclude
+		GOTO	InvOpErr
+opinclude	D0=D0+	12		Skip the remaining 6 chars
+		GOSUBL	NextTokHere
+		GOLONG	DoInclude
+**********************************************************************
+*	JUMP
+**********************************************************************
+AssOpJ4		LCSTR	'UMP'
+		?A=C	W
+		GOYES	opjump
+		GOTO	InvOpErr
+opjump		GOTO	ImplemErr
+**********************************************************************
+*	KEYDN		80BA0					* new
+**********************************************************************
+AssOpK5		LCSTR	'EYDN'
+		?A=C	W
+		GOYES	opkeydn
+		GOTO	InvOpErr
+opkeydn		GOSUB	SourceLine:5
+		KEYDN
+**********************************************************************
+*	LC	nn..n	3tnn..n
+*	LA	nn..n	8082tn.
+**********************************************************************
+AssOpL2		D0=D0+	2
+		LCSTR	'C'
+		?A=C	B
+		GOYES	oplc
+		LC(1)	'A'
+		?A=C	B
+		GOYES	opla
+		GOTO	InvOpErr
+opla		D=0	P
+		GOTO	oplrhex
+oplc		LCHEX	2
+		D=C	P
+		GOTO	oplrhex
+
+**********************************************************************
+*	LIST
+*	LINK
+*	LOOP
+**********************************************************************
+AssOpL4		LCSTR	'IST'
+		?A=C	W
+		GOYES	oplist
+		LCSTR	'INK'
+		?A=C	W
+		GOYES	oplink
+		LCSTR	'OOP'
+		?A=C	W
+		GOYES	oploop
+		GOTO	InvOpErr
+oplist		GOTO	SourceLine+	Ignore LIST
+oplink		GOTO	ImplemErr
+oploop		LC(N)	10
+		A=DAT0	A	[3]
+		D0=D0+	5	[3]
+		PC=(A)		[4]
+		DAT1=C	10
+		D1=D1+	10
+		GOTO	SourceLine+
+**********************************************************************
+*	LCHEX	nn.nn	3tnn..n
+*	LC(n)	nn.nn	3tnn..n
+*	LCASC	'c.c'	3tnn..n
+*	LCSTR	'c.c'	3tnn..n
+*	LAHEX	nn.nn	8082tnn..n
+*	LA(n)	nn.nn	8082tnn..n
+*	LAASC	'c.c'	8082tnn..n
+*	LASTR	'c.c'	8082tnn..n
+*	LISTM
+**********************************************************************
+AssOpL5		D0=D0+	8
+		LCSTR	'ISTM'
+		?A=C	W
+		GOYES	oplistm
+		GOSUBL	Reg>Pat
+		D=C	P	reg
+		ASR	W
+		ASR	W
+		LC(2)	'('
+		?A=C	B
+		GOYES	oplr(
+		C=A	W
+		LCSTR	'HEX'
+		?A#C	W
+		GOYES	+
+		GOTO	oplrhex
++		LCSTR	'ASC'
+		?A#C	W
+		GOYES	+
+		GOTO	oplrasc
++		LCSTR	'STR'
+		?A#C	W
+		GOYES	opL5err
+		GOTO	oplrstr
+
+oplistm		GOTO	SourceLine+	Ignore LISTM
+
+opL5err		GOTO	InvOpErr
+
+* LA(n) LC(n)
+
+oplr(		D0=D0-	2
+		A=DAT0	B
+		LCSTR	')'
+		?A#C	B
+		GOYES	opL5err
+		D0=D0-	2
+		A=DAT0	B
+		D0=D0+	4
+		LCSTR	'N'
+		?A=C	B
+		GOYES	oplrn
+		LCSTR	'9'
+		?A>C	B
+		GOYES	opL5err
+		LC(1)	'1'
+		C=A-C	B		0-8
+		GOC	opL5err
+opLRXentry	RSTK=C
+		GOSUB	opwritelr
+		GOSUBL	Expression
+		C=RSTK
+		DAT1=C	B
+		D1=D1+	1
+		P=C	0
+		C=D	WP
+		DAT1=C	WP
+		CD1EX
+		C+P+1
+		D1=C
+		GOTO	SourceLine+
+* LA(N) LC(N)
+oplrn		GOSUB	opwritelr
+		GOLONG	AssNib16
+* LCHEX LAHEX
+
+oplrhex		GOSUB	opwritelr
+		GOSUBL	NextBinHere	A[W]=bint B[A]=nibbles-1
+		GOC	oplrhexerr
+		C=B	A
+		B=0	P
+		?B#0	A
+		GOYES	oplrhexlerr
+		P=C	0
+		DAT1=C	1
+		D1=D1+	1
+		DAT1=A	WP
+		CD1EX
+		C+P+1
+		D1=C
+		GOTO	SourceLine+
+oplrhexerr	GOTO	HexErr		"Invalid Hex Field"
+oplrhexlerr	P=	0
+NibLenErr	LERR	errLongHex	"Too Long Hex Field"
+
+
+* LASTR LCSTR
+oplrstr		ST=0	qTEMP		Flag no reversal
+		GOTO	+
+* LAASC LCASC
+oplrasc		ST=1	qTEMP		Flag reversal
++		GOSUB	opwritelr	Write LA/LC
+		CD1EX
+		RSTK=C			Save location of lenght
+		D1=C
+		D1=D1+	1
+		GOSUBL	NextArg
+
+* LineEnd>R0 now passes into CheckNibaLen and AssAsc>Mem
+		GOSUBL	LineEnd>R0
+*		GOSUBL	CheckNibaLen
+*		GOSUBL	AssAsc>Mem
+
+		GOC	InvAscErr
+		C=RSTK
+		D0=C			->lenght nibble
+		C=C+1	A		->ascii
+		AD1EX			->tail
+		B=A	A		->tail
+		D1=A
+		A=A-C	A		nibbles
+		A=A-1	A		nibbles--
+		GOC	InvAscErr
+		DAT0=A	1
+		A=0	P
+		?A#0	A
+		GOYES	lasc>err	Too long ascii constant
+		?ST=0	qTEMP
+		GOYES	+
+		D0=D0+	1
+		GOSUB	Reverse2
+		C=B	A
+		D1=C			->tail
++		GOTO	SourceLine+
+lasc>err	LERR	errLongAsc
+InvAscErr	LERR	errInvAsc	"Invalid Asc Field"
+
+
+opwritelr	D=D-1	P
+		GOC	opwrla
+		D=D-1	P
+		GOC	opwrlb
+		?D=0	P
+		GOYES	opwrlc
+opwrlb		GOTO	InvRegComb
+opwrla		LCHEX	2808
+		DAT1=C	A
+		D1=D1+	4
+		RTN
+opwrlc		LCHEX	3
+		DAT1=C	B
+		D1=D1+	1
+		RTN
+
+* Reverse characters, D0 = ->start, D1 = ->tail
+
+Reverse2	D1=D1-	2
+		AD0EX
+		D0=A
+		CD1EX
+		D1=C
+		?A>=C	A		Done if paths cross
+		RTNYES
+		A=DAT0	B
+		C=DAT1	B
+		DAT1=A	B
+		DAT0=C	B
+		D0=D0+	2
+		GONC	Reverse2	BET
+
+**********************************************************************
+*	LC(nn)	nn.nn	3tnn..n		???
+*	LA(nn)	nn.nn	8082tn.		???
+**********************************************************************
+AssOpL6		GOTO	InvOpErr
+**********************************************************************
+*	LISTALL
+**********************************************************************
+AssOpL7		LCSTR	'ISTALL'
+		?A=C	W
+		GOYES	oplistall
+		GOTO	InvOpErr
+oplistall	GOTO	SourceLine+	Ignore LISTALL
+**********************************************************************
+*	MP=0		828
+*	MP=1		80B828					* new
+**********************************************************************
+AssOpM4		LCSTR	'P=0'
+		?A=C	W
+		GOYES	opmp=0
+		LCSTR	'P=1'
+		?A=C	W
+		GOYES	opmp=1
+		GOTO	InvOpErr
+opmp=0		GOSUB	SourceLine:3
+		MP=0
+opmp=1		GOSUB	SourceLine:6
+		MP=1
+
+**********************************************************************
+*	MOVEDN		80B60					* new
+*	MOVEUP		80B70					* new
+**********************************************************************
+AssOpM6
+		LCSTR	'OVEDN'
+		?A=C	W
+		GOYES	opmovedn
+		LCSTR	'OVEUP'
+		?A=C	W
+		GOYES	opmoveup
+		GOTO	InvOpErr
+
+opmovedn	GOSUB	SourceLine:5
+		MOVEDN
+opmoveup	GOSUB	SourceLine:5
+		MOVEUP
+
+**********************************************************************
+*	MESSAGE
+*	MIDAPP?
+**********************************************************************
+AssOpM7		LCSTR	'IDAPP?'
+		?A=C	W
+		GOYES	opmidapp?
+		LCSTR	'ESSAGE'
+		?A=C	W
+		GOYES	opmessage
+		GOTO	InvOpErr
+opmidapp?	GOSUB	SourceLine:5
+		MIDAPP?
+
+opmessage	D0=D0+	12		Skip ESSAGE
+		ST=0	qREPORT		So the message stays on screen
+		CD1EX
+		RSTK=C			Save pc
+assdisplines	GOSUBL	ClearStat
+		GOSUBL	GetDisp1	D1 = ->row1
+assdispline	GOSUBL	SkipWhiteIn
+		GOC	assnomsg
+		C=R2
+		GOSBVL	=CSRW5		->lineend
+		AD0EX
+		D0=A
+		C=C-A	A
+		CSRB.F	A		chars on line
+		GOSUBL	Disp$		Display D0
+assnomsg	C=RSTK
+		D1=C			Restore pc
+		GOTO	SourceLine+
+**********************************************************************
+*	NOP3	420
+*	NOP4	6300
+*	NOP5	64000
+**********************************************************************
+AssOpN4		LCSTR	'OP3'
+		?A=C	W
+		GOYES	opnop3
+		LCSTR	'OP4'
+		?A=C	W
+		GOYES	opnop4
+		LCSTR	'OP5'
+		?A=C	W
+		GOYES	opnop5
+		GOTO	InvOpErr
+opnop3		GOSUB	SourceLine:3
+		NIBHEX	420		* GNU Tools uses HS=0 0
+opnop4		GOSUB	SourceLine:4
+		NOP4
+opnop5		GOSUB	SourceLine:5
+		NOP5
+**********************************************************************
+*	NIBFS	fs
+**********************************************************************
+AssOpN5		LCSTR	'IBFS'
+		?A=C	W
+		GOYES	opnibfs
+		GOTO	InvOpErr
+opnibfs		D0=D0+	8
+		GOSUBL	FieldHere
+		GOTO	SourceLine+1
+**********************************************************************
+*	NIBASC	'ascii'
+*	NIBHEX	hex
+*	NIBBIN	bin
+*	NIBGRB	bin
+**********************************************************************
+AssOpN6		LCSTR	'IB'
+		?A=C	A
+		GOYES	opN6nib
+opN6err		GOTO	InvOpErr
+
+opN6nib		D0=D0+	4
+		A=DAT0	6
+		D0=D0+	6
+		C=A	W
+		LCSTR	'ASC'
+		?A=C	W
+		GOYES	opnibasc
+		LCSTR	'HEX'
+		?A=C	W
+		GOYES	opnibhex
+		LCSTR	'BIN'
+		?A=C	W
+		GOYES	opnibbin
+		LCSTR	'GRB'
+		?A=C	W
+		GOYES	opnibgrb
+		GONC	opN6err
+
+opnibasc	GOSUB	SkipToFld
+
+* LineEnd>R0 now passes into CheckNibaLen and AssAsc>Mem
+		GOSUBL	LineEnd>R0
+*		GOSUB	CheckNibaLen
+*		GOSUB	AssAsc>Mem
+
+		GOC	InvNibaErr
+		GOTO	SourceLine+
+InvNibaErr	LERR	errInvAsc
+
+opnibhex	GOSUB	NextArg		B[A] = toklen
+		C=B	A		make sure sufficient memory
+		C=C+1	A
+		GOSUBL	Free-
+AssNibHexLP	GOSUBL	ParseNib
+		GOC	NibHexErr
+		DAT1=A	1
+		D1=D1+	1
+		B=B-1	A
+		GONC	AssNibHexLP
+		GOTO	SourceLine+
+NibHexErr	GOLONG	HexErr		"Invalid Hex Field"
+
+opnibbin
+opnibgrb	GOLONG	ImplemErr
+**********************************************************************
+*	NATIVE?	hh	80B51hh
+**********************************************************************
+AssOpN7		LCSTR	'ATIVE?'
+		?A=C	W
+		GOYES	opnative?
+		GOTO	goInvOpErr
+opnative?	GOLONG	ImplemErr
+**********************************************************************
+*	OFF		80B01					* new
+**********************************************************************
+AssOpO3		LCSTR	'FF'
+		?A=C	A
+		GOYES	opoff
+		GOTO	goInvOpErr
+opoff		GOSUBL	SourceLine:5
+		OFF
+**********************************************************************
+*	OUT=C		801
+**********************************************************************
+AssOpO5		LCSTR	'UT=C'
+		?A=C	W
+		GOYES	opout=c
+		GOTO	goInvOpErr
+opout=c		GOSUBL	SourceLine:3
+		OUT=C
+**********************************************************************
+*	OUT=CS		800
+*	OUTBYT		80B65					* new
+**********************************************************************
+AssOpO6		LCSTR	'UT=CS'
+		?A=C	W
+		GOYES	opout=cs
+		LCSTR	'UTBYT'
+		?A=C	W
+		GOYES	opoutbyt
+		GOTO	goInvOpErr
+opout=cs	GOSUBL	SourceLine:3
+		OUT=CS
+opoutbyt	GOSUBL	SourceLine:5
+		OUTBYT
+**********************************************************************
+*	P=	n	2n
+**********************************************************************
+AssOpP2		LCSTR	'='
+		?A=C	B
+		GOYES	opp=
+		GOTO	goInvOpErr
+opp=		D0=D0+	2
+		LCHEX	2
+		DAT1=C	1
+		D1=D1+	1
+		GOTO	AssNib15
+**********************************************************************
+*	P=C	n	80Dn
+**********************************************************************
+AssOpP3		LCSTR	'=C'
+		?A=C	A
+		GOYES	opp=c
+		GOTO	goInvOpErr
+opp=c		D0=D0+	4		Skip 2 chars
+		LCHEX	D08
+		DAT1=C	X
+		D1=D1+	3
+		GOTO	AssNib15
+**********************************************************************
+*	PC=A		81B2
+*	PC=C		81B3
+**********************************************************************
+AssOpP4		LCSTR	'C=A'
+		?A=C	W
+		GOYES	oppc=a
+		LCSTR	'C=C'
+		?A=C	W
+		GOYES	oppc=c
+		GOTO	goInvOpErr
+oppc=c		GOSUBL	SourceLine:4
+		PC=C
+oppc=a		GOSUBL	SourceLine:4
+		PC=A
+**********************************************************************
+*	P=P+1		0C
+*	P=P-1		0D
+**********************************************************************
+AssOpP5		LCSTR	'=P+1'
+		?A=C	W
+		GOYES	opp=p+1
+		LCSTR	'=P-'
+		?A=C	W
+		GOYES	opp=p-1
+		GOTO	goInvOpErr
+opp=p+1		GOSUBL	SourceLine:2
+		P=P+1
+opp=p-1		GOSUBL	SourceLine:2
+		P=P-1
+**********************************************************************
+*	PC=(A)		808C
+*	PC=(C)		808E
+**********************************************************************
+AssOpP6		LCSTR	'C=(A)'
+		?A=C	W
+		GOYES	oppc=&a
+		LCSTR	'C=(C'
+		?A=C	W
+		GOYES	oppc=&c
+		GOLONG	InvRegComb
+oppc=&a		GOSUBL	SourceLine:4
+		PC=(A)
+oppc=&c		GOSUBL	SourceLine:4
+		PC=(C)
+**********************************************************************
+*	RTN		01
+*	RTI		0F
+*	RSI		80810
+*	REL
+**********************************************************************
+AssOpR3		LCSTR	'TN'
+		?A=C	A
+		GOYES	oprtn
+		LCSTR	'TI'
+		?A=C	A
+		GOYES	oprti
+		LCSTR	'S'
+		?A=C	A
+		GOYES	oprsi
+		LCSTR	'EL'
+		?A=C	A
+		GOYES	oprel
+		GOTO	goInvOpErr
+oprtn		GOSUBL	SourceLine:2
+		RTN
+oprti		GOSUBL	SourceLine:2
+		RTI
+oprsi		GOSUBL	SourceLine:5
+		RSI
+oprel		GOLONG	SourceLine+	Ignore REL
+**********************************************************************
+*	Rn=r		10s
+*	RTNC		400
+*	RPL2		80B00					* new
+**********************************************************************
+AssOpR4		LCSTR	'TNC'
+		?A=C	W
+		GOYES	oprtnc
+		
+		LCSTR	'PL2'
+		?A=C	W
+		GOYES	oprpl2
+
+opRn=r		D0=D0+	2
+		A=DAT0	A
+		LCSTR	'='
+		?A#C	B
+		GOYES	opR4err
+		GOSUBL	NextReg>Pat
+		D=C	P		reg
+		LCHEX	01		10s
+		D0=D0-	4
+		A=DAT0	A
+		D0=D0+	8
+		GOLONG	opgenRnentry
+
+opR4err		GOTO	goInvOpErr
+
+oprtnc		GOSUBL	SourceLine:3
+		RTNC
+		
+oprpl2		GOSUBL	SourceLine:5
+		RPL2
+
+**********************************************************************
+*	RTNSC		02
+*	RTNCC		03
+*	RTNNC		500
+*	RESET		80A
+*	REMON		80B05					* new
+**********************************************************************
+AssOpR5		LCSTR	'TNSC'
+		?A=C	W
+		GOYES	oprtnsc
+		LCSTR	'TNC'
+		?A=C	W
+		GOYES	oprtncc
+		LCSTR	'TNN'
+		?A=C	W
+		GOYES	oprtnnc
+		LCSTR	'ESET'
+		?A=C	W
+		GOYES	opreset
+		LCSTR	'EMON'
+		?A=C	W
+		GOYES	opremon
+		GOTO	goInvOpErr
+oprtnsc		GOSUBL	SourceLine:2
+		RTNSC
+oprtncc		GOSUBL	SourceLine:2
+		RTNCC
+oprtnnc		GOSUBL	SourceLine:3
+		RTNNC
+opreset		GOSUBL	SourceLine:3
+		RESET
+opremon		GOSUBL	SourceLine:5
+		REMON
+**********************************************************************
+*	REL(n)	label
+*	RTNSXM		00
+*	RSTK=C		06
+*	RDSYMB
+*	Rn=r.F	fs	81Afrn		?????
+*	REMOFF		80B15					* new
+**********************************************************************
+AssOpR6		LCSTR	'EL'
+		?A=C	A
+		GOYES	oprelxx
+		LCSTR	'TNSXM'
+		?A=C	W
+		GOYES	oprtnsxm
+		LCSTR	'STK=C'
+		?A=C	W
+		GOYES	oprstk=c
+		LCSTR	'DSYMB'
+		?A=C	W
+		GOYES	oprdsymb
+		LCSTR	'EMOFF'
+		?A=C	W
+		GOYES	opremoff
+* Only Rn=r.F left
+		D0=D0+	2
+		A=DAT0	A
+		LCSTR	'='
+		?A#C	B
+		GOYES	opR6err
+		GOSUBL	NextReg>Pat
+		D=C	P		reg
+		D0=D0-	4		->Rn
+		A=DAT0	A
+		D0=D0+	12		Skip all chars
+		LCHEX	00A18
+		GOLONG	opgenRnfentry
+
+oprelxx		GOC	oprelxx+	oprelxx out of range
+
+opR6err		GOTO	goInvOpErr
+oprdsymb	GOLONG	ImplemErr
+
+oprstk=c	GOSUBL	SourceLine:2
+		RSTK=C
+oprtnsxm	GOSUBL	SourceLine:2
+		RTNSXM
+opremoff	GOSUBL	SourceLine:5
+		REMOFF
+
+oprelxx+	D0=D0+	4		Skip REL, expect (x) with 1<=x<=5
+		A=DAT0	B
+		LCSTR	'('
+		?A#C	B
+		GOYES	opR6err
+		D0=D0+	4
+		GOSUBL	Size>Pat	C[0]=0-4
+		RSTK=C			Save field size
+		GOSUB	LabelHere	A[A] = offset, 0 if not defined yet!
+		C=RSTK
+		P=C	0		0-4 for 1-5
+		GOSUB	CheckOff?
+		GOC	longrelerr
+		DAT1=A	WP
+		CD1EX
+		C+P+1
+		CD1EX
+		GOLONG	SourceLine+
+longrelerr	P=	0
+		LERR	errLongRel
+**********************************************************************
+*	RESETOS		80B31					* new
+**********************************************************************
+AssOpR7		LCSTR	'ESETOS'
+		?A=C	W
+		GOYES	opresetos
+		GOTO	goInvOpErr
+opresetos	GOSUBL	SourceLine:5
+		RESETOS
+**********************************************************************
+*	SAVE							* new
+*	SB=0		822
+*	SR=0		824
+*	SB=1		80B822					* new
+*	SR=1		80B824					* new
+*	ST=C		0A
+*	ST=0	n	84n
+*	ST=1	n	85n
+**********************************************************************
+AssOpS4		LCSTR	'T='
+		?A=C	A
+		GOYES	opS4st=
+		LCSTR	'B=0'
+		?A=C	W
+		GOYES	opsb=0
+		LCSTR	'R'
+		?A=C	W
+		GOYES	opsr=0
+		LCSTR	'B=1'
+		?A=C	W
+		GOYES	opsb=1
+		LCSTR	'R'
+		?A=C	W
+		GOYES	opsr=1
+		LCSTR	'AVE'
+		?A=C	W
+		GOYES	opsaveptr
+opS4err		GOTO	goInvOpErr
+
+opsb=0		GOSUBL	SourceLine:3
+		SB=0
+opsr=0		GOSUBL	SourceLine:3
+		SR=0
+opsb=1		GOSUBL	SourceLine:6
+		SB=1
+opsr=1		GOSUBL	SourceLine:6
+		SR=1
+
+opsaveptr	LC(N)	7
+		GOSBVL	=SAVPTR
+		DAT1=C	7
+		D1=D1+	7
+		GOLONG	SourceLine+
+
+opS4st=		D0=D0+	4		Skip 2 chars
+		A=DAT0	B		Last char
+		D0=D0+	2
+		LCSTR	'C'
+		?A=C	B
+		GOYES	opst=c
+		LCSTR	'0'
+		?A=C	B
+		GOYES	opst=0
+		LC(1)	'1'
+		?A#C	B
+		GOYES	opS4err
+opst=0		CBIT=1	2		Convert 0-1 to 4-5
+		CSL	B
+		LCHEX	8
+		DAT1=C	B
+		D1=D1+	2
+		GOTO	AssNib15	Append n to end
+opst=c		GOSUBL	SourceLine:2
+		ST=C
+**********************************************************************
+*	SREQ?		80E
+*	SLINK
+**********************************************************************
+AssOpS5		D0=D0+	8	Skip 4 chars
+		LCSTR	'REQ?'
+		?A=C	W
+		GOYES	opsreq?
+		LCSTR	'LINK'
+		?A=C	W
+		GOYES	opslink
+		GOTO	goInvOpErr
+opsreq?		GOSUBL	SourceLine:3
+		SREQ?
+opslink		GOLONG	ImplemErr	"Not Implemented"
+**********************************************************************
+*	SETHEX		04
+*	SETDEC		05
+*	SHUTDN		807
+*	STRING	\ASCII\
+*	STITLE	text
+*	SERIAL		80B71					* new
+**********************************************************************
+AssOpS6		D0=D0+	10		Skip 5 chars
+		LCSTR	'ETHEX'
+		?A=C	W
+		GOYES	opsethex
+		LCSTR	'ETDEC'
+		?A=C	W
+		GOYES	opsetdec
+		LCSTR	'HUTDN'
+		?A=C	W
+		GOYES	opshutdn
+		LCSTR	'ERIAL'
+		?A=C	W
+		GOYES	opserial
+		LCSTR	'TITLE'
+		?A=C	W
+		GOYES	opstitle
+		LCSTR	'TRING'
+		?A=C	W
+		GOYES	opstring
+		GOTO	goInvOpErr
+opsethex	GOSUBL	SourceLine:2
+		SETHEX
+opsetdec	GOSUBL	SourceLine:2
+		SETDEC
+opshutdn	GOSUBL	SourceLine:3
+		SHUTDN
+opserial	GOSUBL	SourceLine:5
+		SERIAL
+
+opstitle	?ST=1	qREPORT
+		GOYES	+
+		CD1EX
+		RSTK=C			Save pc
+		GOSUBL	ClearLine2
+		GOTO	assdispline
++		GOLONG	SourceLine+
+
+opstring	GOSUB	SkipToFld
+
+* LineEnd>R0 now passes into CheckNibaLen and AssAsc>Mem
+		GOSUB	LineEnd>R0	Needed for AssAsc>Mem
+*		GOSUB	CheckNibaLen	Check realistic line lenght
+*		GOSUB	AssAsc>Mem	And assemble ascii itself
+
+		GOC	opstringerr
+		D1=D1-	2		And set high bit in last character
+		C=DAT1	B
+		CBIT=1	7
+		GOLONG	SourceLine+2
+opstringerr	GOTO	InvNibaErr
+**********************************************************************
+*	SETFLAG	symbol
+*	SETTIME		80B21					* new
+*	SETLNED		80B33					* new
+*	SETOFFD		80B43					* new
+*	SETFLDn		80BF7n	n=1-7 becomes 8-E		* new
+**********************************************************************
+AssOpS7		LCSTR	'ETFLD'
+		?A#C	W
+		GOYES	+
+		GOTO	opsetfldn
++		LCSTR	'ETTIME'
+		?A=C	W
+		GOYES	opsettime
+		LCSTR	'ETLNED'
+		?A=C	W
+		GOYES	opsetlned
+		LCSTR	'ETOFFD'
+		?A=C	W
+		GOYES	opsetoffd
+		D0=D0+	12		Skip 6 chars
+		LCSTR	'ETFLAG'
+		?A=C	W
+		GOYES	opsetflag
+		GOTO	goInvOpErr
+
+opsettime	GOSUBL	SourceLine:5
+		SETTIME
+opsetlned	GOSUBL	SourceLine:5
+		SETLNED
+opsetoffd	GOSUBL	SourceLine:5
+		SETOFFD
+
+opsetflag	ST=1	qTEMP		Indicate SET
+
+opdoflag	GOSUBL	NextTokHere?	* In all passes *
+		GONC	+
+		GOTO	MissLabErr	"Label Expected"
++		?ST=1	qPASS2
+		GOYES	+		Already checked in pass 1
+		GOSUBL	CheckReserved	Check if reserved
++		D=0	W		"CLR"
+		?ST=0	qTEMP
+		GOYES	+
+		D=D+1	A		"SET"
++		LC(1)	=SYMB_=		Resettable value
+		GOSUBL	AddSymbol
+		GOLONG	SourceLine+
+
+opsetfldn	D0=D0+	10		skip ETFLD
+		LCHEX	7FB08
+		DAT1=C	A
+		D1=D1+	5
+		A=DAT0	B
+		LCASC	'8'
+		?A<C	B		n < 8 ?
+		GOYES	+
+-		GOTO	InvFldSelErr
++		LCASC	'1'
+		A=A-C	B
+		GOC	-		n < 1
+*		A=A+CON	P,8		n=1-7 -> 8-E
+		ABIT=1	3		same as A=A+CON P,8
+		DAT1=A	1
+		D1=D1+	1
+		GOLONG	SourceLine+
+**********************************************************************
+*	TITLE	text
+**********************************************************************
+AssOpT5		D0=D0+	8		Skip 4 chars
+		LCSTR	'ITLE'
+		?A=C	W
+		GOYES	optitle
+		GOTO	goInvOpErr
+optitle		?ST=0	qREPORT
+		GOYES	+
+		GOLONG	SourceLine+
++		CD1EX
+		RSTK=C			Save pc
+		GOTO	assdisplines
+**********************************************************************
+*	UNCNFG		804
+*	UNLIST
+**********************************************************************
+AssOpU6		LCSTR	'NCNFG'
+		?A=C	W
+		GOYES	opuncnfg
+		LCSTR	'NLIST'
+		?A=C	W
+		GOYES	opunlist
+		GONC	goInvOpErr
+opunlist	GOLONG	SourceLine+	Ignore UNLIST
+opuncnfg	GOSUBL	SourceLine:3
+		UNCNFG
+**********************************************************************
+*	UNCNFGD							* new
+**********************************************************************
+AssOpU7		LCSTR	'NCNFGD'
+		?A=C	W
+		GOYES	opuncnfgd
+		GONC	goInvOpErr
+opuncnfgd	GOSUBL	SourceLine:5
+		UNCNFGD
+**********************************************************************
+*	WSCREEN		80BA2
+**********************************************************************
+AssOpW7		LCSTR	'SCREEN'
+		?A=C	W
+		GOYES	opwscreen
+		GONC	goInvOpErr
+opwscreen	GOSUBL	SourceLine:5
+		WSCREEN
+**********************************************************************
+*	XM=0		821
+*	XM=1		80B821					* new
+**********************************************************************
+AssOpX4		D0=D0+	6	Skip 3 chars
+		LCSTR	'M=0'
+		?A=C	W
+		GOYES	opxm=0
+		LCSTR	'M=1'
+		?A=C	W
+		GOYES	opxm=1
+goInvOpErr	GOLONG	InvOpErr
+opxm=0		GOSUBL	SourceLine:3
+		XM=0
+opxm=1		GOSUBL	SourceLine:6
+		XM=1
+**********************************************************************
+
+
+**********************************************************************
+* Expect argument field
+**********************************************************************
+SkipToFld	GOSUBL	SkipWhiteIn
+		RTNNC
+-		GOLONG	DatFldErr	"Argument Field Expected"
+NextArg		GOSUBL	NextTokHere?
+		RTNNC
+		GOC	-
+**********************************************************************
+* Assemble an expression in range 0-15 into next nibble
+* Assumes the nibble has been allocated.
+**********************************************************************
+AssNib15	GOSUBL	Expression
+		GOC	+		* Got no value
+		GOSUB	Check0-15
++		GOLONG	SourceLine+1
+**********************************************************************
+* Assemble an expression in range 1-16 into next nibble
+* Assumes the nibble has been allocated.
+**********************************************************************
+AssNib16	GOSUBL	Expression
+		GOC	+		* Got no value
+		GOSUB	Check1-16
++		GOLONG	SourceLine+1
+**********************************************************************
+* Check expression value in C[W] is in range 0-15 and not relative
+**********************************************************************
+Check0-15	?ST=1	qRELVALUE
+		GOYES	RelValueErr
+		CPEX	0
+		?C#0	W
+		GOYES	Range0-15Err
+		CPEX	0
+		RTNCC
+Range0-15Err	P=	0
+		LERR	errWant0-15	"Argument 0-15 Expected"
+**********************************************************************
+* Check expression value in C[W] is in range 1-16 and not relative
+**********************************************************************
+Check1-16	?ST=1	qRELVALUE
+		GOYES	RelValueErr
+		C=C-1	W
+		GOC	Range1-16Err
+		CPEX	0
+		?C#0	W
+		GOYES	Range1-16Err
+		CPEX	0
+		RTNCC
+Range1-16Err	P=	0
+		LERR	errWant1-16	"Argument 0-16 Expected"
+**********************************************************************
+* Check expression value in C[W] is in range 1-256 and not relative
+**********************************************************************
+Check1-256	?ST=1	qRELVALUE
+		GOYES	RelValueErr
+		C=C-1	W
+		GOC	Range1-256Err
+		RSTK=C
+		C=0	B
+		?C#0	W
+		GOYES	Range1-256Err
+		C=RSTK
+		RTNCC
+Range1-256Err	LERR	errWant1-256	"Argument 1-256 Expected"
+**********************************************************************
+* Check expression value is absolute
+**********************************************************************
+CheckAbsolute	?ST=0	qRELVALUE
+		RTNYES
+RelValueErr	LERR	errRelValue
+**********************************************************************
+* Check branch offset in A[A] is in range
+**********************************************************************
+CheckOff	GOSUB	CheckOff?
+		RTNNC
+LongBrErr	P=	0
+		LERR	errLongBranch	"Branch Too Long"
+**********************************************************************
+* Check offset value in A[A] is in range indicated by P
+**********************************************************************
+CheckOff?	C=0	A
+		C=P	4
+		P=	8
+		CPEX	4	#80000
+		?A>=C	A
+		GOYES	checkoffp-
+		C=0	A	* 7 7F 7FF 7FFF or 7FFFF
+		LCHEX	7
+		P=P-1
+		GOC	+
+		C=C-1	WP
++		P=P+1
+		?A>C	A
+		RTNYES
+		RTN
+checkoffp-	C=0	A	* FFFF8 FFF80 FF800 F8000 80000
+		C=C-1	A
+		LCHEX	8
+		P=P-1
+		GOC	+
+		C=0	WP
++		P=P+1
+		?A<C	A
+		RTNYES
+		RTN
+**********************************************************************
+* Expect a field selector
+* Input:	D0 = ->pos
+* Exit:		C[0]=B[0]=fs	D0 = ->fstail
+* Uses:		A[A] B[A] C[A] D[A] D0
+**********************************************************************
+FieldHere	GOSUBL	SkipWhiteIn	A[A] C[A] D[A]
+		GOC	FldSelErr	* No tokens found - error
+		GOSUBL	NxtTokNow	B[A] = toklen
+		GOSUB	Field?
+FieldHere10	C=P	0		C[0] = fs
+		P=	0
+		GOC	InvFldSelErr
+		B=C	P
+		C=C+1	P		Set CRY for A field
+		C=C-1	P
+		RTN
+InvFldSelErr	LERR	errInvfs	"Invalid Field Selector
+FldSelErr	LERR	errWantfs	"Field Selector Expected"
+**********************************************************************
+* Enable new field selectors: Fn
+**********************************************************************
+FieldFnHere	GOSUBL	SkipWhiteIn	A[A] C[A] D[A]
+		GOC	FldSelErr	* No tokens found - error
+		GOSUBL	NxtTokNow	B[A] = toklen
+		GOSUB	FieldFn?
+		GOTO	FieldHere10
+**********************************************************************
+* Try to pars a field selector
+* Input:	D0 = ->token	B[A] = toklen
+* Exit:		CS: invalid field	D0 = ->token
+*		CC: P = fs		D0 = ->tokentail
+* Uses:		A[A] C[A] D0
+*		P WPXSX S M B W A
+*		0 1 2 3 4 5 6 7 F
+**********************************************************************
+Field?		C=0	A		Check 1-2 chars
+		LC(1)	1
+		?B>C	A
+		RTNYES
+
+		?B=0	A
+		GOYES	fld1chr?
+Field?10	A=0	A
+		A=DAT0	4
+		D0=D0+	4
+		C=0	A
+		LCSTR	'WP'
+		?A=C	A
+		GOYES	fldisWP
+		LCSTR	'XS'
+		?A=C	A
+		GOYES	fldisXS
+		D0=D0-	4		Fail 2-chr fs
+		RTNSC
+fldisA		P=	15
+		RTNCC
+fldisWP		P=	1
+fldisP		RTNCC
+fldisXS		P=	2
+		RTNCC
+fldisX		P=	3
+		RTNCC
+fldisS		P=	4
+		RTNCC
+fldisM		P=	5
+		RTNCC
+fldisB		P=	6
+		RTNCC
+fldisW		P=	7
+		RTNCC
+fld1chr?	A=DAT0	B
+		D0=D0+	2
+		LCASC	'A'	#41
+		?A=C	B
+		GOYES	fldisA
+		LC(1)	'B'	#42
+		?A=C	B
+		GOYES	fldisB
+		LCASC	'P'	#50
+		?A=C	B
+		GOYES	fldisP
+		LC(1)	'W'	#57
+		?A=C	B
+		GOYES	fldisW
+		LC(1)	'X'	#58
+		?A=C	B
+		GOYES	fldisX
+		LC(1)	'S'	#53
+		?A=C	B
+		GOYES	fldisS
+		LCASC	'M'	#4D
+		?A=C	B
+		GOYES	fldisM
+		D0=D0-	2
+		RTNSC			Fail 1-chr fs
+**********************************************************************
+* Enable new field selectors: Fn
+**********************************************************************
+FieldFn?	C=0	A		Check 1-2 chars
+		LC(1)	1
+		?B>C	A
+		RTNYES
+
+		?B=0	A
+		GOYES	fld1chr?
+		A=DAT0	B
+		LCASC	'F'
+		?A=C	B
+		GOYES	+
+		GOTO	Field?10
++		D0=D0+	2		skip past 'F'
+		A=DAT0	B
+		LCASC	'8'
+		?A<C	B		Fn : n < 8?
+		GOYES	+
+-		D0=D0-	2		no, reset D0
+		RTNSC		
++		LCASC	'1'
+		A=A-C	B
+		GOC	-		Fn : n > 0?
+		C=A	B		yes
+		P=	7
+		C+P+1			n=1-7 -> 8-E	( C[0] = n-1 )
+		P=C	0
+		D0=D0+	2		D0 -> tokentail
+		RTNCC
+**********************************************************************
+* Expect a label, return offset in A[A], CC if defined value
+**********************************************************************
+LabelHere	GOSUBL	NextTokHere?
+		GONC	Label
+MissLabErr	LERR	errWantLabel	"Label Expected"
+
+Label		GOSUBL	SymbolValue?
+		GOC	labelnotyet	Not defined yet
+		D0=A
+		A=DAT0	B
+		LC(1)	SYMB_LABEL
+		?A#C	P
+		GOYES	LabelTypErr	Not of label type
+		D0=D0+	1+1		Skip lenght too, assuming pcoff
+		C=DAT0	A		A[A] = pcoff (for label)
+		GOSBVL	=D0=DSKTOP
+		D0=D0+	5
+		A=DAT0	A		->$buffer
+		A=A+CON	A,10		skip prolog,len
+		A=A+C	A		->labeladdress
+		CD1EX
+		D1=C
+		A=A-C	A		offset from pc
+		RTNCC			CC: Got defined value
+labelnotyet	ST=1	qNEEDPASS2
+		A=0	A		Return 0-offset
+		?ST=0	qPASS2
+		RTNYES			CS: Not defined during this pass1
+UndefLabErr	LERR	errUndefined	"Undefined Label"
+LabelTypErr	LERR	errWantLabel	"Label Expected"
+
+**********************************************************************
+* Get ->lineend into R0[A]
+**********************************************************************
+LineEnd>R0	A=R2
+		GOSBVL	=ASRW5
+		R0=A.F	A
+*		RTNCC
+
+* Fall through
+
+* LineEnd>R0, CheckNibaLen, and AssAsc>Mem are always called together
+* so not why just pass through to the next subroutine.		- Han
+
+
+**********************************************************************
+* Check lenght of line for nibasc lines
+**********************************************************************
+*CheckNibaLen	A=R0.F	A		->lineend
+*		CD0EX
+*		D0=C
+*		A=A-C	A		remaining nibbles on line
+*		LC(5)	2*40-1
+*		?A<=C	A
+*		GOYES	AssAsc>Mem
+*		RTNYES
+* NibaLenErr	LERR	errLongAsc	"Too Long Asc"
+*
+* Note:	this does not handle escape codes; added code to handle
+*	escape sequences using RSTK
+*
+* 	Daniel Lidstrom's fix also does not actually fix the bug as
+*	it assumed \xx was hexadecimal. The assembler actually allows
+*	for \o, \oo, and \ooo as well as \x, \xx, and special escape
+*	sequences such as \n and \t. Rather than writing a separate
+*	routine to do a character count, we assemble the line and
+*	keep track of the count with the return stack. Using RSTK is
+*	rather, slow; however, it does not require much new code.
+*	Speed-wise, it should be about the same as a separate routine
+*	that makes a first pass through the ascii sequence and then
+*	assembles it, if not slightly faster.
+*
+* MAKE SURE TO POP RSTK BEFORE DOING A RTNSC OR RTNCC ONCE INSIDE
+* PARSER LOOP!!
+
+**********************************************************************
+* Assemble ascii string to memory
+* Entry:	D0 = ->asc
+*		D1 = ->out
+*		R0[A] = ->lineend
+* Exit:
+*		CS: Invalid ASCII
+*		CC: D1 = ->out'
+**********************************************************************
+AssAsc>Mem	A=DAT0	B
+		D0=D0+	2
+		LCASC	\'\
+		?A=C	B
+		GOYES	+
+		LCASC	'\\'
+		?A=C	B
+		GOYES	+
+		LCASC	'"'
+		?A=C	B
+		GOYES	+
+		RTNSC			Set CS: Invalid ascii
++		B=A	B		Save terminator chr
+* Add in character counter
+		C=0	A		0 chars
+		RSTK=C
+* Main asc parser loop
+assasclp	C=RSTK			update count
+		LA(2)	41
+		?C<A	B		40 chars or less?
+		GOYES   +
+NibaLenErr	LERR	errLongAsc	"Too Long Asc"
++		C=C+1	B		increase char count
+		RSTK=C
+
+		C=R0.F	A		->lineend
+		AD0EX
+		D0=A
+		?A>=C	A
+*		RTNYES			No terminator was found - error
+		GOYES	assascRSC1	C=RSTK then RTNSC
+		A=DAT0	B
+		D0=D0+	2
+		?A#B	B
+		GOYES	assasc#trm	Not end - continue
+		C=R0.F	A		->lineend
+		AD0EX			Note that we cannot assume the line
+		D0=A			to end at \n
+		?A<C	A
+		GOYES	assasctrm?	Check if there is more after the term
+-		C=RSTK			
+		RTNCC			Nope - CC; pop counter first though
+assasctrm?	A=DAT0	B
+		LCASC	' '
+		?A<=C	B
+		GOYES	-		Whitespace follows - done
+		A=B	A		Terminator back to A and continue
+assasc#trm	LCASC	'\\'
+		?A=C	B		do we have an escape sequence?
+		GOYES	+
+		C=A	B
+assascC		A=C	B
+assascA		DAT1=A	B
+		D1=D1+	2
+		GONC	assasclp
+* Found "\", parse sequence
++		C=R0.F	A		->lineend
+		AD0EX
+		D0=A
+
+* old terminator / no more chars error
+*		?A>=C	A
+*		RTNYES			No more chars - error
+		?C>A	A		more chars to go?
+		GOYES	+
+assascRSC1	C=RSTK			no, so pop counter and...
+		RTNSC			...return with CS
++		A=DAT0	B
+		D0=D0+	2
+		GOSUBL	SpcChar?	\n \t or similar?
+		GONC	assascC		Yes - output value
+
+* Try getting a number. Formats: \o \oo \ooo \xh \xhh \char
+		LCASC	'x'
+		?A=C	B
+		GOYES	asshexasc
+		LCASC	'9'
+		?A>C	B
+		GOYES	assascA		Not octal - add as is
+		LCASC	'0'
+		?A<C	B
+		GOYES	assascA		Not octal - add as is
+* Got octal number, max 3 chars, first already in A[B]
+
+assoctasc	C=A-C	B
+		D=C	B		octvalue
+		D=0	XS
+		D=D+1	XS		Allow 2 more octal chars
+assoctlp	C=R0.F	A
+		AD0EX
+		D0=A
+		?A>=C	A
+*		RTNYES			No terminator found - error
+		GOYES	assascRSC1	C=RSTK then RTNSC
+		A=DAT0	B
+		D0=D0+	2
+		LCASC	'9'
+		?A>C	B
+		GOYES	ass#oct		Not octal - back 1 char & output oct
+		LCASC	'0'
+		C=A-C	B
+		GOC	ass#oct		Not octal - back 1 char & output oct
+		D=D+D	B
+		D=D+D	B
+		D=D+D	B		oct<<3
+		D=D+C	B		oct += value
+		D=D-1	XS
+		GONC	assoctlp	Max 3 octal chars
+		D0=D0+	2		Got \ooo
+ass#oct		D0=D0-	2		Got \o or \oo, back 1 char
+		C=D	B
+		GOTO	assascC
+
+* Now parse max 2 hex characters
+asshexasc	D=0	X		No value yet
+		D=D+1	XS		Max 2 hex chars
+asshexlp	C=R0.F	A
+		AD0EX
+		D0=A
+		?A>=C	A
+*		RTNYES			No terminator - error
+		GOYES	assascRSC2
+		GOSUBL	ParseNib
+		GOC	ass#hex		Got non-hex nib
+		C=A	B
+		DSL	B		hex<<4
+		D=C	P		hex += value
+		D=D-1	XS
+		GONC	asshexlp
+-		C=D	B		Got 2 hex chars - add value
+		GOTO	assascC
+ass#hex		D=D-1	XS
+		GOC	-		Got 1 hex char - add value
+assascRSC2	C=RSTK			pop counter before doing error
+		RTNSC			Got no hex chars - error
+
+**********************************************************************
+
+**********************************************************************
+*		Utilities
+**********************************************************************
+NextReg>Pat	ASR	W
+		ASR	W
+Reg>Pat		LCASC	'D'
+		?A>C	B
+		GOYES	+
+		LC(1)	'A'
+		C=A-C	B
+		RTNNC
++		GOLONG	InvOpErr
+
+Size>Pat	A=DAT0	B
+		LCSTR	')'
+		?A#C	B
+		GOYES	+
+		D0=D0-	2
+		A=DAT0	B
+		D0=D0+	4
+		LCSTR	'5'
+		?A>C	B
+		GOYES	+
+		LC(1)	'1'
+		C=A-C	B
+		RTNNC
++		GOLONG	InvOpErr
+**********************************************************************
+*		General purpose assemblers for A-D patterns
+**********************************************************************
+
+**********************************************************************
+* General parser for A-D instructions of lenght 3
+* A[W] is assumed to contain the last 2 chars, P the first reg
+* Instruction should be one of the following:
+*	A=0	B=0	C=0	D=0	Dt | Aft  0<=t<4	f8
+*	A=r	B=r	C=r	D=r	Dt | Aft  4<=t<C	f8	combab
+*	ASL	BSL	CSL	DSL	Ft | Bft  0<=t<4	f8
+*	ASR	BSR	CSR	DSR	Ft | Bft  4<=t<8	f8
+**********************************************************************
+opGeneralAD3	D0=D0+	4		Skip the remaining 2 chars
+		C=P	0
+		P=	0
+		D=C	P		reg1
+		C=A	A		Get equal chars
+		LCSTR	'=0'
+		?A=C	A
+		GOYES	opr=0
+		?A=C	B
+		GOYES	opr=s
+		LCSTR	'SL'
+		?A=C	A
+		GOYES	oprsl
+		LCSTR	'SR'
+		?A=C	A
+		GOYES	oprsr
+		GOLONG	InvOpErr	None of the above
+
+oprsl		LCHEX	08B0F
+-		DSL	B
+		C=C+D	B		08BtF
+		P=C	1
+		C=P	4		t8BtF
+		P=	0
+		GOLONG	opChooseAFS	Choose A or fs pattern
+oprsr		LCHEX	48B4F
+		GOC	-
+opr=0		LCHEX	08A0D
+		GOC	-
+
+opr=s		LCHEX	48A4D
+		ASR	A
+		ASR	A		Shift away r=, s remains
+		GOLONG	opChooseAB8
+**********************************************************************
+* General parser for A-D instructions of lenght 4
+* A[W] is assumed to contain the last 3 chars, P the first reg
+* Instruction should be one of the following:
+*	ASLC	BSLC	CSLC	DSLC	81s		s: 0-3
+*	ASRC	BSRC	CSRC	DSRC	81s		s: 4-7
+*	ASRB	BSRB	CSRB	DSRB	81s		s: C-F
+*	ArEX	BrEX	CrEX	DrEX	Dt | Aft	t: C-F (a<=>b)	f8
+*	A=-A	B=-B	C=-C	D=-D	Ft | Bft	t: 8-B		f8
+*	A=Rn		C=Rn		11s		s=rn+bit3(if c)
+*	A=Dn	B=Dn	C=Dn	D=Dn	Macros
+**********************************************************************
+opGeneralAD4	D0=D0+	6	Skip the remaining 3 chars
+		C=P	0
+		P=	0
+		D=C	P	reg1
+		C=A	W	Get equal chars
+		LCSTR	'='
+		?A=C	B
+		GOYES	opgen4r=
+		LCSTR	'SLC'
+		?A=C	W
+		GOYES	oprslc
+		LCSTR	'SR'
+		?A=C	W
+		GOYES	oprsrc
+		LCSTR	'SRB'
+		?A#C	W
+		GOYES	opgenrsex
+oprsrb		P=	#C
+		GONC	oprslc
+oprsrc		P=	4
+oprslc		C=P	2		[XS] = lower bound for s
+		P=	0
+		LCHEX	18		81s
+		DSL	B
+		DSL	X
+		C=C+D	X		Add r to s
+		GOLONG	SourceLine+3
+
+* Now remaining:	rsEX
+opgenrsex	B=A	B		Save possible s
+		ASR	W
+		ASR	A
+		C=A	A
+		LCSTR	'EX'
+		?A#C	A
+		GOYES	opgen4err
+oprsex		A=B	B		Possible s
+		LCHEX	C8ACD
+		GOTO	opChooseAB4
+
+* Remaining:	r=-r	r=Rn	r=Dn
+opgen4r=	ASR	W
+		ASR	A		2 chars remain
+		LCSTR	'D'
+		?A=C	B
+		GOYES	opgenr=Dn
+		LCSTR	'-'
+		?A#C	B
+		GOYES	opgenr=Rn
+opr=-r		ASR	A
+		ASR	A		Should be r for r=-r fs
+		LCHEX	88B8F
+		GOTO	opChooseAA
+
+opgen4err	GOLONG	InvOpErr
+
+* Remaining:	r=Rn
+opgenr=Rn	LCHEX	11		11s
+
+opgenRnentry	DAT1=C	B
+		D1=D1+	2
+		LCSTR	'R'
+		?A#C	B
+		GOYES	opgen4err
+		ASR	A
+		ASR	A
+		LCSTR	'4'
+		?A>C	B
+		GOYES	opgen4err
+		LC(1)	'0'
+		C=A-C	B
+		GOC	opgen4err
+		D=D-1	P
+		GOC	opA=Rn
+		D=D-1	P
+		GOC	opB=Rn
+		D=D-1	P
+		GOC	opC=Rn
+opB=Rn
+opD=Rn		GOLONG	InvRegComb
+opC=Rn		CBIT=1	3		0-4 -> 8-C
+opA=Rn		GOLONG	SourceLine+1
+
+* A=Dn		ADnEX Dn=A
+* B=Dn		CDnEX B=C  CDnEX
+* C=Dn		CDnEX Dn=C
+* D=Dn		CDnEX D=C  CDnEX
+
+opgenr=Dn	ASR	A
+		ASR	A
+		LCSTR	'1'
+		?A>C	B
+		GOYES	opgen4err
+		LC(1)	'0'
+		?A<C	B
+		GOYES	opgen4err
+		C=D	A		r
+		?CBIT=0	0		A/C ?
+		GOYES	+
+
+		A=A+CON	A,6		CDn
+		ASL	A
+		ASL	A
+		LAHEX	31		CDnEX
+		DAT1=A	A
+		D1=D1+	5
+		DAT1=A	A
+		D1=D1-	2
+		CSL	A
+		LCHEX	D
+		CBIT=1	6		r=C A
+		DAT1=C	B
+		D1=D1+	5
+		GONC	++
+
++		A=A+C	A
+		A=A+C	A		n+4*A/C
+		ASL	A
+		ASL	A
+		ABIT=1	9
+		LAHEX	31		Dn=A
+		DAT1=A	A
+		D1=D1+	3
+		ABIT=0	9
+		DAT1=A	A
+		D1=D1+	3
+++		GOLONG	SourceLine+			
+
+**********************************************************************
+* General parser for A-D instructions of lenght 5
+* A[W] is assumed to contain the last 4 chars, P the first reg
+* Instruction should be one of the following:
+*	A=r&s	B=r&s	C=r&s	D=r&s	0Eft		t: 0-7		f0
+*	A=r!s	B=r!s	C=r!s	D=r!s	0Eft		t: 8-F		f8
+*	A=r+s	B=r+s	C=r+s	D=r+s	Aft | Ct	t: 0-B		f0
+*	A=r-s	B=r-s	C=r-s	D=r-s	Bft | Et	t: 0-3 8-F	f0
+*	A=A-1	B=B-1	C=C-1	D=D-1	Aft | Ct	t: C-F		f0
+*	A=A+1	B=B+1	C=C+1	D=D+1	Bft | Et	t: 4-7		f0
+*	ARnEX	-	CRnEX	-	12s		s: Rn + bit3(if C)
+*	ADnEX	-	CDnEX	-	13t		t: 2|3 6|7
+*	ADnXS	-	CDnXS	-	13t		t: A|B E|F
+**********************************************************************
+opGeneralAD5	D0=D0+	8		Skip the remaining 4 chars
+		C=P	0
+		P=	0
+		D=C	P		reg1
+		C=A	W		Get equal chars
+		LCSTR	'='
+		?A#C	B
+		GOYES	+
+		GOTO	opgen5r=
+* Remaining: rRnEX rDnEX rDnXS
++		LCSTR	'D'
+		?A=C	B
+		GOYES	opgen5rD
+		B=A	A
+		D0=D0-	4
+		A=DAT0	4		last 2 chars
+		LCSTR	'EX'
+		?A#C	A
+		GOYES	opgen5err
+		A=B	A
+		LCHEX	21		12s
+		GOTO	opgenRnentry
+* Remaining: rDnEX rDnXS, D certain
+opgen5rD	ASR	W
+		ASR	W		last 3 chars
+		LCSTR	'1'
+		?A>C	B
+		GOYES	opgen5err
+		LC(1)	'0'
+		C=A-C	B
+		GOC	opgen5err
+		B=C	A		0|1
+		ASR	W
+		ASR	A		last 2 chars
+		C=A	A
+		LCSTR	'EX'
+		?A=C	A
+		GOYES	oprDnEX
+		LCSTR	'XS'
+		?A#C	A
+		GOYES	opgen5err
+		P=	8
+oprDnEX		C=P	0		0|8 for EX|XS
+		P=	0
+		C=C+B	A		Add D0|D1
+		D=D-1	P
+		GOC	opADnEX
+		D=D-1	P
+		GOC	opBDnEX
+		D=D-1	P
+		GOC	opCDnEX
+opBDnEX
+opDDnEX		GOLONG	InvRegComb
+opCDnEX		CBIT=1	2		0-3 -> 4-7
+opADnEX		CBIT=1	1		EX|XS
+		CSL	A
+		CSL	A
+		LCHEX	31		13s
+		GOLONG	SourceLine+3
+
+opgen5err	GOLONG	InvOpErr
+
+
+* Remaining: r=r&s r=r!s r=r+s r=r-s r=r-1 r=r+1
+* New opcodes:	r=r*s r=r/s r=r%s r=r>s r=r<s r=r^s
+
+opgen5r=	GOSUB	NextReg>Pat
+		DSL	B
+		D=C	P		rs
+		ASR	W
+		ASR	A
+		LCSTR	'&'		#26
+		?A#C	B
+		GOYES	+
+		GOTO	opgenr=r&
++		LC(1)	'!'		#21
+		?A#C	B
+		GOYES	+
+		GOTO	opgenr=r!
++		LC(1)	'+'		#2B
+		?A#C	B
+		GOYES	+
+		GOTO	opgenr=r+
++		LC(1)	'-'		#2D
+		?A#C	B
+*		GOYES	opgen5err
+
+* add support for new opcodes;
+		GOYES	+
+		GOTO	opgenr=r-
++		LC(1)	'%'		#25
+		?A#C	B
+		GOYES	+
+		GOTO	opnewr=r%
++		LC(1)	'*'		#2A
+		?A#C	B
+		GOYES	+
+		GOTO	opnewr=r*
++		LC(1)	'/'		#2F
+		?A#C	B
+		GOYES	+
+		GOTO	opnewr=r/
++		LCSTR	'<'		#3C
+		?A#C	B
+		GOYES	+
+		GOTO	opnewr=r<
++		LC(1)	'>'		#3E
+		?A#C	B
+		GOYES	+
+		GOTO	opnewr=r>
++		LCSTR	'^'		#5E
+		?A#C	B
+		GOYES	+
+		GOTO	opnewr=r^
++		GOTO	opgen5err
+
+
+* Now C[B] = A[B] '!' or '&' = #21 or #26
+opgenr=r!
+opgenr=r&	B=C	A		Save ! or &
+		GOSUB	NextReg>Pat
+		DSL	A
+		D=C	P		rst
+		GOSUB	CombineABC
+		GONC	+
+*		GOC	opsubcmberr	Invalid combination
+		GOTO	opinvregcmb
++		CBIT=0	3		Translative
+		B=B+B	P		2/12
+		B=B+B	P		4/CS
+		GOC	+
+		CBIT=1	3		Make it !
++		CSL	A
+		CSL	A
+		CSL	A
+		LCHEX	E0
+		DAT1=C	A
+		D1=D1+	2
+*		GOSUB	FieldHere
+		GOSUB	FieldFnHere
+		DAT1=C	1
+		D1=D1+	2		Skip switch too
+		GOLONG	SourceLine+
+
+*	A=r-s	B=r-s	C=r-s	D=r-s	Bft | Et	t: 0-3 8-F	f0
+*	A=A-1	B=B-1	C=C-1	D=D-1	Aft | Ct	t: C-F		f0
+opgenr=r-
+		ASR	A
+		ASR	A
+		LCASC	'1'
+		?A#C	B
+		GOYES	opr=r-s
+opr=r-1		LCHEX	C0ACC
+		GOTO	opChooseBB	Check & Choose A or fs
+opr=r-s		GOSUB	Reg>Pat
+		DSL	X
+		D=C	P
+		
+		C=D	A
+		P=	2
+		CPEX	3
+		P=	0
+		GOSBVL	=CSLW5
+		C=D	A
+		D=C	W
+		
+		GOSUB	CombineABC
+		GOC	optrynew
+		?CBIT=0	3		Disallow BAB CBC ACA and CDC : t=C-F
+		GOYES	op-0:7		0-7 is ok
+		?CBIT=1	2
+		GOYES	optrynew
+		CBIT=1	2		Convert 8-B to C-F
+		GONC	op-tIsOk
+op-0:7		?CBIT=0	2		Convert 4-7 to 8-B
+		GOYES	op-tIsOk
+		CBIT=0	2
+		CBIT=1	3
+op-tIsOk	D=C	P
+		LCHEX	00B0E
+opformp&go	DSL	B
+		C=C+D	B		Add t
+		P=C	1
+		C=P	4		2nd t
+		P=	0
+*		GOTO	opChooseAFS	Choose A or fs
+		GOTO	opChsAFSFn
+
+optrynew	C=D	W
+		GOSBVL	=CSRW5
+		D=C	A
+		GOTO	opnewcont
+
+*	A=r+s	B=r+s	C=r+s	D=r+s	Aft | Ct	t: 0-B		f0
+*	A=A+1	B=B+1	C=C+1	D=D+1	Bft | Et	t: 4-7		f0
+opgenr=r+
+		ASR	A
+		ASR	A
+		LCASC	'1'
+		?A#C	B
+		GOYES	opr=r+s?
+opr=r+1		LCHEX	40B4E
+		GOTO	opChooseBB
+opr=r+s?	GOSUB	Reg>Pat
+		DSL	A
+		D=C	P
+		C=D	A		* Check if all registers are the same
+
+		P=	1
+		CPEX	3
+		P=	0
+		GOSBVL	=CSLW5
+		C=D	A
+		D=C	W
+		
+		CSR	A
+		?C#D	P
+		GOYES	opr=r+s
+		CSR	A
+		?C#D	P
+		GOYES	opr=r+s
+opr=r+r		CBIT=1	2		0-3 -> 4-7
+		GONC	opaddnow
+opr=r+s		GOSUB	CombineABC	C[0] = t
+		GOC	optrynew		
+		CBIT=0	3		Translative
+		?CBIT=0	2		0-3?
+		GOYES	opaddnow
+		CBIT=0	2
+		CBIT=1	3		A-C
+opaddnow	D=C	A
+		LCHEX	00A0C
+		GOTO	opformp&go
+
+* r=r_s	f	->	80Bt8hf
+* t= 1 2 3 4 5 8 9 A
+*    + - * / % < > ^
+* h=4*s+r where A=0, B=1, C=2, D=3
+* fs is the field selector (0-F)
+
+* at this point, D[B] = rs
+opnewr=r^	P=P+1			t=A
+opnewr=r>	P=P+1			t=9
+opnewr=r<	P=P+1			t=8
+opnewr=-s	P=P+1			t=7
+opnewr=-s-1	P=P+1			t=6
+opnewr=r%	P=P+1			t=5
+opnewr=r/	P=P+1			t=4
+opnewr=r*	P=P+1			t=3
+opnewr=r-	P=P+1			t=2
+opnewr=r+	P=P+1			t=1
+opnewr=s
+		C=P	2
+		P=	0
+		D=C	XS		D[XS] = t
+		DSL	A
+		GOSUB	NextReg>Pat
+		D=C	P		D[A] = t r s s'
+
+* check if r=s; if so, write 80Bt8h and advance D1
+
+opnewcont	GOSUB	opnewckcmb
+		GOSUBL	FieldFnHere
+opnewdone	DAT1=C	1
+		D1=D1+	1
+		GOLONG	SourceLine+
+		
+opnewckcmb	C=D	B
+		CSL	X
+		?C=D	XS		is r = s?
+		GOYES	opnewrseq
+
+* r<>s; check to see if we allow commutativity
+
+		CPEX	2
+		CPEX	0		C[B] = s' s
+		D=C	B		D[A] = t r s' s
+		CSL	X
+		?C=D	XS		r = s'?
+		GOYES	+
+opinvregcmb	GOLONG	InvRegComb
+
+* s and s' swapped; allow only t=1, 3, A (+,*,^)
+
++		C=D	A
+		CPEX	3		P=t
+		?P=	1
+		GOYES	opnewrseq
+		?P=	3
+		GOYES	opnewrseq
+		?P=	10
+		GOYES	opnewrseq
+		GONC	opinvregcmb
+
+* compute h=4s+r; D[A] = t r r s -> D[A] = t r s h
+* then write 80Bt8h and advance D1
+
+opnewrseq
+		P=	0
+		C=D	A
+		C=C+C	P
+		C=C+C	P		4s
+		C=C-1	P		4s-1
+		CPEX	2
+		C+P+1			C[0] = h = 4s+r
+		DSL	B
+		P=	0
+		D=C	P		D[A] = t r s h
+		LCHEX	80B08
+		P=	3
+		C=D	P		copy t
+		DAT1=C	A
+		D1=D1+	5
+		P=	0
+		C=D	P		copy h
+		DAT1=C	1
+		D1=D1+	1
+		RTN
+**********************************************************************
+* General parser for A-D instructions of lenght 6
+* A[W] is assumed to contain the last 5 chars, P the first reg
+* Instruction should be one of the following:
+*	A=-A-1	B=-B-1	C=-C-1	D=-D-1	Bft | Ft	t: C-F		f8
+*	ASRB.F	BSRB.F	CSRB.F	DSRB.F	819fr		r: reg
+*	A=Rn.F		C=Rn.F		81Afrn		r: 1	n: Rn|bit3(C)
+*	A=DATn		C=DATn		14t | 15tn
+**********************************************************************
+opGeneralAD6	D0=D0+	10		Skip the remaining 5 chars
+
+		C=P	0
+		P=	0
+		D=C	P		reg1
+		C=A	W		Get equal chars
+		LCSTR	'=D'
+		?A#C	W
+		GOYES	+
+		GOTO	opgenAD6=D
+
++		LCSTR	'SRB.F'
+		?A#C	W
+		GOYES	opgennosrbf
+oprsrb.f	LCHEX	918
+		DAT1=C	X
+		D1=D1+	4
+		C=D	P
+		DAT1=C	1		reg
+		D1=D1-	1
+*		GOSUB	FieldHere
+		GOSUBL	FieldFnHere
+		DAT1=C	1
+		D1=D1+	2
+		GOLONG	SourceLine+
+
+opgennosrbf	C=A	A
+		LCSTR	'=-'
+		?A#C	A
+		GOYES	opgenr=Rnf?
+		ASR	W
+		ASR	W
+		GOSUB	NextReg>Pat	C[0]=s
+		DSL	B
+		D=C	P		rs
+
+		C=0	A
+		P=	6
+		CPEX	3
+		C=D	B
+		CSL	X
+		C=D	B
+		GOSBVL	=CSLW5
+		C=D	A
+		D=C	W
+
+		ASR	W
+		ASR	A
+		C=A	A
+		LCSTR	'-1'
+		?A#C	A
+		GOYES	opgenAD6err
+		LCHEX	C8BCF
+*		GOTO	opChooseBB
+		GOTO	opChooseBBFn
+		
+
+opgenr=Rnf?	?A#C	B
+		GOYES	opgenAD6err
+		ASR	W
+		ASR	W
+		LCHEX	10A18
+* Now possible Rn
+opgenRnfentry	DAT1=C	A		81Afrn
+		D1=D1+	5
+		LCSTR	'R'
+		?A#C	B
+		GOYES	opgenAD6err
+		ASR	A
+		ASR	A		Possible n
+		B=A	A		Save possible n
+		D0=D0-	4		And check trailing .F
+		A=DAT0	A
+		D0=D0+	4
+		C=A	A
+		LCSTR	'.F'
+		?A#C	A
+		GOYES	opgenAD6err
+		A=B	A
+		LCSTR	'4'
+		?A>C	B
+		GOYES	opgenAD6err
+		LC(1)	'0'
+		C=A-C	B
+		GOC	opgenAD6err
+		D=D-1	P
+		GOC	opgenRnfA
+		D=D-1	P
+		GOC	opgenRnfB
+		D=D-1	P
+		GOC	opgenRnfC
+opgenRnfB
+opgenRnfD	GOLONG	InvRegComb
+opgenAD6err	GOLONG	InvOpErr
+
+opgenRnfC	CBIT=1	3		'C'
+opgenRnfA	DAT1=C	B
+		D1=D1-	2
+*		GOSUBL	FieldHere
+		GOSUBL	FieldFnHere
+		DAT1=C	1
+		D1=D1+	3
+		GOLONG	SourceLine+
+
+* Assemble r=DATn
+
+opgenAD6=D	D0=D0-	6		Back to reg
+		A=DAT0	A
+		C=A	A
+		LCSTR	'AT'
+		?A#C	A
+		GOYES	opgenAD6err
+		D0=D0+	4
+		A=DAT0	B
+		D0=D0+	2
+		LCSTR	'1'
+		?A>C	B
+		GOYES	opgenAD6err
+		LC(1)	'0'
+		C=A-C	B		n
+		GOC	opgenAD6err
+		C=C+CON	B,2		r=datn
+* Here: C[0] = t with orientation, D[0]=reg
+opDATNentry	D=D-1	P		* Add reg to n
+		GOC	opA=dat
+		D=D-1	P
+		GOC	opB=dat
+		D=D-1	P
+		GOC	opC=dat
+opD=dat
+opB=dat		GOLONG	InvRegComb
+opC=dat		CBIT=1	2		Upper quarter
+opA=dat		RSTK=C			Save t
+
+* r=DATn A	: 14s
+* r=DATn B	: 14s	s=t!8
+* r=DATn fs	: 15sf	s=t
+* r=DATn N	: 15sn	s=t!8
+
+		GOSUBL	NextArg
+*		GOSUBL	Field?		P = fs
+		GOSUBL	FieldFn?
+		GOC	opA6notdatfs
+		C=RSTK			t
+		?P=	15
+		GOYES	opr=datA
+		?P=	6
+		GOYES	opr=datB
+opr=datT	C=P	1		ft
+		P=	0
+		CSL	A
+		CSL	A
+		LCHEX	51		15ft
+		GOLONG	SourceLine+4
+opr=datB	CBIT=1	3		Upper half
+opr=datA	P=	0
+		CSL	A
+		CSL	A
+		LCHEX	41		14t
+		GOLONG	SourceLine+3
+
+opA6notdatfs	GOSUBL	Expression
+		GOC	+
+		GOSUBL	Check1-16
++		P=C	0		0-15
+		C=RSTK
+		CBIT=1	3		Upper half
+		GOTO	opr=datT
+
+**********************************************************************
+* General parser for A-D instructions of lenght 7
+* A[W] is assumed to contain the last 6 chars, P the first reg
+* Instruction should be one of the following:
+*	A=A+CON	B=B+CON	C=C+CON	D=D+CON	818frn	f=fs	r=reg!bit3(-)
+*	A=A-CON	B=B-CON	C=C-CON	D=D-CON	818frn	f=fs	r=reg!bit3(-)
+*	ARnEX.F	BRnEX.F	CRnEX.F	DRnEX.F	81Afr2	
+**********************************************************************
+opGeneralAD7	D0=D0+	12		Skip the remaining 6 chars
+		C=P	0
+		P=	0
+		D=C	P		reg1
+		LCSTR	'='
+		?A=C	B
+		GOYES	opr=r+-con
+
+		B=A	A		Save possible Rn
+		D0=D0-	8
+		A=DAT0	A
+		D0=D0+	8
+		C=A	A
+		LCSTR	'EX'
+		?A#C	A
+		GOYES	opgenAD7err
+		A=B	A		Possible Rn
+		LCHEX	20A18		
+		GOTO	opgenRnfentry	Check Rn in A[A] and .F
+
+opgenAD7err	GOLONG	InvOpErr
+
+opr=r+-con	GOSUB	NextReg>Pat
+		DSL	B
+		D=C	P		rs
+		ASR	W
+		ASR	W
+		C=A	W
+		LCSTR	'+CON'		'+' = #2B	..1011
+		?A=C	W
+		GOYES	opr=r+con
+		LCSTR	'-'		'-' = #2D	..1101
+		?A=C	W
+		GOYES	opr=r-con
+		GOLONG	InvOpErr
+
+opgenAD7cmb	GOLONG	InvRegComb
+
+opr=r+con
+opr=r-con	B=C	P		Save mode
+		LCHEX	818
+		DAT1=C	X
+		D1=D1+	4
+		C=D	B		Check equal reqisters
+		CSR	B
+		?C#D	P
+		GOYES	opgenAD7cmb
+		LC(1)	4		this bit in '+' and '-' !
+		C=C&B	P
+		C=C+C	P		As highest bit
+		C=C+D	P		+ register bits
+		DAT1=C	1
+		D1=D1-	1		Back to fs nibble
+		GOSUBL	NextArg		B[A] = toklen
+		?B=0	A		Too short for sure?
+		GOYES	opcon+fserr
+		B=0	A
+		B=B+1	A		Try getting a 2-char selector
+*		GOSUBL	Field?
+		GOSUBL	FieldFn?
+		GONC	+
+		B=0	A		Try 1-char selector instead
+		GOSUBL	Field?
+*		GOSUBL	FieldFn?
+		GOC	opcon+fserr	Nope - must be invalid fs
++		C=P	0
+		P=	0
+		DAT1=C	1
+		D1=D1+	2		Skip to N nibble
+		A=DAT0	B
+		D0=D0+	2
+		LCSTR	','
+		?A#C	B
+		GOYES	opcon+nerr
+		GOSUBL	NextArg		Get expression
+		GOC	opcon+nerr
+		GOSUBL	Expression
+		GOC	+
+		GOSUBL	Check1-16
++		GOLONG	SourceLine+1
+
+opcon+fserr	GOLONG	FldSelErr	"Field Selector Expected"
+opcon+nerr	GOLONG	Range1-16Err	"Argument 1-16 Expected"
+
+**********************************************************************
+*		General purpose pattern assemblers
+**********************************************************************
+
+
+**********************************************************************
+* Get s, combine with r, remove order, add to switch nibble
+* and choose A or fs pattern based on fs field.
+* Input:	C[A] = XXXAA
+*		D[0] = r
+**********************************************************************
+opChooseAB4	B=C	A		B[A] = pattern
+		GOSUBL	Reg>Pat		C[0]=s
+		DSL	B
+		D=C	P		D[B]=rs
+		GOSUB	CombineAB
+		GOC	opchoaberr	Invalid combination
+		CBIT=0	2		Remove order
+opchoabcont	CBEX	A		C[A]=pattern, B[0]=comb
+		BSL	B
+		C=C+B	B		Add comb to t field
+		P=C	1
+		C=P	4		Second t field
+		P=	0
+		GOTO	opChooseAFS	Choose A or fs pattern
+opchoaberr	GOLONG	InvRegComb	Invalid AB combination
+**********************************************************************
+* Check rs are equal, add switch to nibble
+* and choose A or fs pattern based on fs field
+**********************************************************************
+opChooseBB	B=C	A		pattern
+		C=D	A
+		CSR	A		r
+		?C=D	P
+		GOYES	opchoabcont	Continue with common code
+		GONC	opchoaberr	Invalid combination
+**********************************************************************
+* same as above, but allow Fn fields
+**********************************************************************
+opChooseBBFn	B=C	A
+		C=D	A
+		GOTO	opchaacont
+**********************************************************************
+* Get s, expect equal to r, add to switch nibble
+* and choose A or fs pattern based on fs field
+* ( used only by opr=-r in OpGeneralAD4 )
+**********************************************************************
+opChooseAA	B=C	A		B[A] = pattern
+		GOSUBL	Reg>Pat
+
+		DSL	B
+		D=C	P
+		C=0	A
+		P=	7
+		CPEX	3
+		C=D	B
+		CSL	X
+		C=D	B
+		GOSBVL	=CSLW5
+		C=D	A
+		D=C	W
+		
+opchaacont	CSR	B
+		?C=D	P
+		GOYES	opchoabcontfn
+-		GOTO	optrynew
+**********************************************************************
+* Get s, combine with r, retain order, add to switch nibble
+* and choose A or fs pattern based on fs field.
+* Input:	C[A] = XXXAA
+*		D[0] = r
+* ( Used only by opgenr=s within OpGeneralAD3; update for new opcodes )
+**********************************************************************
+opChooseAB8	B=C	A		B[A] = pattern
+		GOSUBL	Reg>Pat		C[0]=s
+		DSL	B
+		D=C	P		D[B]=rs
+
+		C=0	A
+		C=D	B
+		CSL	A
+		C=D	B
+		GOSBVL	=CSLW5
+		C=D	A
+		D=C	W
+		
+		GOSUB	CombineAB
+		GOC	-
+		
+opchoabcontfn
+		CBEX	A		C[A]=pattern, B[0]=comb
+		BSL	B
+		C=C+B	B		Add comb to t field
+		P=C	1
+		C=P	4		Second t field
+		P=	0
+		GOTO	opChsAFSFn	Choose A or fs pattern
+**********************************************************************
+* Choose A or fs pattern based on fs field. If fs pattern is chosen
+* then fs is added to the fs nibble.
+* Input:	C[A] = XXXAA
+*			^------ fs nibble
+**********************************************************************
+opChooseAFS	RSTK=C			Save pattern
+		GOSUBL	FieldHere	B[0]=C[0]=fs	CS if A field
+		C=RSTK
+		GOC	opChooseA
+opChooseFS	CSR	A		Choose fs pattern
+		CSR	A
+		BSL	B
+		C=C+B	B		Add field to fs nibble
+		GOLONG	SourceLine+3
+opChooseA	GOLONG	SourceLine+2	C[B] already has the A pattern
+**********************************************************************
+* same as above, but allow F1-F7
+**********************************************************************
+opChsAFSFn	RSTK=C			Save pattern
+		GOSUBL	FieldFnHere	B[0]=C[0]=fs	CS if A field
+		C=RSTK
+		GOC	opChooseA
+		C=B	B
+		?CBIT=0	3
+		GOYES	opChooseFS
+
+opfield=Fn	C=D	W
+		GOSBVL	=CSRW5
+		D=C	A
+		GOSUB	opnewckcmb
+		C=B	P
+		GOTO	opnewdone
+**********************************************************************
+* Combine pattern rs to AB type
+* Input:	D[B] = rs
+* Exit:		CS: Invalid combination
+*		CC: C[A] = combination (0-7)
+* Used:		C[A] C[S] P	(DO NOT CHANGE!!)
+* Combinations:
+*	0 AB	4 BA
+*	1 BC	5 CB
+*	2 CA	6 AC
+*	3 DC	7 CD
+**********************************************************************
+CombineAB	C=D	P
+CombineAB.1	C=C+C	P
+		C=C+C	P	4s
+		P=C	0	4s
+		GOSUB	+
+		CON(2)	0
+*		NIBHEX	F06F4F1F25F7FF3F
+*			ABCDABCDABCDABCD
+*			AAAABBBBCCCCDDDD
+		NIBHEX	F42F0F5F61F3FF7F
+
++		C=RSTK
+		C+P+1		1 nibble too far now
+		CDEX	B
+		P=C	1
+		CDEX	B
+		C+P+1		2 nibbles too far now
+		CD0EX
+		C=DAT0	S
+		D0=C
+		P=C	15
+		C=0	A
+		CPEX	0	C[A] = combination
+		C=C+1	P	Set CS if invalid
+		C=C-1	P
+		RTN
+**********************************************************************
+* Combine 3 registers in D[X], output to C[0]
+* Combinations:
+* 	0:A AB		4:B BA		8: A BA		C:B AB
+* 	1:B BC		5:C CB		9: B BC		D:C BC
+* 	2:C CA		6:A AC		A: C AC		E:A CA
+* 	3:D DC		7:C CD		B: D CD		F:C DC
+* Notes:
+*	Clearing bit3 makes operation independant of argument order
+*	C-F is now allowed for - command, 8-B will convert to C-F
+**********************************************************************
+CombineABC	GOSUB	CombineAB	Combine last 2 regs D[B]
+		RTNC			Invalid
+		DSR	X
+		DSR	B		r
+		?CBIT=1	2
+		GOYES	CombBA		Combine with BA BC AC CD
+		?C=D	P		ABCD with AB?
+		GOYES	CombAAB
+		DSL	B		r0
+		GOSUB	CombineAB.1	Combine BCAC with 'ABCD'
+		GONC	CombBAB
+		RTNSC			Invalid
+
+CombBA		CBIT=0	2		Convert BA to ABCD
+		?C=D	P		With ABCD?
+		GOYES	CombBBA
+		DSL	B
+		GOTO	CombineAB.1	Combine with 'ABCD' -> 4:7
+CombBBA
+CombBAB		CBIT=1	3
+CombAAB		RTNCC
+
+**********************************************************************
+
+		INCLUDE	ass/expr.a
+
+**********************************************************************
+*		CONDITIONAL ASSEMBLY
+**********************************************************************
+
+ass_if		D0=D0+	2		Skip "IF"
+		GOSUBL	Expression
+		GOC	if_resolve	* <expr> not resolved! *
+
+		?C=0	W
+		GOYES	ass_if_false	Zero value - find ELSE/ENDIF
+
+ass_if_true	B=0	A
+		B=B+1	A
+		GONC	ifstack+	Add new stack level with TRUE
+
+* Maybe save ->srcloc and ->lineend for possible error?
+
+ass_if_false	C=0	A
+--		RSTK=C			RSTK = iflevel = 0
+		GOSUB	NextCondition	Find next conditional token
+		C=RSTK			C[A]=iflevel
+		?P=	0
+		GOYES	if_miss_end	* Found none! *
+		?P=	1
+		GOYES	if_false_if
+		?P=	2
+		GOYES	if_false_else
+if_false_endif	C=C-1	A		iflevel--
+		GONC	--		Continue - not done yet
+		GOC	++
+if_false_if	C=C+1	A		iflevel++
+		GONC	--
+if_false_else	?C#0	A
+		GOYES	--		Continue - wrong ELSE
+ass_else_true	B=0	A		Add new stack level with FALSE
+
+ifstack+	P=	0
+		A=R2	A		Nonzero value - continue with TRUE
+		D0=A
+		D0=(2)	O_IFDEPTH
+		A=DAT0	B
+		A=A+1	B
+		LC(2)	64
+		?A>C	B
+		GOYES	if_toomany	* Stack overflow! *
+		DAT0=A	B
+		D0=(2)	O_IFSTACK
+		A=DAT0	W
+		A=A+A	W
+		A=A+B	A		Add the new flag
+		DAT0=A	W
+++		GOLONG	SourceLine+	And continue on the next line
+		
+if_miss_end	XERR	errMissEndif	"Missing ENDIF"
+if_resolve	LERR	errExpr		"Unresolved Expression"
+if_toomany	LERR	errManyIfs	"IF Stack Overflow"
+else_missif	P=	0
+		LERR	errExtraElse	"Unmatched ELSE"
+
+*---------------------------------------------------------------------
+ass_else	A=R2	A
+		D0=A
+		D0=(2)	O_IFDEPTH
+		A=DAT0	B
+		?A=0	B
+		GOYES	else_missif	* Didn't have earlier IF *
+		D0=(2)	O_IFSTACK
+		A=DAT0	A
+		?ABIT=0	0
+		GOYES	else_missif	* Can't be here with flag=false
+
+* Skip until matching ENDIF. Note that we cannot detect extra
+* ELSE's unless they are at the current IF-level since we then know
+* that the ELSE is extra. Fixing this would require using the IFSTACK
+* even for skipping - something I won't bother.
+		
+ass_else_false	C=0	A
+--		RSTK=C			RSTK = iflevel = 0
+		GOSUB	NextCondition	Find next conditional token
+		C=RSTK			C[A]=iflevel
+		?P=	0
+		GOYES	if_miss_end	* Found none! *
+		?P=	1
+		GOYES	else_if
+		?P=	3
+		GOYES	else_endif
+else_else	?C#0	A
+		GOYES	--
+		GONC	else_missif	Can't have 2 ELSE's at the same level!
+else_if		C=C+1	A		iflevel++
+		GONC	--
+else_endif	C=C-1	A
+		GONC	--		Continue - wrong ENDIF
+
+* Fall through to ENDIF code to pop the IF flag
+
+*---------------------------------------------------------------------
+* Assemble ENDIF
+*---------------------------------------------------------------------
+ass_endif	P=	0
+		A=R2	A
+		D0=A
+		D0=(2)	O_IFDEPTH
+		A=DAT0	B
+		A=A-1	B		ifdepth--
+		GOC	endif_toomany	Error - too many ENDIF's
+		DAT0=A	B
+		D0=(2)	O_IFSTACK
+		A=DAT0	W
+		ASRB			Drop old flag
+		DAT0=A	W
+		GOLONG	SourceLine+	And continue as usual
+
+endif_toomany	LERR	errExtraEndif	"Unmatched ENDIF"
+
+*---------------------------------------------------------------------
+* Scan next line in current source file which has a conditional
+* assembly token IF/ELSE/ENDIF.
+* Output:	P= 0/1/2/3 for <none>/IF/ELSE/ENDIF
+*---------------------------------------------------------------------
+
+NextCondition	P=	0		Allow bad P on input
+		GOSUBL	SourceLine+	Next line
+		GOSUBL	GetLine
+		RTNC			CS: No more lines in source
+		GOSUBL	ThisTokLen
+		B=B+1	A
+		GOC	+		Nothing in column 1
+		B=B-1	A
+		GOSUBL	Source+		Skip label
++		GOSUBL	NextTokHere?
+		GOC	NextCondition	No opcode - try next line
+		A=DAT0	W		Read token and high nibbles in
+		C=A	W		
+		C=B	A		C[A]=toklen
+		C=C-1	A
+		GOC	NextCondition	1 is too short
+		C=C-1	A
+		GOC	Next_IF?	Try IF
+		C=C-1	A
+		GOC	NextCondition	Nothing at 3
+		C=C-1	A
+		GOC	Next_ELSE?	Try ELSE
+		C=C-1	A
+		GONC	NextCondition	Nothing over 5
+Next_ENDIF?	LCSTR	'ENDIF'
+		?A#C	W
+		GOYES	NextCondition
+		P=	3		Flag ENDIF
+		RTN
+Next_ELSE?	LCSTR	'ELSE'
+		?A#C	W
+		GOYES	NextCondition
+		P=	2		Flag ELSE
+		RTN
+Next_IF?	C=A	A
+		LCSTR	'IF'
+		?A=C	A
+		GOYES	+
+		GOTO	NextCondition
++		P=	1		Flag IF
+		RTN
+**********************************************************************

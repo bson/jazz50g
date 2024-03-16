@@ -1,0 +1,573 @@
+**********************************************************************
+*               JAZZ    - Registers editing for xDB
+**********************************************************************
+
+*  General use of registers :
+* B[S] : Number of digit to edit - 1
+* D[S] : Pos of curs (0->NIB0, 15-> NIB15=S)
+* R3   : edited Value
+* R2   : [0-9] -> prompt , [10-14] -> Adr of Reg
+
+gDBEVREV	EQU	8	if set, reverse edited value 
+gDBERRP		EQU	1	set if invalid data in port
+* Han:	no more card slots! we now have =CONFRAM and =CONFTAB
+=CTAB_STAT1	EQU	#80528
+*=CTAB_STAT1	EQU	#8052F
+*=S_CTAB_STAT1	EQU	#7042C
+*=S_CTAB_STAT2	EQU	#70437
+
+
+LoadCA	MACRO		$prompt,$REG
+	LC(5)	$2
+	A=C	A
+	LCSTR	$1
+LoadCA	ENDM
+
+
+****************************************************************************
+*   Main entry point. ['] was pressed, wait another key for register choice
+****************************************************************************
+
+DbgEditReg	ST=0	gDBEVREV	Assume register edit
+		GOSUBL 	Argument?	if Arg, then edit mem at arg
+		GONC	+	
+		GOTO	DbgEdit@Arg
+	
++		GOSUBL	DbgWaitKey	else get a key
+		B=A	X
+		ADDR	DbgERTable,C	and dispatch to the right function
+		D0=C
+		C=0	W
+		GOLONG	SwitchKeyD0	if not a valid key, jump do DbgMain
+
+DbgERTable
+	KBENT   =Sfkey1,DbgEditRegA		'A'
+	KBENT   =Sfkey2,DbgEditRegB		'B'
+	KBENT   =Sfkey3,DbgEditRegC		'C'
+	KBENT   =Sfkey4,DbgEditRegD		'D'
+	KBENT   =Sfkey5,DbgEditRegD0		'E'
+	KBENT   =Sfkey6,DbgEditRegD1		'F'
+	KBENT   =0CODE,DbgEditRegR0		'0'
+	KBENT   =1CODE,DbgEditRegR1		'1'
+	KBENT   =2CODE,DbgEditRegR2		'2'
+	KBENT   =3CODE,DbgEditRegR3		'3'
+	KBENT   =4CODE,DbgEditRegR4		'4'
+*	KBENT   =LEFTCODE,DbgEditRegP		'P'			
+	KBENT	=SYMBCODE,DbgEditRegP		'P'
+*	KBENT   =PRGCODE,DbgEditRegHD		'H'
+	KBENT	=MODECODE,DbgEditRegHD		'H'
+	KBENT   =CHSCODE,DbgEditRegCY		'W'	( was 'Y' )
+	KBENT   =COSCODE,DbgEditRegST		'T'
+	KBENT   =SINCODE,DbgEditRegSB		'S'
+*	KBENT   =INVCODE,DbgEditRegXM		'X'
+	KBENT	=XCODE,DbgEditRegXM		'X'
+*	KBENT	=RIGHTCODE,DbgEditRegRSTK	'R'
+	KBENT	=SQRTCODE,DbgEditRegRSTK	'R'	
+*	KBENT	=UPCODE,DbgEdit@D0		'K'
+	KBENT	=APPSCODE,DbgEdit@D0		'G'
+*	KBENT	=NEXTCODE,DbgEdit@D1		'L'
+	KBENT	=VARCODE,DbgEdit@D1		'J'
+	KBENT	=ENTERCODE,DbgEdit@PC		'ENTER'
+*	KBENT	=DPCODE,DbgEditCRC		'.'
+	KBENT	=PCODE,DbgEditCRC		'.'
+	
+	CON(3)	0
+
+DbgEditCRC
+		LC(5)	REG_PC
+		A=R4	A
+		A=A+C	A
+		D0=A
+		A=DAT0	A
+		B=A	A		B[A] = PC
+
+DbgStrtP	LCSTR	'0:'
+		D=C	A
+*		D0=(5)	aROMPARTS	Port 0 hook
+*		C=DAT0	A
+*		D0=C
+		D0=(5)	=ROMPARTS
+		C=DAT0	A
+		?C<=B	A
+		GOYES	DbgScanP0
+		LCSTR	'S'
+		D=C	B
+		C=B	A
+		GOSUB	DbgScanPort
+		GOC	DbgNoLib
+		?ST=1	gDBERRP
+		GOYES	DbgNoLib
+		GOTO	DbgStpSrch
+	
+DbgScanP0	GOSUB	DbgScanPort
+*		GONC	++
+		
+*		D1=(5)	=S_CTAB_STAT1
+*		LC(5)	#80000
+*		D=0	S
+*		D0=(5)	=IRAM@
+*		A=DAT0	B
+*		A=A+A	P
+*		GONC	+
+*		D1=(5)	=CTAB_STAT1
+*DbgNxtPort	LC(5)	#C0000
+*		D=D+1	S
+*+		D=D+1	A
+*		A=DAT1	B
+*		?ABIT=0	3		No card in port
+*		GOYES	DbgSkipP
+*		?ABIT=1	1		Port Merged
+*		GOYES	DbgSkipP
+
+*		GOSUB	DbgScanPort
+++		GONC	DbgStpSrch
+
+*DbgSkipP	D1=(5)	S_CTAB_STAT2
+*		?D=0	S
+*		GOYES	DbgNxtPort
+
+DbgNoLib	GOSUBL	MsgDelay
+		CSTRING	"PC not in a LIB object"			
+-		GOLONG	DbgNew
+		
+DbgStpSrch	?ST=0	gDBERRP
+		GOYES	DbgLib
+
+		GOSUBL	MsgDelay
+		CSTRING	"Invalid Data in Port"
+		GOTO	-
+		
+DbgLib		
+		A=A-CON	A,4
+		R3=A.F	A		R3=len-4
+		GOSUBL	lineblank
+		C=0	A
+		LC(2)	56
+		C=C+A	A
+		RSTK=C
+		C=D	A
+		DAT1=C	4		Output S: or 0: or 1: ...
+		D1=D1+	4
+		D0=D0+	5
+		A=DAT0	B		A[B]: len of name
+		LC(2)	22
+		?A<C	B		22 chars max
+		GOYES	+
+		A=C	B
++		D0=D0+	2
+		CD0EX
+		D0=C
+		A=A+A	B
+		GOSUBL	putmemasc	Output name
+		C=RSTK
+		D1=C
+		LCSTR	'#'
+		DAT1=C	B
+		D1=D1+	2
+		D0=D0-	7
+		A=R3	A
+		CD0EX
+		C=C+A	A
+		D0=C			D0= ->CRC
+		C=DAT0	4
+		GOSUBL	putint4		Output old crc
+++		GOSUBL	showline12	showline9
+			
+		A=R2	A	
+		D0=A			D0= ->len of obj
+		A=R3	A		A=len-4
+		GOSBVL	=DoCRC
+		DAT0=A	4		Write right CRC in anycase
+		GOSUBL	lineblank
+		CD0EX
+		B=C	A
+		GOSUBL	putnib5		Output ->crc (use ->crc as prompt)
+		A=B	A		A[A] = adr to edit
+		D1=D1-	10
+		C=DAT1	W		C[0-9]= readable value of adr (prompt)
+*		ST=1	gDBEVREV	reverse or not ?  Here i prefer not...
+		P=	4-1		4 nibs to edit
+		GOTO	DbgEditAdr	
+
+DbgScanPort	ST=0	gDBERRP
+		?C>B	A		PC is bellow this port
+		RTNYES
+		
+DbgNxtLib	D0=C			
+		A=DAT0	A
+		?A=0	A		End of port ?
+		RTNYES			yes -> return
+		LC(5)	=DOLIB		Lib or backup ?		#02B40
+		?C=A	A
+		GOYES	DbgLibBak
+		LC(2)	=DOBAK					#02B62
+		?C=A	A
+		GOYES	DbgLibBak
+		ST=1	gDBERRP		no-> error !
+		RTNCC
+
+DbgLibBak	D0=D0+	5
+		A=DAT0	A		A=len of lib
+		CD0EX
+		D0=C
+		R2=C.F	A		save ->len
+		C=C+A	A		Skip ob ...
+		?C<=B	A		PC was before ?
+		GOYES	DbgNxtLib	no -> nxt obj
+		RTNCC			yes -> rtn, lib found
+		
+	
+DbgEditRegXM	?XM=0			XM : toggle the hard XM register
+		GOYES	+
+		XM=0
+		GONC	lDbgMain
++		GOSUB	++
+		GOC	lDbgMain
+++		RTNSXM
+
+DbgEditRegSB				For MODE,CARRY & SB just toggle value
+		LC(5)	REG_HST		Should contain only SB (see dbdefs.a)
+		GONC	+
+
+DbgEditRegHD	LC(5)	REG_MODE
+		GONC	+
+
+DbgEditRegCY	LC(5)	REG_CRY
++		A=R4.F	A
+		A=A+C	A
+		D0=A			D0=adr of CARRY, MODE or SB
+		C=DAT0	P
+		C=-C-1	P		Toggle nib 
+		DAT0=C	P		Save nib
+lDbgMain	GOLONG	DbgNew		Main dbg loop
+
+DbgEditRegA				Else, edit 16 nib registers
+		LoadCA	'  A',REG_A
+		GONC	++
+
+DbgEditRegB
+		LoadCA	'  B',REG_B
+		GONC	++
+
+DbgEditRegC	LoadCA	'  C',REG_C
+		GONC	++
+
+DbgEditRegD	LoadCA	'  D',REG_D
+++		GONC	+
+
+DbgEditRegR0	LoadCA	' R0',REG_R0
+		GONC	+
+
+DbgEditRegR1	LoadCA	' R1',REG_R1
+		GONC	+
+
+DbgEditRegR2	LoadCA	' R2',REG_R2
+		GONC	+
+
+DbgEditRegR3	LoadCA	' R3',REG_R3
+		GONC	+
+
+DbgEditRegR4	LoadCA	' R4',REG_R4
++		P=	16-1			All nibs
+		GONC 	++
+
+DbgEditRegRSTK	LoadCA	'RSTK',REG_RSTK		or 5 nibs registers
+		GONC	+
+
+DbgEditRegD0	LoadCA	' D0',REG_D0
+		GONC	+
+
+DbgEditRegD1	LoadCA	' D1',REG_D1
++		P=	5-1			low 5 nib
+		GONC 	++
+
+DbgEditRegP	LoadCA	'  P',REG_P		or 1 nib register
+		P=	1-1			only 1 nib
+		GONC	++
+
+DbgEditRegST					or 3 nibs register
+		LoadCA	' ST',REG_ST		only 3 nibs (see dbdefs.a)
+		P=	3-1			only ST0->ST11
+
+++		CR4EX			C[A] : ->DbPar
+		A=A+C	A		A[A] : ->value to edit		
+		CR4EX			C[0-9] : prompt, R4 restored
+		GONC	DbgEditAdr
+
+DbgEdit@PC			Edit mem at PC,D0 or D1
+		LoadCA	' @PC',REG_PC
+		GONC	+
+DbgEdit@D0
+		LoadCA	' @D0',REG_D0
+		GONC	+
+DbgEdit@D1
+		LoadCA	' @D1',REG_D1
++		CR4EX			C[A] : ->DbPar
+		A=A+C	A		A[A] : ->(->value) to edit
+		D0=A
+		A=DAT0	A		A[A] : ->value to edit
+		CR4EX			C[0-9] : prompt, R4 restored
+		GONC	+
+
+DbgEdit@Arg				Edit mem at Arg value
+		B=C	A		Save adr
+		GOSUBL	lineblank
+		C=B	A		
+		GOSUBL	putnib5		Output C[A] at DAT1 (use Arg as prompt)
+		A=B	A		A[A] = adr to edit
+		D1=D1-	10
+		C=DAT1	W		C[0-9]= readable value of adr (prompt)
++		ST=1	gDBEVREV	Must reverse value to edit
+		P=	16-1		16 nib to edit
+		
+****************************************************************************
+*   Secondary entry point. Edit P+1 nib at A.A with C[0-9] prompt 
+****************************************************************************
+***** A[A]   : adr of value 
+***** C[0-9] : (reverse) prompt   (must be loaded with LCSTR)
+***** P      : # nib -1
+
+DbgEditAdr	C=P	15
+		B=C	S		B[S] : Number of nib to edit
+		D=C	S		D[S] : Init pos= highest nib
+		B=A	A		A & B= Adr of value to edit
+		GOSBVL	=ASLW5		
+		GOSBVL	=ASLW5		
+		P=	10-1 	
+		A=A+C	WP		
+** B CM
+		A=B	S		Save B.S in R2.S 
+** E CM
+		R2=A			R2: prompt Adr_Val
+		P=	0
+*		GOSUBL	showblankdn	 ('cos of mika's favorite screen 1 ...)
+		A=B	A		
+		D0=A			D0: Adr_Val
+		C=DAT0	W
+		?ST=0	gDBEVREV	
+		GOYES	DbgShoVal	
+		D=C	W
+		C=B	S
+		GOSUB	DbgRevDWP
+		CBEX	S		Restore Pos to highest nib
+		D=C	S
+		CBEX	S
+
+DbgShoVal	R3=C			R3: Value to edit
+		P=	0
+
+		GOSUBL	lineblank
+		LC(2)	5		Put 5 chars from prompt	
+		A=R2
+		GOTO	+
+-		DAT1=A	B
+		D1=D1+	2
+		ASRC
+		ASRC
++		C=C-1	B
+		GONC	-
+
+		LCASC	':'		Put ':'
+		DAT1=C	B
+		D1=D1+	2
+
+		A=0	A
+		A=B	S
+		ASLC			Move B[S] to A[A]
+		A=A+1	A
+		C=R3
+		GOSUBL	puthex		Put B[S]+1 hex chars from R3
+
+		C=B	S	
+		C=C+1	S		if # of nib=16
+		GONC	DBEVhex
+		D1=D1+	4		  display also as ASCII
+		LA(2)	16
+		C=R3	
+		?ST=0	gDBEVREV
+		GOYES	+
+		ASRB.F	B
+-		A=A-1	B
+		GOC	++
+		CSLC
+		CSLC
+		CPEX	0
+		CPEX	1
+		CPEX	0
+		GOSUBL	PrintAdjust	
+		DAT1=C	B
+		D1=D1+	2
+		GOTO	-
+
++		GOSUBL	putasc
+		D1=D1-	16
+++		C=D	S
+		C=0	A
+		CSLC
+		C=-C-1	P
+		GOSUBL	Rev2chr		  Reverse pos in HEX and ASCII
+		GOTO	++
+
+DBEVhex		C=D	S		else just reverse pos in HEX
+		C=0	A
+		CSLC	
+		C=-C-1	A
+		GOSUBL	Rev1Chr
+++		GOSUBL	showline13	Output the line
+	
+** B CM
+		C=D	S
+		R1=C.F	S		Save D.S in R1.S (cos of DbgWaitKey) 
+** E CM
+		GOSUBL	DbgWaitKey	Doesn't modify R3 nor R2.
+** B CM
+		C=R2.F	S		D.S & B.S may be erased in DbgWaitKEy
+		B=C	S		if interrupts are off
+		C=R1.F	S
+		D=C	S
+** E CM
+		B=A	X
+		C=A	A
+		GOSUBL	ArgKey>#	Is it a hex digit ?
+		GONC	++		No, do function
+		C=D	S
+		P=C	15		 P= current pos
+		A=C	A		
+-		C=C-1	S		
+		GOC	+
+		ASL	W		  Shift nib to cur pos
+		GONC	-
++		C=R3
+		C=A	P		  Copy nib at current pos
+		CDEX	W
+		GOTO	DbgEVright	  Move cur pos to next nib	
+
+++		ADDR	DbgEVTable,C	Not a digit : dispatch to Functions
+		D0=C
+		C=R3
+		CDEX	W		D=Value, C[S]= Cur pos
+		GOLONG	SwitchKeyD0	Doesn't modify D[W] nor C[S] ...
+
+DbgEVTable
+	KBENT   =LEFTCODE,DbgEVleft		[left]  Move Cursor left
+	KBENT   =BACKCODE,DbgEVleft		[left]  Move Cursor left
+	KBENT   =RIGHTCODE,DbgEVright		[right] Move cursor right
+
+	KBENT   =UPCODE,DbgEVrl			[up]    Rotate 1 nib left
+	KBENT   =DOWNCODE,DbgEVrr		[down]  Rotate 1 nib right
+
+	KBENT   =DIVCODE,DbgEV/16		[/]  Shift 1 nib right
+	KBENT   =TIMESCODE,DbgEV*16		[*]  Shift 1 nib left
+	KBENT   =MINUSCODE,DbgEV/2		[-]  Shift 1 bit right
+	KBENT   =PLUSCODE,DbgEV*2		[+]  Shift 1 bit left
+	
+	KBENT   =CHSCODE,DbgEVneg		[+/-]  Negate value
+	KBENT   =EEXCODE,DbgEVnot		[EEX]  Logical not
+
+	KBENT   =INVCODE,DbgEVrev		[1/X]  Revert nibbles
+*	KBENT   =DELCODE,DbgEVblk		[DEL]  Blank WP
+ 	KBENT   =TANCODE,DbgEVblk		[TAN]  Blank WP
+
+	KBENT   =ENTERCODE,DbgEVsave		[ENTER] Save&Exit
+	CON(3)	0
+
+DbgEVleft	C=C+1	S		move cursor left, modulo # of nibs
+		?C<=B	S
+		GOYES	DbgEVlp
+		C=0	S
+		GONC	DbgEVlp	
+
+DbgEVright	C=C-1	S		move cursor right, modulo # of nibs
+		?C<=B	S
+		GOYES	DbgEVlp
+		C=B	S
+		GONC	DbgEVlp
+
+DbgEVnot	P=C	15		
+		D=-D-1	WP		
+DbgEVlp		CDEX	W		Restore D[S] and C = value
+		GOTO	DbgShoVal
+
+DbgEVneg	P=C	15
+		D=-D	WP		
+		GOTO	DbgEVlp
+
+DbgEV/2		P=C	15	
+		DSRB.F	WP		
+		GOTO	DbgEVlp
+
+DbgEV*2		P=C	15
+		D=D+D	WP
+		GOTO	DbgEVlp
+
+DbgEV/16	P=C	15
+		DSR	WP
+		GOTO	DbgEVlp	
+
+DbgEV*16	P=C	15
+		DSL	WP
+		GOTO	DbgEVlp	
+
+
+DbgEVblk	P=C	15
+		D=0	WP
+		GOTO	DbgEVlp
+
+DbgEVrr				Rotate right 
+		LA(2)	3	rotate 1 bit 4 times, using SB as buffer
+		P=C	15
+		LC(1)	8	C[P]=8, to avoid SATURN bug (see below)
+-		SB=0
+		DSRB.F	WP
+		?SB=0
+		GOYES	+
+		D=D+C   P	Should be D=D+CON P,8 : safe in this case
++		A=A-1	B		but SASM doesn't want. Could
+		GONC	-		be hard-coded (818037)
+		C=P	15	prev LC(1) 8 scratch C[S] if P=15,so restore it
+--		GOC	DbgEVlp
+
+DbgEVrl				Rotate left
+		LC(2)	3	rotate 1 bit 4 times, using CY as buffer
+		P=C	15
+-		D=D+D	WP
+		GONC	+
+		D=D+1	A
++		C=C-1	B
+		GONC	-
+		GOC	--
+
+DbgEVrev				Reverse WP
+		GOSUB	DbgRevDWP
+		D=C	WP
+		C=P	15
+		GOC	--
+
+DbgEVsave
+		A=R2			A: prompt	Adr_Val
+		GOSBVL	=ASRW5
+		GOSBVL	=ASRW5		A[A] = Adr_Val
+		D0=A
+		C=B	S
+		P=C	15		P: Number of nibble - 1
+		C=R3
+		?ST=0	gDBEVREV
+		GOYES	+
+		D=C	W
+		C=B	S
+		GOSUB	DbgRevDWP
++		DAT0=C	WP		Value saved
+		P=	0
+		GOLONG	DbgNew		Main loop
+
+DbgRevDWP				Entry D[WP]:value, C[S]= # of nib 
+		P=C	15		
+		A=C	S		Exit :	C[WP]: reverse value
+-		CSR	WP			P    : # of nib
+		C=D	P			CY   : set
+		DSL	WP
+		A=A-1	S
+		GONC	-
+		RTN
+
+**********************************************************************

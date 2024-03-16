@@ -1,0 +1,130 @@
+**********************************************************************
+*		JAZZ	- Write code for xDB
+**********************************************************************
+
+**
+** Transmit gOUTBUF as 22 characters over the serial line, with
+** parity.
+**
+
+*write_outbuf
+*	GOSUBL	GetOutBuf		D1 = ->gOUTBUF
+*	AD1EX				A[A] = ->gOUTBUF
+*	LC(2)	22			Buffer size
+
+**
+** Transmit buffer over the serial line, with parity.
+**
+** In:
+**   A.A = &buffer
+**   C.B = buffer size, characters
+**
+
+WriteAscic
+	ST=1	1			Counted string
+	GOTO	WriteParity		Parity on, write
+WriteAsciz
+	ST=0	1			Non-counted string
+WriteParity
+	ST=1	2			Parity on
+
+**
+** Transmit string over the serial line. If ST:1 is set, then
+** a counter is used to determine the size, otherwise it terminates
+** on a null character. If ST:2 is set, parity is used, otherwise
+** parity is ignored.
+**
+** In:
+**   A.A = &string
+**   ST:1 = set: use counter size
+**	 C.B = string length
+**   ST:1 = clear: terminate at nul character
+**   ST:2 = set: use parity
+**   ST:4 = set: LF becomes CR-LF
+**
+** Out:
+**   If ST:1
+**	D0 = address of first character following NUL
+**
+
+Write	R0=A			R0[A] = ->string
+	R1=C			R1[A] = string lenght
+
+* Process next character
+
+-	?ST=0	1
+	GOYES	+		Don't count chars
+	C=R1	
+	C=C-1	B		One less char to go
+	R1=C
+	RTNC			Nothing left - we're done
+
++	C=R0
+	D0=C			D0 = ->string
+	A=DAT0	B		A[B] = character
+	?ST=1	1
+	GOYES	+		Don't terminate on NUL
+	D0=D0+	2		Advance D0 to next char
+	?A=0	B
+	RTNYES			Terminate if NUL
+
++	C=C+1	A
+	C=C+1	A		Advance to next char
+	R0=C			R0[A] = character pointer
+
+	?ST=0	4
+	GOYES	+		LF does not become CR-LF, don't check
+	LCASC	'\n'
+	?A#C	B
+	GOYES	+		Not LF - simply write
+	GOSUB	WriteCRLF	XMIT CR/LF
+	GONC	-		Process next character
+
++	C=A	B		C[B] = character
+	GOSUB	WriteC		XMIT C[B]
+	GONC	-		Process next character
+
+** Write CR-LF, adjust parity if ST:2 is set
+
+WriteCRLF
+	LC(2)	13		CR
+	GOSUB	WriteC
+	LCASC	'\n'		LF
+
+**
+** Write single character, adjust for parity if ST:2 is set.
+** In:
+**	C.B	= Character
+**	ST:2	= Set to enable parity.
+**
+
+WriteC
+*	GOSBVL	=TBF?		XMIT ready for next char?
+	GOSUB	TBF?
+	GOC	WriteC		No - wait
+
+	A=C	B		A[B] = character
+	?ST=0	2
+	GOYES	+		Ignore parity
+*	GOSBVL	=do_parity	Adjust parity in A[B]
+	GOSUBL	do_parity
++	D0=(5)	=TBR
+	DAT0=A	B		Transmit character
+	RTNCC
+
+* Han:	added from ROM
+do_parity
+	D1=(5)	=uart_parity
+	C=DAT1	S
+	C=C+C	S
+	RTNNC
+	
+TBF?
+	D0=(5)	=TCS
+	A=DAT0	1
+	?ABIT=1	0
+	RTNYES
+	RTN
+	
+**********************************************************************
+

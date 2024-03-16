@@ -1,0 +1,136 @@
+**********************************************************************
+*		Decompile character
+**********************************************************************
+
+**********************************************************************
+* Entry:	A[B] = char sTEMP
+* Exit:		A[W] = converted chars, P = number of chars - 1
+* Uses:		A[W] C[A] P CRY
+* Stack:	1
+* Note:	P also marks the number of extra characters
+*	If sTEMP then CSTR special case:	'"' --> '""'
+*	Else identifier assumed:		' ' --> '\20'
+**********************************************************************
+
+* Special entry to decompile char in D0
+
+DecompChr	A=DAT0	B
+		D0=D0+	2
+
+decompchr	
+
+**********************************************************************
+* 5C	: "\\"
+* 0A	: "\n"
+* 09	: "\t"
+* 0D	: "\r"
+*
+* 00-1F	: as \xx
+* 20-5B	: as is
+* 5D-7E	: as is
+* 7F-FF	: as \xx		Hmm, should use "\xx"..
+**********************************************************************
+
+		?ST=0	sTEMP
+		GOYES	decochrid
+
+* Check for CSTR special case '"'
+
+		LCASC	'"'
+		?A#C	B
+		GOYES	decochrnow
+		LAASC	'""'
+		P=	1
+		RTN
+
+* Check for ID special case ' '
+
+decochrid	LCASC	' '
+		?A#C	B
+		GOYES	decochrnow
+		LAASC	'02\\'
+		P=	2
+		RTN
+
+
+* To speed up disassemblys 1st check 'as is' cases
+
+decochrnow	LCASC	' '
+		?A<C	B
+		GOYES	decospc
+		LC(2)	#7E
+		?A>C	B
+		GOYES	decospc
+		LC(2)	#5C
+		?A#C	B
+		RTNYES			* as is, P=0 already
+
+decospc		GOSUB	PassChrTab
+		NIBASC	'\\'
+		NIBASC	'\\'
+*		CON(2)	7
+*		NIBASC	'\a'		* alert
+*		CON(2)	8
+*		NIBASC	'b'		* backspace
+		NIBASC	'\t'
+		NIBASC	't'		* tabulator
+		NIBASC	'\n'
+		NIBASC	'n'		* line feed
+*		CON(2)	12		
+*		NIBASC	'f'		* form feed
+		NIBASC	'\r'
+		NIBASC	'r'		* carriage return
+		CON(2)	0		* End of SpcTab
+
+PassChrTab	C=RSTK
+		CD1EX
+		RSTK=C			* Save D1
+
+decochrlp	C=DAT1	B
+		?C=0	B
+		GOYES	decospc2	* End of table, try something else
+		?A=C	B
+		GOYES	decospc1	* Match
+		D1=D1+	4
+		GONC	decochrlp
+
+* Special case 1:	"\c"
+
+decospc1	A=DAT1	A		* Read next char to A[2-3]
+		LAASC	'\\'
+		P=	1		* 2 characters
+		C=RSTK			* Restore D1
+		D1=C
+		RTN
+
+* Special case 2:	"\xx"
+
+decospc2	C=RSTK			* Restore D1
+		D1=C
+
+		LCASC	'9'
+		ACEX	P
+		?C<=A	P
+		GOYES	decoc1ok
+		C=C+CON	B,7
+decoc1ok	ACEX	B
+		ASL	A
+		ASL	A
+		CSR	B
+		LAASC	'9'
+		ACEX	P
+		?A<=C	P
+		GOYES	decoc2ok
+		A=A+CON	B,7
+decoc2ok	ASL	A
+		ASL	W
+		LAASC	'\\'
+		P=	2		* Return 3 chars
+		RTN
+**********************************************************************
+
+
+
+
+
+

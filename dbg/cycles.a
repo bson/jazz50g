@@ -1,0 +1,838 @@
+**********************************************************************
+*		JAZZ	- Determine cycle count for instruction
+**********************************************************************
+
+**********************************************************************
+* Name:		Cycles
+* Entry:	A[A] = PC
+*		D0,D1,P
+* Exit:		C[B] = cycles		bit11 set if branch
+*		C[XS] = flags		bit10 set if GONC
+* Uses:		A[S,A] C[W] P CRY
+**********************************************************************
+
+Cycles		C=P	15		C[S] = P
+		A=0	S
+		?ABIT=0	0
+		GOYES	+
+		A=A+1	S		A[S] = PC_ODD?
++		C=A	A
+		CD0EX
+		A=DAT0	A		A[A] = opcode
+		CD0EX
+
+		GOSUB	CYCDISPATCH	Dispatch on A[0]
+		CON(3)	(CYC_0)-(*)
+		CON(3)	(CYC_1)-(*)
+		CON(3)	(CYC_2)-(*)
+		CON(3)	(CYC_3)-(*)
+		CON(3)	(CYC_4)-(*)
+		CON(3)	(CYC_5)-(*)
+		CON(3)	(CYC_6)-(*)
+		CON(3)	(CYC_7)-(*)
+		CON(3)	(CYC_8)-(*)
+		CON(3)	(CYC_9)-(*)
+		CON(3)	(CYC_A)-(*)
+		CON(3)	(CYC_B)-(*)
+		CON(3)	(CYC_C)-(*)
+		CON(3)	(CYC_D)-(*)
+		CON(3)	(CYC_E)-(*)
+		CON(3)	(CYC_F)-(*)
+
+CYCDISPATCH	C=RSTK			C[A] = ->table
+		ACEX	A
+		P=C	0		P = nib1
+		ACEX	A
+		C+P+1
+		C+P+1
+		C+P+1			C[A] = ->tab + 3*nib1 + 3
+		P=	0
+		CD0EX
+		RSTK=C
+		D0=D0-	3		D0 = ->tab + 3*nib1
+		C=0	A
+		C=DAT0	X		C[A] = offset
+		AD0EX
+		A=A+C	A		A[A] = ->dispatchee
+		AD0EX
+		C=RSTK
+		CD0EX			D0 = D0
+		ASR	A		A[A] = nib2nib3...
+		RSTK=C
+		C=0	A		Init high nibbles to zero
+		RTN			Dispatch
+
+**********************************************************************
+*	RTNSXM          00      30	30
+*	RTN             01      30	30
+*	RTNSC           02      30	30
+*	RTNCC           03      30	30
+*	SETHEX          04      11	12
+*	SETDEC          05      11	12
+*	RSTK=C          06      21	22
+*	C=RSTK          07      21	22
+*	CLRST           08      15	16
+*	C=ST            09      15	16
+*	ST=C            0A      15	16
+*	CSTEX           0B      15	16
+*	P=P+1           0C      11	12
+*	P=P-1           0D      11	12
+*	r=r&s   fs      0Eas    21+W	21+W+1		?WP
+*	r=r!s   fs      0Eas    21+W	21+W+1		?WP
+*	RTI             0F      30	30
+**********************************************************************
+
+CYC_0		LC(1)	4
+		?A<C	P		RTNSXM/RTN/RTNSC/RTNCC ?
+		GOYES	cyc30		Yes - 30 cycles
+		LC(1)	6
+		?A<C	P		SETHEX/SETDEC ?
+		GOYES	cyc11+b1	Yes - 11+1 cycles
+		LC(1)	8
+		?A<C	P		RSTK=C/C=RSTK ?
+		GOYES	cyc21+b1b	Yes - 21+1 cycles
+		LC(1)	#C
+		?A<C	P		CLRST/C=ST/ST=C/CSTEX ?
+		GOYES	cyc15+b1	Yes - 15+1 cycles
+		LC(1)	#E
+		?A<C	P		P=P+1/P=P-1 ?
+		GOYES	cyc11+b1	Yes - 11+1 cycles
+		?A>C	P		RTI?
+		GOYES	cyc30		Yes - 30 cycles
+		LC(2)	21		r=r&s/r=r!s
+		GOTO	cyc+W+B
+cyc30		LC(2)	30
+		RTN
+cyc11+b1	LC(1)	11
+		GOTO	cyc+b1
+cyc15+b1	LC(1)	15
+		GOTO	cyc+b1
+cyc21+b1b	LC(2)	21
+		GOTO	cyc+b1
+
+**********************************************************************
+*	ss=r            10t     44	49
+*	r=ss            11t     44	49
+*	rssEX           12t     44	49
+*	d=r             13t     22	27
+*	d=rS            13t     20	25
+*	rdEX            13t     22	27
+*	rdXS            13t     20	25
+*	DATn=s  A       14t     71	77
+*	DATn=s  B       14t     46+20	52+20
+*	s=DATn  A       14t     66+6	72+6
+*	s=DATn  B       14t     54	60
+*	DATn=r  fs      15ta    65+D	66+D
+*	DATn=r  d       15tm    65+D	66+D
+*	r=DATn  fs      15ta    65+E	66+E
+*	r=DATn  d       15tm    65+E	66+E
+*	D0=D0+  d       16m     20	25
+*	D1=D1+  d       17m     20	25
+*	D0=D0-  d       18m     20	25
+*	D0=(2)  nn      19nn    20	20
+*	D0=(4)  nnnn    1Annnn  30	30
+*	D0=(5)  nnnnn   1Bnnnnn 32	38
+*	D1=D1-  d       1Cm     20	25
+*	D1=(2)  nn      1Dnn    20	20
+*	D1=(4)  nnnn    1Ennnn  30	30
+*	D1=(5)  nnnnn   1Fnnnnn 32	38
+**********************************************************************
+CYC_1		LC(1)	3
+		?A<C	P		R0=A/A=R0/AR0EX ?
+		GOYES	cyc44+b5	Yes - 44+5 cycles
+		?A>C	P		Not D0=A/AD0EX/D0=AS/AD0XS ?
+		GOYES	cyc14>		Yes - skip next
+
+		LC(2)	20		20 cycles for D0=AS/AD0XS
+		?ABIT=1	7
+		GOYES	+		
+		LC(1)	22		22 cycles for D0=A/AD0EX
++		GOTO	cyc+b5		+5 for odd pc
+
+cyc14>		LC(1)	5
+		?A<=C	P
+		GOYES	cycdat		Handle A=DAT0 and DAT0=A
+		A=A+1	P		D1=(5) ?
+		GOC	cyc32+b6	Yes - 32+6 cycles
+		A=A+1	P		D1=(4) ?
+		GOC	cyc30		Yes - 30 cycles
+		A=A+1	P		D1=(2) ?
+		GOC	cyc20		Yes - 20 cycles
+		A=A+1	P		D1=D1- ?
+		GOC	cyc20+b5	Yes - 20+5 cycles
+		A=A+1	P		D0=(5) ?
+		GOC	cyc32+b6	Yes - 32+6 cycles
+		A=A+1	P		D0=(4) ?
+		GOC	cyc30		Yes - 30 cycles
+		A=A+1	P		D0=(2) ?
+		GOC	cyc20		Yes - 20 cycles
+cyc20+b5	LC(2)	20		D0=D0+/D1=D1+/D0=D0-/D1=D1-
+		GOTO	cyc+b5
+cyc32+b6	LC(2)	32
+		GOTO	cyc+b6
+cyc44+b5	LC(2)	44
+		GOTO	cyc+b5
+cyc20		LC(2)	20
+		RTN
+
+cycdat		?A#C	P
+		GOYES	cycdatab
+		GOTO	cycdatf		Handle field selector opcode
+
+* 14t
+
+cycdatab	?ABIT=1	7		[B] ?
+		GOYES	cycdat=b	Yes - else [A]
+cycdat=a	LC(2)	71		DAT0=A A  =  71 cycles
+		?ABIT=0	5		Write?
+		GOYES	cycdat+b	Yes - just add PC
+		LC(2)	66		A=DAT0 A  = 66 cycles + 6 for odd
+		?ABIT=1	4		D1 ?
+		GOYES	cyca=dat1a	Yes - handle it
+		AD0EX
+		?ABIT=1	0
+		GOYES	+
++		AD0EX
+		GOTO	++
+cyca=dat1a	AD1EX
+		?ABIT=1	0
+		GOYES	+
++		AD1EX
+++		GONC	cycdat+b
+		LC(2)	72		base = 72 for odd D0/D1
+cycdat+b	GOTO	cyc+b6		+6 cycles for odd PC
+
+cycdat=b	LC(2)	54		A=DAT0 B = 54 cycles
+		?ABIT=1	5		Read?
+		GOYES	cycdat+b	Yes - just add PC
+		LC(2)	46		DAT0=A B = 46 cycles
+		?ABIT=1	4		D1 ?
+		GOYES	cyca=dat1b	Yes - handle it
+		AD0EX
+		?ABIT=1	0
+		GOYES	+
++		AD0EX
+		GOTO	++
+cyca=dat1b	AD1EX
+		?ABIT=1	0
+		GOYES	+
++		AD1EX
+++		GONC	cycdat+b
+		LC(2)	66		base = 66 for odd D0/D1
+		GOC	cycdat+b
+
+* 15tm
+
+cycdatf		ASR	A
+		?ABIT=1	3
+		GOYES	cycdatfs	A[1] is already the field
+
+* Convert fs to integer size as follows
+*
+*	fs	0  1  2  3  4  5  6  7
+*		P  WP XS X  S  M  B  W
+*	out	0  P  0  2  0  11 1  15
+
+		C=A	A
+		CSR	A		C[0] = fs
+		CBIT=0	3		Low 3 bits significant
+		ASL	B
+		ASR	B		Init A[1]=0
+		C=C-1	P
+		GOC	cycdatfs	[P] - ok
+		C=C-1	P
+		GONC	+
+		P=C	15		[WP] - get P
+		GOC	cycdatp
++		C=C-1	P
+		GOC	cycdatfs	[XS] - ok
+		C=C-1	P
+		GOC	cycdatx		[X] - set 2
+		C=C-1	P
+		GOC	cycdatfs	[S] - ok
+		C=C-1	P
+		GOC	cycdatm		[M] - set 11
+		C=C-1	P
+		GOC	cycdatb		[B] - set 1
+		P=	15
+		GONC	cycdatp
+cycdatx		P=	2
+		GOC	cycdatp
+cycdatm		P=	11
+		GOC	cycdatp
+cycdatb		P=	1
+cycdatp		C=A	B
+		CPEX	1
+		A=C	B		A[1] = P
+
+* Now we can handle it as if we had a numeric field
+* We need to init the flags field again too, thus LC(3)
+
+cycdatfs	LC(3)	65-5		Base = 65 (-5 for the C+P+1's)
+		GOSUB	cyc+b1		+1 if PC odd
+		ACEX	B
+		P=C	1		P=N
+		ACEX	B
+		C+P+1
+		C+P+1
+		C+P+1
+		C+P+1
+		C+P+1			+5*N+5
+		P=	0
+		?ABIT=1	1
+		GOYES	cycdatread	Dispatch to A=DAT0 N
+
+cycdatwrite	?ABIT=1	4
+		GOYES	+
+		C=C+CON	B,5		+5 if N is odd
+		RTN
++		C=C-CON	B,5		-5 if N is even
+		?ABIT=1	0
+		GOYES	++		Handle DAT1
+		AD0EX
+		?ABIT=1	0
+		GOYES	+
++		AD0EX
+		GOTO	cycwriadj
+++		AD1EX
+		?ABIT=1	0
+		GOYES	+
++		AD1EX
+cycwriadj	RTNNC
+		C=C+CON	B,10
+		C=C+CON	B,10		+20 for odd write with even N
+		RTN
+
+cycdatread	?ABIT=0	4
+		GOYES	+
+		C=C+CON	B,3		+3 if N is even
+		RTN
++		?ABIT=1	0
+		GOYES	++		Handle DAT1
+		AD0EX
+		?ABIT=1	0
+		GOYES	+
++		AD0EX
+		GOTO	cycreaadj
+++		AD1EX
+		?ABIT=1	0
+		GOYES	+
++		AD1EX
+cycreaadj	RTNNC
+		C=C+CON	B,6		+6 for odd write with odd N
+		RTN
+
+**********************************************************************
+*	P=      d       2n	10	10
+**********************************************************************
+CYC_2		LC(2)	10
+		RTN
+**********************************************************************
+*	LC(1)	n	3cn	12	18
+*	LC(2)	n	3cnn	20	20
+*	LC(3)	n	3cnnn	22	28
+*	LC(4)	n	3cnnnn	30	30
+*	LC(5)	n	3cnnnnn	32	38
+*	..			..	..
+**********************************************************************
+CYC_3		ASL	B
+		ASR	B		A[B] = c
+		LC(2)	15
+		C=C+A	B
+		A=A+A	B
+		A=A+A	B
+		C=C+A	B		15+5*c
+		?ABIT=1	2
+		RTNYES			Done if c was odd
+		C=C-CON	B,3		Substract 3
+		GOTO	cyc+b6		+6 for odd PC
+
+**********************************************************************
+*	RTNC            400     12+G	18+G
+*	GOC             4aa     12+G	18+G
+**********************************************************************
+CYC_4		LC(2)	12
+		GOSUB	cyc+b6		+6 if PC odd
+		GOTO	cyc+g		+20 if branch
+**********************************************************************
+*	RTNNC		500	12+G	18+G
+*	GONC		5aa	12+G	18+G
+**********************************************************************
+CYC_5		LC(2)	12
+		GOSUB	cyc+b6		+6 if PC odd
+		CBIT=1	10		bit10 = GONC
+		GOTO	cyc+g		+20 if branch
+
+**********************************************************************
+*	GOTO            6aaa    40	40
+**********************************************************************
+CYC_6		LC(2)	40
+		RTN
+
+**********************************************************************
+*	GOSUB           7aaa    41	42
+**********************************************************************
+CYC_7		LC(2)	41
+		GOTO	cyc+b1		+1 if PC odd
+
+**********************************************************************
+*	?XXX    fs      9atyy   26+F+G+B5
+**********************************************************************
+CYC_9		LC(2)	26
+		GOSUB	cyc+b5		+5 if PC odd
+		GOSUB	cyc+F		+field selector t
+		GOTO	cyc+g		+20 if branch
+
+**********************************************************************
+*	r=r+s   fs      Aat     14+F+B5		P:16 ?
+*	r=r+r   fs      Aat     14+F+B5		S:21 ?
+*	s=r+s   fs      Aat     14+F+B5		XS:16 ?
+*	r=r-1   fs      Aat     14+F+B5		B:21
+*	r=0     fs      Aat     14+F+B5		X:16
+*	r=s     fs      Aat     14+F+B5		M:21
+*	s=r     fs      Aat     14+F+B5		W:16
+*	rsEX    fs      Aat     14+F+B5
+**********************************************************************
+CYC_A		LC(1)	14
+-		GOSUB	cyc+b5		+5 if PC odd
+		GOTO	cyc+f		+field selector a
+
+**********************************************************************
+*	r=r-s   fs      Bat     14+F+B5
+*	r=r+1   fs      Bat     14+F+B5
+*	s=s-r   fs      Bat     14+F+B5
+*	r=s-r   fs      Bat     14+F+B5
+*	rSL     fs      Bat     16+F+B5
+*	rSR     fs      Bat     16+F+B5
+*	r=-r    fs      Bat     14+F+B5
+*	r=-r-1  fs      Bat     14+F+B5
+**********************************************************************
+CYC_B		?ABIT=1	7
+		GOYES	CYC_A		Not ASL/ASR - base 14
+		LC(2)	16
+		GONC	-		Base 16 + the same code
+
+**********************************************************************
+*	r=r+s   A       Ct      19	20
+*	r=r+r   A       Ct      19	20
+*	s=r+s   A       Ct      19	20
+*	r=r-1   A       Ct      19	20
+*	r=0     A       Dt      19	20
+*	r=s     A       Dt      19	20
+*	s=r     A       Dt      19	20
+*	rsEX    A       Dt      19	20
+*	r=r-s   A       Et      19	20
+*	r=r+1   A       Et      19	20
+*	s=s-r   A       Et      19	20
+*	r=s-r   A       Et      19	20
+**********************************************************************
+CYC_C
+CYC_D
+CYC_E		LC(2)	19
+-		GOTO	cyc+b1		+1 if PC odd
+
+**********************************************************************
+*	rSL     A       Ft      21	22
+*	rSR     A       Ft      21	22
+*	r=-r    A       Ft      19	20
+*	r=-r-1  A       Ft      19	20
+**********************************************************************
+CYC_F		?ABIT=1	3
+		GOYES	CYC_E		Not ASL/ASR - base 19
+		LC(2)	21
+		GONC	-		Base 19 + the same code
+
+**********************************************************************
+* Dispatch further for "8xxxx"
+**********************************************************************
+CYC_8		GOSUB	CYCDISPATCH	After this A[A] = "8x|xxx"
+		CON(3)	(CYC_80)-(*)
+		CON(3)	(CYC_81)-(*)
+		CON(3)	(CYC_82)-(*)
+		CON(3)	(CYC_83)-(*)
+		CON(3)	(CYC_84)-(*)
+		CON(3)	(CYC_85)-(*)
+		CON(3)	(CYC_86)-(*)
+		CON(3)	(CYC_87)-(*)
+		CON(3)	(CYC_88)-(*)
+		CON(3)	(CYC_89)-(*)
+		CON(3)	(CYC_8A)-(*)
+		CON(3)	(CYC_8B)-(*)
+		CON(3)	(CYC_8C)-(*)
+		CON(3)	(CYC_8D)-(*)
+		CON(3)	(CYC_8E)-(*)
+		CON(3)	(CYC_8F)-(*)
+
+
+**********************************************************************
+* Dispatch further for "80xxx"
+**********************************************************************
+CYC_80		GOSUB	CYCDISPATCH	After this A[A] = "80x|xx"
+		CON(3)	(CYC_800)-(*)
+		CON(3)	(CYC_801)-(*)
+		CON(3)	(CYC_802)-(*)
+		CON(3)	(CYC_803)-(*)
+		CON(3)	(CYC_804)-(*)
+		CON(3)	(CYC_805)-(*)
+		CON(3)	(CYC_806)-(*)
+		CON(3)	(CYC_807)-(*)
+		CON(3)	(CYC_808)-(*)
+		CON(3)	(CYC_809)-(*)
+		CON(3)	(CYC_80A)-(*)
+		CON(3)	(CYC_80B)-(*)
+		CON(3)	(CYC_80C)-(*)
+		CON(3)	(CYC_80D)-(*)
+		CON(3)	(CYC_80E)-(*)
+		CON(3)	(CYC_80F)-(*)
+
+**********************************************************************
+*	OUT=CS		800	14	19
+**********************************************************************
+CYC_800		LC(1)	14
+		GOTO	cyc+b5		+5 if PC odd
+**********************************************************************
+*	OUT=C		801	18	23
+**********************************************************************
+CYC_801		LC(2)	18
+		GOTO	cyc+b5		+5 if PC odd
+**********************************************************************
+*	A=IN		802	?	-
+*	C=IN		803	?	-
+*	UNCNFG		804	?	?
+*	SHUTDN		807	?	?
+**********************************************************************
+CYC_802
+CYC_803
+CYC_804
+CYC_807		C=0	B		UNKNOWN
+		RTN
+**********************************************************************
+*	CONFIG		805	34	40
+*	C=ID		806	34	40
+**********************************************************************
+CYC_805
+CYC_806		LC(2)	34
+		GOTO	cyc+b6		+6 if PC odd
+**********************************************************************
+*	INTON		8080	21	22
+*	RSI		80810	23	30
+*	LA(1)	n	80820n	30	30
+*	LA(2)	n	80821nn	32	38
+*	LA(3)	n	80822..	40	40
+*	LA(4)	n	80823..	42	48
+*	LA(5)	n	80824..	50	50
+*	...
+*	BUSCB		8083	?	?
+*	ABIT=0	n	8084n	24	29
+*	ABIT=1	n	8085n	24	29
+*	?ABIT=0	n	8086nyy	36+G	41+G	G=20 if branch
+*	?ABIT=1	n	8087nyy	36+G	41+G
+*	CBIT=0	n	8088n	24	29
+*	CBIT=1	n	8089n	24	29
+*	?CBIT=0	n	808Anyy	36+G	41+G
+*	?CBIT=1	n	808Bnyy	36+G	41+G
+*	PC=(A)		808C	82+7	82+7	+7 if A[A] is odd
+*	BUSCD		808D	?	?
+*	PC=(C)		808E	82+7	82+7	+7 if C[A] is odd
+*	INTOFF		808F	21	22
+**********************************************************************
+CYC_808		LC(1)	1
+		?A<C	P		INTON ?
+		GOYES	cyc21+b1	Yes - 21+1
+		?A=C	P		RSI ?
+		GOYES	cyc_rsi		Yes - 23+7
+		LC(1)	3
+		?A<C	P		LA(n) ?
+		GOYES	cyc_lahex	Yes - handle it
+		?A=C	P		BUSCB ?
+		GOYES	cyc_bus		Yes - handle it
+		LC(1)	6
+		?A<C	P		ABIT=0/ABIT=1 ?
+		GOYES	cyc24+b5	Yes - 24+5
+		LC(1)	8
+		?A<C	P		?ABIT=0/?ABIT=1 ?
+		GOYES	cyc36+b5+g	Yes - 36+5+G
+		LC(1)	#A
+		?A<C	P		CBIT=0/CBIT=1 ?
+		GOYES	cyc24+b5	Yes - 24+5
+		LC(1)	#C
+		?A<C	P		?CBIT=0/?CBIT=1 ?
+		GOYES	cyc36+b5+g	Yes - 36+5+G
+		LC(1)	#D
+		?A=C	P		BUSCD ?
+		GOYES	cyc_bus		Yes - handle it
+		A=A+1	P		INTOFF ?
+		GOC	cyc21+b1	Yes - 21+1
+
+		LC(2)	82		PC=(A)/PC=(C)
+		RTN			Actually +7 if A[A] or C[A] is odd..
+
+cyc21+b1	LC(2)	21
+		GOTO	cyc+b1
+
+cyc_rsi		LC(2)	23
+		GOTO	cyc+b7
+cyc_lahex	ASR	B		A[B] = c
+		LC(2)	30
+		C=C+A	B
+		A=A+A	B
+		A=A+A	B
+		C=C+A	B		30+5*c
+		?ABIT=0	2
+		RTNYES			Done if c is even
+		C=C-CON	B,3		Substract 3
+		GOTO	cyc+b6		+6 for odd PC
+cyc_bus		C=0	B		UNKNOWN
+		RTN
+cyc24+b5	LC(2)	24
+		GOTO	cyc+b5
+cyc36+b5+g	LC(2)	36
+		GOSUB	cyc+b5		+5 if PC odd
+		GOTO	cyc+g		+20 if branch
+
+**********************************************************************
+*	C+P+1		809	22	27
+**********************************************************************
+CYC_809		LC(2)	22
+		GOTO	cyc+b5		+5 if PC odd
+**********************************************************************
+*	RESET		80A	?	?
+*	BUSCC		80B	?	?
+**********************************************************************
+CYC_80A
+CYC_80B		C=0	B		UNKNOWN
+		RTN
+**********************************************************************
+*	C=P	n	80Cn	23	24
+*	P=C	n	80Dn	23	24
+*	CPEX	n	80Fn	23	24
+**********************************************************************
+CYC_80C
+CYC_80D
+CYC_80F		LC(2)	23
+		GOTO	cyc+b1		+1 if PC odd
+**********************************************************************
+*	SREQ?		80E	26	32
+**********************************************************************
+CYC_80E		LC(2)	26
+		GOTO	cyc+b6		+6 if PC odd
+
+**********************************************************************
+*	rSLC            81s	48	53
+*	rSRC            81s	48	53
+*	rSRB            81s	46	51
+*	r=r+CON rfs,d   818frn	29+W	30+W
+*	r=r-CON rfs,d   818frn	29+W	30+W
+*	r=r+CON	rfs,d	818frn	61	62	for single nibble fields
+*	rSRB.F  fs      819fr	26+W	31+W
+*	ss=r.F  fs      81Aftr	31+W	32+W
+*	r=ss.F  fs      81Aftr	31+W	32+W
+*	rssEX.F fs      81Aftr	31+W	32+W
+*	PC=A            81B2	49	50
+*	PC=C            81B3	49	50
+*	A=PC            81B4	29	30
+*	C=PC            81B5	29	30
+*	APCEX           81B6	49	50
+*	CPCEX           81B7	49	50
+**********************************************************************
+CYC_81		LC(1)	8
+		?A>=C	P		ASLC/ASRC?
+		GOYES	+		No - continue
+		LC(2)	48
+		GOTO	cyc+b5		+5 if PC odd
++		?A=C	P
+		GOYES	cyc818
+		LC(1)	#A
+		?A<C	P
+		GOYES	cyc819
+		?A=C	P
+		GOYES	cyc81A
+		LC(1)	#B
+		?A=C	P
+		GOYES	cyc81B
+		LC(2)	46		ASRB
+		GOTO	cyc+b5		46+5
+
+*	fs	0  1  2  3  4  5  6  7  F
+*		P  WP XS X  S  M  B  W  A
+*	+	0  2P 0  4  0  22 2  30 8
+
+cyc818		ASR	A		A[0] = fs
+		C=A	P
+		CBIT=0	3		Low 3 bits
+		C=C-1	P
+		GOC	cyc818bug	[P] is bugged
+		C=C-1	P
+		GONC	+
+		?C#0	S
+		GOYES	cyc818ok	[WP] is ok for P<>0
+		GONC	cyc818bug	[WP] is bugged for P=0
++		C=C-1	P
+		GOC	cyc818bug	[XS] is bugged
+		C=C-1	P
+		GOC	cyc818ok	[X] is ok
+		C=C-1	P
+		GONC	cyc818ok	[S] is bugged
+cyc818bug	LC(2)	61
+		GOTO	cyc+b1		+1 if PC odd
+cyc818ok	LC(2)	29
+		GOSUB	cyc+b1		+1 if PC odd
+		GOTO	cyc+w		+field selector
+cyc819		LC(2)	26
+		GOSUB	cyc+b5		+5 if PC odd
+		GOTO	cyc+W		+field selector
+cyc81A		LC(2)	31
+		GOSUB	cyc+b1		+1 if PC odd
+		GOTO	cyc+W		+field selector
+cyc81B		LC(2)	29		Assume 29 for r=PC
+		?ABIT=0	5
+		GOYES	+
+		LC(2)	49		Was PC=r or rPCEX
++		GOTO	cyc+b1		+1 if PC odd
+
+**********************************************************************
+*	CLRHSN  n       82n     12	18
+**********************************************************************
+CYC_82		LC(1)	12
+		GOTO	cyc+b6		+6 if PC odd
+**********************************************************************
+*	?HS=0	n	83nyy	24+G	29+G
+*	?P#	n	88nyy	24+G	29+G
+*	?P=	n	89nyy	24+G	29+G
+**********************************************************************
+CYC_83
+CYC_88
+CYC_89		LC(2)	24
+		GOSUB	cyc+b5		+5 if PC odd
+		GOTO	cyc+g		+20 if branch
+**********************************************************************
+*	ST=0	n	84n	14	19
+*	ST=1	n	85n	14	19
+**********************************************************************
+CYC_84
+CYC_85		LC(1)	14
+		GOTO	cyc+b5		+5 if PC odd
+**********************************************************************
+*	?ST=0	n	86nyy	26+G	31+G
+*	?ST=1	n	87nyy	26+G	31+G
+**********************************************************************
+CYC_86
+CYC_87		LC(2)	26
+		GOSUB	cyc+b5		+5 if PC odd
+		GOTO	cyc+g		+20 if branch
+**********************************************************************
+*	?XXX	A	8Atyy	34+G	39+G
+*	?XXX	A	8Btyy	34+G	39+G
+**********************************************************************
+CYC_8A
+CYC_8B		LC(2)	34
+		GOSUB	cyc+b5		+5 if PC odd
+		GOTO	cyc+g		+20 if branch
+**********************************************************************
+*	GOLONG	label	8Caaaa	50	50
+**********************************************************************
+CYC_8C		LC(2)	50
+		RTN
+**********************************************************************
+*	GOVLNG	label	8Daaaaa	52	58
+**********************************************************************
+CYC_8D		LC(2)	52
+		GOTO	cyc+b6
+**********************************************************************
+*	GOSUBL	label	8Eaaaa	51	52
+**********************************************************************
+CYC_8E		LC(2)	51
+		GOTO	cyc+b1
+**********************************************************************
+*	GOSBVL	label	8Faaaaa	53	60
+**********************************************************************
+CYC_8F		LC(2)	53
+		GOTO	cyc+b7
+
+**********************************************************************
+*	fs	0  1  2  3  4  5  6  7  F
+*		P  WP XS X  S  M  B  W  A
+*	+	0  2P 0  4  0  22 2  30 8
+**********************************************************************
+
+* Set branch flag (+20 cycles)
+
+cyc+g		CBIT=1	11		We don't actually know the test
+		RTN			result so we use a flag
+
+* Add 1 cycle if PC is odd
+
+cyc+b1		?A=0	S
+		RTNYES
+		C=C+1	B
+		RTN
+
+* Add 5 cycles if PC is odd
+
+cyc+b5		?A=0	S
+		RTNYES
+		C=C+CON	B,5
+		RTN
+
+* Add 6 cycles if PC is odd
+
+cyc+b6		?A=0	S
+		RTNYES
+		C=C+CON	B,6
+		RTN
+
+* Add 7 cycles if PC is odd
+
+cyc+b7		?A=0	S
+		RTNYES
+		C=C+CON	B,7
+		RTN
+
+* Add field selector cycles and 1 cycle if PC is odd
+
+cyc+W+B		GOSUB	cyc+b1
+*		GOTO	cyc+W
+
+* Add full field selector cycles
+
+cyc+W		ASR	A		A[0] = field selector
+cyc+w		A=A+1	P
+		A=A-1	P		Set CRY if [A]
+		GONC	cyc+f
+		P=	8/2-1
+		GOC	cycf+
+		
+* Add field selector cycles
+
+cyc+F		ASR	A		A[0] = field selector
+cyc+f		ABIT=0	3		Use low 3 bits only
+		A=A-1	P
+		RTNC
+		A=A-1	P
+		GOC	cycWP
+		A=A-1	P
+		RTNC
+		A=A-1	P
+		GOC	cycX
+		A=A-1	P
+		RTNC
+		A=A-1	P
+		GOC	cycM
+		A=A-1	P
+		GOC	cycf+		P already valid for [B]
+cycW		P=	30/2-1
+		GONC	cycf+
+cycX		P=	4/2-1
+		GOC	cycf+
+cycM		P=	22/2-1
+		GOC	cycf+
+cycWP		P=C	15
+		?P=	0
+		RTNYES			+2*P = 0 when P=0
+		P=P-1			P-1 to cancel +2 below
+cycf+		C+P+1
+		C+P+1			+ 2*P+2
+		P=	0
+		RTN
+
+**********************************************************************

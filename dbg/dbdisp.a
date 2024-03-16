@@ -1,0 +1,2593 @@
+**********************************************************************
+*		JAZZ	- Display code for xDB
+**********************************************************************
+
+**********************************************************************
+* Set new display screen and jump back to main loop if so requested
+**********************************************************************
+
+* If screen 4 is already active then swicth the subscreen
+
+DbgDisp4n	DADDR	gSCREEN,C
+		D0=C
+		A=DAT0	B
+		LC(1)	4-1
+		?C#A	P
+		GOYES	++	Not screen 4 yet - just start it
+		ASR	A	Else increment subscreen number
+		A=A+1	A
+		?A<C	P
+		GOYES	+
+		A=0	A
++		D0=D0+	1
+		DAT0=A	P
+++		GOTO	DbgDisp4	
+
+* Regular screen switching entries
+
+DbgDisp8	P=P+1
+DbgDisp7	P=P+1
+DbgDisp6	P=P+1
+DbgDisp5	P=P+1
+DbgDisp4	P=P+1
+DbgDisp3	P=P+1
+DbgDisp2	P=P+1
+DbgDisp1	C=P	15		C[S] = screen number
+		P=	0
+		DADDR	gSCREEN,C
+		D0=C
+		DAT0=C	S		Set screen number
+		?ST=1	1
+		RTNYES			Return requested
+		GOLONG	DbgMain		Mainloop requested
+
+**********************************************************************
+* Setup and call the individual screen displayer
+**********************************************************************
+DbgRedraw	DADDR	gFONTSIZE,C
+		D0=C
+		C=DAT0	S		C[S] = fontsize
+
+		D0=D0+	(gSCREEN)-(gFONTSIZE)
+		A=0	A
+		A=DAT0	1		Screen number
+		A=A+A	A		number*2
+		?C=0	S
+		GOYES	+
+		A=A+1	A		number*2+1 if big font
++		GOSUB	++
+		REL(5)	Screen1Big
+		REL(5)	Screen1Big
+		REL(5)	Screen2
+		REL(5)	Screen2Big
+		REL(5)	Screen3
+		REL(5)	Screen3Big
+		REL(5)	Screen4
+		REL(5)	Screen4
+		REL(5)	Screen5
+		REL(5)	Screen5Big
+		REL(5)	Screen6
+		REL(5)	Screen6Big
+		REL(5)	Screen7
+		REL(5)	Screen7
+		REL(5)	Screen8
+		REL(5)	Screen8Big
+++		C=RSTK
+		C=C+A	A
+		A=A+A	A
+		A=A+A	A
+		C=C+A	A		->offset
+		D0=C
+		A=DAT0	A
+		A=A+C	A
+		PC=A			Dispatch
+**********************************************************************
+*		SCREEN 1 BIG
+*	 +----------------------+
+*	1|D=D-1   A             |	Instruction
+*	2| CF                   |	Opcode or cycles
+*	3|@12345 P:0 CH ST:1234 |	PC P CRY HEX/DEC ST
+*	4|A:12345 C:12345 MP SR |	A[A] C[A] HST[3,2]
+*	5|B:12345 D:12345 SB XM |	B[A] D[A] HST[1,0]
+*	6|D0:12345/123456789012 |	D0 @D0
+*	7|D1:12345/123456789012 |	D1 @D1
+*	8|RST:00000:00000:00000 |	RSTK0 RSTK1 RSTK2
+*	9|    00000:00000:00000 |	RSTK6 RSTK7 RSTK8
+*	|			|
+*	 +----------------------+
+**********************************************************************
+
+Screen1Big
+* Line 1
+		GOSUBL	LineBlank
+		GOSUBL	SegmentINSTR
+		GOSUB	ShowLine1
+* Line 2
+		GOSUBL	LineBlank
+		A=R4.F	A
+		D0=A
+		C=DAT0	B		flags
+		?CBIT=1	gCYCLES?
+		GOYES	+
+		D1=D1+	2
+		GOSUBL	SegmentOPC
+		GOTO	++
++		GOSUBL	SegmentCYCLES
+++		GOSUB	ShowLine2
+* Line 3
+		GOSUBL	LineBlank	D1 = ->output
+		GOSUBL	Segment@PC
+		D1=D1+	2
+		GOSUBL	SegmentP
+		D1=D1+	2
+		GOSUBL	SegmentCRY
+		GOSUBL	SegmentMODE
+		D1=D1+	2
+		GOSUBL	SegmentST
+		GOSUB	ShowLine3
+* Line 4
+		GOSUB	LineBlank	D1 = ->output
+		GOSUBL	SegmentA[A]
+		D1=D1+	2
+		GOSUBL	SegmentC[A]
+		D1=D1+	2
+		GOSUBL	SegmentMP
+		D1=D1+	2
+		GOSUBL	SegmentSR
++		GOSUB	ShowLine4
+* Line 5
+		GOSUB	LineBlank	D1 = ->output
+		GOSUBL	SegmentB[A]
+		D1=D1+	2
+		GOSUBL	SegmentD[A]
+		D1=D1+	2
+		GOSUBL	SegmentSB
+		D1=D1+	2
+		GOSUBL	SegmentXM
+		GOSUB	ShowLine5
+* Line 6
+		GOSUB	LineBlank
+		GOSUBL	SegmentD0
+		LC(2)	12
+		GOSUBL	Segment/D0
+		GOSUB	ShowLine6
+* Line 7
+		GOSUB	LineBlank
+		GOSUBL	SegmentD1
+		LC(2)	12
+		GOSUBL	Segment/D1
+		GOSUB	ShowLine7
+* Line 8
+Screen1RSTK	GOSUB	LineBlank	D1 = ->output
+		LCSTR	'RST:'
+		DAT1=C	8
+		D1=D1+	8
+		GOSUBL	SegmentRSTK1
+		GOSUB	Segment:
+		GOSUBL	SegmentRSTK2
+		GOSUB	Segment:
+		GOSUBL	SegmentRSTK3
+		GOSUB	ShowLine8
+* Line 9
+		GOSUB	LineBlank
+		D1=D1+	8
+		GOSUBL	SegmentRSTK4
+		GOSUB	Segment:
+		GOSUBL	SegmentRSTK5
+		GOSUB	Segment:
+		GOSUBL	SegmentRSTK6
+		GOSUB	ShowLine9
+* Line 10
+BlankFinalLn	GOSUB	LineBlank
+		GOTO	ShowLine10
+**********************************************************************
+*		SCREEN 2 BIG
+*	+----------------------+
+*	| GOSUBL  SAVPTR       |	1
+*	|@059C1 P:0 CH ST:B318 |	2
+*	|A:6A51F4941A9059CC    |	3
+*	|B:00000000000A90E1    |	4
+*	|C:B0000000077B1CB7    |	5
+*	|D:00000000000A51E9    |	6
+*	|D0:2345C/6B436F6A04B2 |	7
+*	|D1:B1CBC/000000000000 |	8
+*	|		       |	9
+*	|		       |	10
+*	+----------------------+
+**********************************************************************
+Screen2Big
+* Line 1
+		GOSUB	LineBlank
+		GOSUBL	SegmentINSTR
+		GOSUB	ShowLine1
+* Line 2
+		GOSUB	LineBlank	D1 = ->output
+		GOSUBL	Segment@PC
+		D1=D1+	2
+		GOSUB	SegmentP
+		D1=D1+	2
+		GOSUBL	SegmentCRY
+		GOSUBL	SegmentMODE
+		D1=D1+	2
+		GOSUBL	SegmentST
+		GOSUB	ShowLine2
+* Line 3
+		GOSUB	LineBlank	D1 = ->output
+		GOSUBL	SegmentA[W]
+		GOSUB	ShowLine3
+* Line 4
+		GOSUB	LineBlank
+		GOSUBL	SegmentB[W]
+		GOSUB	ShowLine4
+* Line 5
+		GOSUB	LineBlank
+		GOSUBL	SegmentC[W]
+		GOSUB	ShowLine5
+* Line 6
+		GOSUB	LineBlank
+		GOSUBL	SegmentD[W]
+		GOSUB	ShowLine6
+* Line 7
+		GOSUB	LineBlank
+		GOSUBL	SegmentD0
+		LC(2)	12
+		GOSUBL	Segment/D0
+		GOSUB	ShowLine7
+* Line 8
+		GOSUB	LineBlank
+		GOSUBL	SegmentD1
+		LC(2)	12
+		GOSUBL	Segment/D1
+		GOSUB	ShowLine8
+* Line 9 and 10
+BlankFinal2	GOSUB	LineBlank
+		GOSUB	ShowLine9
+		GOTO	BlankFinalLn
+
+**********************************************************************
+*		SCREEN 2
+*	+---------------------------------+
+*	|067D2 1BDE708			  |	1
+*	|      D0=(5)  =G_AVMEM		  |	2
+*	|D0:12345/123456789ABCDEF012345678|	3
+*	|D1:12345/123456789ABCDEF012345678|	4
+*	|A:0123456789ABCDEF P:0 ST:1234   |	5
+*	|B:0123456789ABCDEF 0001 0010 0100|	6
+*	|C:0123456789ABCDEF CH MPSRSBXM   |	7
+*	|D:0123456789ABCDEF     RSTK:	  |	8
+*	|0:0123456789ABCDEF   1-4   5-8   |	9
+*	|1:0123456789ABCDEF  11111 55555  |	10
+*	|2:0123456789ABCDEF  22222 66666  |	11
+*	|3:0123456789ABCDEF  33333 77777  |	12
+*	|4:0123456789ABCDEF  44444 88888  |	13
+*	+---------------------------------+
+**********************************************************************
+Screen2
+		GOSUB	showblankup	Clear the borders
+		GOSUB	showblankdn
+
+* Line 1
+		GOSUB	lineblank
+		R0=A
+		GOSUBL	SegmentPC
+		D1=D1+	2
+		GOSUBL	SegmentOPC
+*		A=R0
+*		D1=A
+*		D1=D1+	12
+*		D1=D1+	14
+*		GOSUB	SegmentSPC
+*		GOSUBL	SegmentINSTR
+*		GOSUB	linerev
+		GOSUB	showline1
+* Line 2
+		GOSUB	lineblank
+		D1=D1+	12
+		GOSUBL	SegmentINSTR
+*		GOSUB	linerev
+		GOSUB	showline2
+* Line 3
+		GOSUB	lineblank
+		GOSUBL	SegmentD0
+		LC(2)	24
+		GOSUBL	Segment/D0
+		GOSUB	showline3
+* Line 4
+		GOSUB	lineblank
+		GOSUBL	SegmentD1
+		LC(2)	24
+		GOSUBL	Segment/D1
+		GOSUB	showline4
+* Line 5
+		GOSUB	lineblank
+		GOSUBL	SegmentA[W]
+		D1=D1+	2
+		GOSUB	SegmentP
+		D1=D1+	2
+		GOSUB	SegmentST
+		GOSUB	showline5
+* Line 6
+		GOSUB	lineblank
+		GOSUBL	SegmentB[W]
+		D1=D1+	2
+		GOSUB	SegmentSTbin
+		GOSUB	showline6
+* Line 7
+		GOSUB	lineblank
+		GOSUBL	SegmentC[W]
+		D1=D1+	2
+		GOSUB	SegmentCRY
+		GOSUB	SegmentMODE
+		D1=D1+	2
+		GOSUB	SegmentHST
+		GOSUB	showline7
+* Line 8
+		GOSUB	lineblank
+		GOSUBL	SegmentD[W]
+*		D1=D1+	2
+*		GOSUBL	SegmentD0
+*		LC(2)	5
+*		GOSUBL	Segment/D0
+		D1=D1+	10
+		LCSTR	'RSTK:'
+		DAT1=C	10
+		GOSUB	showline8
+* Line 9
+		GOSUB	lineblank
+		GOSUBL	SegmentR0[W]
+*		D1=D1+	2
+*		GOSUBL	SegmentD1
+*		LC(2)	5
+*		GOSUBL	Segment/D1
+		D1=D1+	6
+		LCSTR	'1-4'
+		DAT1=C	6
+		D1=D1+	12
+		LCSTR	'5-8'
+		DAT1=C	6
+		GOSUB	showline9
+* Line 10	
+		GOSUB	lineblank
+		GOSUBL	SegmentR1[W]
+		D1=D1+	4
+		GOSUBL	SegmentRSTK1
+		D1=D1+	2
+		GOSUBL	SegmentRSTK5
+		GOSUB	showline10
+* Line 11
+		GOSUB	lineblank
+		GOSUBL	SegmentR2[W]
+		D1=D1+	4
+		GOSUBL	SegmentRSTK2
+		D1=D1+	2
+		GOSUBL	SegmentRSTK6
+		GOSUB	showline11
+* Line 12
+		GOSUB	lineblank
+		GOSUBL	SegmentR3[W]
+		D1=D1+	4
+		GOSUBL	SegmentRSTK3
+		D1=D1+	2
+		GOSUBL	SegmentRSTK7
+		GOSUB	showline12
+* Line 13
+		GOSUB	lineblank
+		GOSUBL	SegmentR4[W]
+		D1=D1+	4
+		GOSUBL	SegmentRSTK4
+		D1=D1+	2
+		GOSUBL	SegmentRSTK8
+		GOTO	showline13
+
+
+**********************************************************************
+*		SCREEN 3 BIG
+*	+----------------------+
+*	| GOSUBL  SAVPTR       |	1
+*	|@059C1 P:0 CH ST:B318 |	2
+*	|R0:6A51F4941A9059CC   |	3
+*	|R1:00000000000A90E1   |	4
+*	|R2:B0000000077B1CB7   |	5
+*	|R3:00000000000A51E9   |	6
+*	|R4:0000000000000000   |	7
+*	|RST:00000:00000:00000 |	8
+*	|    00000:00000:00000 |	9
+*	|		       |	10
+*	+----------------------+
+**********************************************************************
+Screen3Big
+* Line 1
+		GOSUB	LineBlank
+		GOSUBL	SegmentINSTR
+		GOSUB	ShowLine1
+* Line 2
+		GOSUB	LineBlank	D1 = ->output
+		GOSUB	Segment@PC
+		D1=D1+	2
+		GOSUB	SegmentP
+		D1=D1+	2
+		GOSUB	SegmentCRY
+		GOSUB	SegmentMODE
+		D1=D1+	2
+		GOSUB	SegmentST
+		GOSUB	ShowLine2
+* Line 3
+		GOSUB	LineBlank	D1 = ->output
+		GOSUB	SegmentR0[W]
+		GOSUB	ShowLine3
+* Line 4
+		GOSUB	LineBlank
+		GOSUB	SegmentR1[W]
+		GOSUB	ShowLine4
+* Line 5
+		GOSUB	LineBlank
+		GOSUB	SegmentR2[W]
+		GOSUB	ShowLine5
+* Line 6
+		GOSUB	LineBlank
+		GOSUB	SegmentR3[W]
+		GOSUB	ShowLine6
+* Line 7
+		GOSUB	LineBlank
+		GOSUB	SegmentR4[W]
+		GOSUB	ShowLine7
+* Line 8
+		GOTO	Screen1RSTK	* Same code continues
+
+**********************************************************************
+*		SCREEN 3
+*	+---------------------------------+
+*	|A:12345 C:12345 D0:12345/12345678|	1
+*	|B:12345 D:12345 D1:12345/12345678|	2
+*	|067D2 D0=(5)  =G_AVMEM  |P:0  CH |	3
+*	|067D9 C=DAT0  A         |ST:1234 |	4
+*	|067DC D=C     A         |MPSRSBXS|	5
+*	|067DE D0=(5)  =G_RSKTOP |R0:12345|	6
+*	|067E5 C=DAT0  A         |R1:12345|	7
+*	|067E8 B=C     A         |R2:12345|	8
+*	|067EA D0=(5)  =G_RSKTOP |R3:12345|	9
+*	|067F1 C=DAT0  A         |R4:12345|	10
+*	|	   ...		 |  :12345|	11	RSTK1
+*	|	   ...		 |  :12345|	12	RSTK2
+*	|	   ...		 |  :12345|	13	RSTK3
+*	+---------------------------------+
+**********************************************************************
+Screen3		
+		GOSUB	showblankup	Clear the borders
+		GOSUB	showblankdn
+* Line 1
+		GOSUB	lineblank
+		GOSUB	SegmentA[A]
+		D1=D1+	2
+		GOSUB	SegmentC[A]
+		D1=D1+	2
+		GOSUB	SegmentD0
+		LC(2)	8
+		GOSUB	Segment/D0
+		GOSUB	showline1
+* Line 2
+		GOSUB	lineblank
+		GOSUB	SegmentB[A]
+		D1=D1+	2
+		GOSUB	SegmentD[A]
+		D1=D1+	2
+		GOSUB	SegmentD1
+		LC(2)	8
+		GOSUB	Segment/D1
+		GOSUB	showline2
+* Line 3
+		A=R4.F	A
+		D0=A
+		D0=D0+	REG_PC
+		A=DAT0	A
+		R2=A	A		R2[A] = pc
+		GOSUB	lineblank
+*		GOSUBL	SegmentDISINV
+		GOSUBL	SegmentDIS
+		AD1EX
+		R0=A
+		GOSUB	linerev
+		A=R0
+		D1=A
+
+		GOSUB	SegmentHOR
+		GOSUB	SegmentP
+		GOSUB	SegmentSPC2
+		GOSUB	SegmentCRY
+		GOSUB	SegmentMODE
+		GOSUB	SegmentSPC
+		GOSUB	showline3
+* Line 4
+		GOSUB	lineblank
+		GOSUB	SegmentDIS
+		GOSUB	SegmentHOR
+		GOSUB	SegmentST
+		GOSUB	SegmentSPC
+		GOSUB	showline4
+* Line 5
+		GOSUB	lineblank
+		GOSUB	SegmentDIS
+		GOSUB	SegmentHOR
+		GOSUB	SegmentHST
+		GOSUB	showline5
+* Line 6
+		GOSUB	lineblank
+		GOSUB	SegmentDIS
+		GOSUB	SegmentHOR
+		GOSUB	SegmentR0[A]
+		GOSUB	showline6
+* Line 7
+		GOSUB	lineblank
+		GOSUB	SegmentDIS
+		GOSUB	SegmentHOR
+		GOSUB	SegmentR1[A]
+		GOSUB	showline7
+* Line 8
+		GOSUB	lineblank
+		GOSUB	SegmentDIS
+		GOSUB	SegmentHOR
+		GOSUB	SegmentR2[A]
+		GOSUB	showline8
+* Line 9
+		GOSUB	lineblank
+		GOSUB	SegmentDIS
+		GOSUB	SegmentHOR
+		GOSUB	SegmentR3[A]
+		GOSUB	showline9
+* Line 10
+		GOSUB	lineblank
+		GOSUB	SegmentDIS
+		GOSUB	SegmentHOR
+		GOSUB	SegmentR4[A]
+*		GOTO	showline10
+		GOSUB	showline10
+* Line 11
+		GOSUB	lineblank
+		GOSUB	SegmentDIS
+		GOSUB	SegmentHOR
+		GOSUB	SegmentSPC2
+		GOSUB	Segment:
+		GOSUB	SegmentRSTK1
+		GOSUB	showline11
+* Line 12
+		GOSUB	lineblank
+		GOSUB	SegmentDIS
+		GOSUB	SegmentHOR
+		GOSUB	SegmentSPC2
+		GOSUB	Segment:
+		GOSUB	SegmentRSTK2
+		GOSUB	showline12
+* Line 13
+		GOSUB	lineblank
+		GOSUB	SegmentDIS
+		GOSUB	SegmentHOR
+		GOSUB	SegmentSPC2
+		GOSUB	Segment:
+		GOSUB	SegmentRSTK3
+		GOTO	showline13
+
+**********************************************************************
+*		SCREEN 6 BIG
+**********************************************************************
+
+Screen6Big
+*		GOSUB	showblankdn
+		A=R4.F	A
+		D0=A
+		D0=D0+	REG_PC
+		A=DAT0	A
+		R2=A	A		R2[A] = pc
+		GOSUB	LineBlank
+		GOSUB	SegmentDIS
+		GOSUB	LineRev		Reverse full line
+		GOSUB	ShowLine1
+		GOSUB	LineBlank
+		GOSUB	SegmentDIS
+		GOSUB	ShowLine2
+		GOSUB	LineBlank
+		GOSUB	SegmentDIS
+		GOSUB	ShowLine3
+		GOSUB	LineBlank
+		GOSUB	SegmentDIS
+		GOSUB	ShowLine4
+		GOSUB	LineBlank
+		GOSUB	SegmentDIS
+		GOSUB	ShowLine5
+		GOSUB	LineBlank
+		GOSUB	SegmentDIS
+		GOSUB	ShowLine6
+		GOSUB	LineBlank
+		GOSUB	SegmentDIS
+		GOSUB	ShowLine7
+		GOSUB	LineBlank
+		GOSUB	SegmentDIS
+		GOSUB	ShowLine8
+		GOSUB	LineBlank
+		GOSUB	SegmentDIS
+		GOSUB	ShowLine9
+		GOSUB	LineBlank		
+		GOSUB	SegmentDIS
+		GOTO	ShowLine10
+
+
+**********************************************************************
+*		SCREEN 6
+**********************************************************************
+
+Screen6
+		GOSUB	showblankup	Clear the borders
+		GOSUB	showblankdn
+
+		A=R4.F	A
+		D0=A
+		D0=D0+	REG_PC
+		A=DAT0	A
+		R2=A	A		R2[A] = pc
+		GOSUB	lineblank
+		GOSUB	SegmentDIS
+		GOSUB	linerev		Reverse full line
+		GOSUB	showline1
+		GOSUB	lineblank
+		GOSUB	SegmentDIS
+		GOSUB	showline2
+		GOSUB	lineblank
+		GOSUB	SegmentDIS
+		GOSUB	showline3
+		GOSUB	lineblank
+		GOSUB	SegmentDIS
+		GOSUB	showline4
+		GOSUB	lineblank
+		GOSUB	SegmentDIS
+		GOSUB	showline5
+		GOSUB	lineblank
+		GOSUB	SegmentDIS
+		GOSUB	showline6
+		GOSUB	lineblank
+		GOSUB	SegmentDIS
+		GOSUB	showline7
+		GOSUB	lineblank
+		GOSUB	SegmentDIS
+		GOSUB	showline8
+		GOSUB	lineblank
+		GOSUB	SegmentDIS
+		GOSUB	showline9
+		GOSUB	lineblank
+		GOSUB	SegmentDIS
+		GOSUB	showline10
+		GOSUB	lineblank
+		GOSUB	SegmentDIS
+		GOSUB	showline11
+		GOSUB	lineblank
+		GOSUB	SegmentDIS
+		GOSUB	showline12
+		GOSUB	lineblank
+		GOSUB	SegmentDIS
+		GOTO	showline13
+
+
+**********************************************************************
+* Display line in OUTBUF at desired line using medium font
+**********************************************************************
+ShowLine10	LC(5)	9*8*34
+		GOTO	+
+ShowLine9	LC(5)	8*8*34
+		GOTO	+
+ShowLine8	LC(5)	7*8*34
+		GOTO	+
+ShowLine7	LC(5)	6*8*34
+		GOTO	+
+ShowLine6	LC(5)	5*8*34
+		GOTO	+
+ShowLine5	LC(5)	4*8*34
+		GOTO	+
+ShowLine4	LC(5)	3*8*34
+		GOTO	+
+ShowLine3	LC(5)	2*8*34
+		GOTO	+
+ShowLine2	LC(5)	1*8*34
+		GOTO	+
+ShowLine1	C=0	A
++		R0=C	A		offset
+		A=R4.F	A		->data
+		LC(5)	gFONT2
+		A=A+C	A
+		D0=A
+		A=DAT0	A		->FONT2 at "..."
+		LC(5)	(gOUTBUF)-(gFONT2)
+		AD0EX
+		A=A+C	A		->outpuf
+		AD0EX		
+		AR0EX	A		R0[A]=->font	A[A]=offset
+		GOLONG	ViewLine
+
+**********************************************************************
+* Display line in OUTBUF at desired line using small font
+**********************************************************************
+showline13	LC(5)	12*6*34+1*34
+		GOTO	+
+showline12	LC(5)	11*6*34+1*34
+		GOTO	+
+showline11	LC(5)	10*6*34+1*34
+		GOTO	+
+showline10	LC(5)	9*6*34+1*34
+		GOTO	+
+showline9	LC(5)	8*6*34+1*34
+		GOTO	+
+showline8	LC(5)	7*6*34+1*34
+		GOTO	+
+showline7	LC(5)	6*6*34+1*34
+		GOTO	+
+showline6	LC(5)	5*6*34+1*34
+		GOTO	+
+showline5	LC(5)	4*6*34+1*34
+		GOTO	+
+showline4	LC(5)	3*6*34+1*34
+		GOTO	+
+showline3	LC(5)	2*6*34+1*34
+		GOTO	+
+showline2	LC(5)	1*6*34+1*34
+		GOTO	+
+showline1	LC(5)	1*34
++		R0=C	A		offset
+		A=R4.F	A		->data
+		LC(5)	gFONT1
+		A=A+C	A
+		D0=A
+		A=DAT0	A		->FONT1 at "..."
+		LC(5)	(gOUTBUF)-(gFONT1)
+		AD0EX
+		A=A+C	A		->outbuf
+		AD0EX
+		AR0EX	A		R0[A]=->font	A[A]=offset
+		GOLONG	viewline
+
+showblankup	GOSUBL	GetViewGrob	D1 = ->row1
+		LC(5)	1*34
+		GONC	+
+showblankdn	GOSUBL	GetViewGrob	D1 = ->row1
+		LC(5)	(80-2)*34
+		AD1EX
+		A=A+C	A
+		AD1EX
+		LC(5)	2*34		old value:	2*34
++		GOVLNG	=WIPEOUT
+
+**********************************************************************
+*		Blank Line
+**********************************************************************
+LineBlank	A=R4.F	A
+		LC(5)	gOUTBUF
+		A=A+C	A
+		D1=A
+BlankIt		LC(N)	2*8		Put 22 spaces
+		NIBASC	'        '
+		DAT1=C	W		8
+		D1=D1+	16
+		DAT1=C	W		16
+		D1=D1+	16
+		DAT1=C	12		22
+		D1=A
+		RTNCC
+
+LineRev		DADDR	gOUTBUF,C
+		D1=C
+		P=	16-11		22 chars to reverse
+-		A=DAT1	A
+		ABIT=1	7
+		ABIT=1	15
+		DAT1=A	A
+		D1=D1+	4
+		P=P+1
+		GONC	-
+		RTNCC
+
+linerev		GOSUB	LineRev		22 chars to reverse
+		P=	16-11
+		GONC	-		And 11 more
+
+lineblank	A=R4.F	A
+		LC(5)	gOUTBUF
+		A=A+C	A
+		D1=A
+blankit		LC(N)	2*8		Put 33 spaces
+		NIBASC	'        '
+		DAT1=C	W		8
+		D1=D1+	16
+		DAT1=C	W		16
+		D1=D1+	16
+		DAT1=C	W		24
+		D1=D1+	16
+		DAT1=C	W		32
+		D1=D1+	16
+		DAT1=C	B		33
+		D1=A
+		RTNCC
+
+
+**********************************************************************
+*	Utilities to output various register contents
+**********************************************************************
+
+SegmentSPC2	GOSUB	SegmentSPC
+SegmentSPC	LCASC	' '
+		GOTO	+
+
+Segment:	LCASC	':'
+		GOTO	+
+
+* Output horizontal divider
+SegmentHOR	LC(2)	2
++		DAT1=C	B
+		D1=D1+	2
+		RTN
+
+* Output "P:x"
+SegmentP	A=R4.F	A
+		D0=A
+		D0=D0+	REG_P
+		LCSTR	'P:'
+		DAT1=C	A
+		D1=D1+	4
+		C=DAT0	B
+		GOTO	putint1
+
+* Output A[XS] in bin format
+Axs2Bin		LCSTR	'0'
+		P=	16-4
+-		CBIT=0	0	
+		A=A+A	XS
+		GONC	+
+		C=C+1	A
++		DAT1=C	B
+		D1=D1+	2
+		P=P+1
+		GONC	-
+		D1=D1+	2
+		RTN	
+		
+SegmentSTbin	DADDR	REG_ST,C
+		D0=C
+		A=DAT0	X
+		GOSUB	Axs2Bin
+		ASL	A
+		GOSUB	Axs2Bin
+		ASL	A
+		GOTO	Axs2Bin
+
+* Output CRY as "C" or " "
+SegmentCRY	A=R4.F	A
+		D0=A
+		D0=D0+	REG_CRY
+		A=DAT0	B
+		LCASC	' '
+		?A=0	P
+		GOYES	+
+		LCASC	'C'
++		DAT1=C	B
+		D1=D1+	2
+		RTNCC
+
+* Output HEX/DEC as "H" or "D"
+SegmentMODE	DADDR	REG_MODE,C
+		D0=C
+		A=DAT0	B
+		LCASC	'H'
+		?A=0	P
+		GOYES	+
+		LCASC	'D'
++		DAT1=C	B
+		D1=D1+	2
+		RTNCC
+
+* Output ST as a 4 nibble integer
+SegmentST	DADDR	REG_ST,C
+		D0=C
+		LCSTR	'ST:'
+		DAT1=C	6
+		D1=D1+	6
+		C=0	A
+		C=DAT0	X
+		?ST=0	15
+		GOYES	+
+		CBIT=1	15
++		?ST=0	14
+		GOYES	+
+		CBIT=1	14
++		?ST=0	13
+		GOYES	+
+		CBIT=1	13
++		?ST=0	12
+		GOYES	+
+		CBIT=1	12
++		GOTO	putint4
+
+
+* Output HST as a continuous stream of characters
+SegmentHST	GOSUB	SegmentMP
+		GOSUB	SegmentSR
+		GOSUB	SegmentSB
+		GOTO	SegmentXM
+
+SegmentMP	LCSTR	'MP'
+		?MP=0
+		GOYES	++
+		GONC	+
+SegmentSR	LCSTR	'SR'
+		?SR=0
+		GOYES	++
+		GONC	+
+SegmentSB	DADDR	REG_HST,C
+		D0=C
+		A=DAT0	B
+		LCSTR	'SB'
+		?ABIT=0	1
+		GOYES	++
+		GONC	+
+SegmentXM	LCSTR	'XM'
+		?XM=0
+		GOYES	++
++		CBIT=1	7
+		CBIT=1	15
+++		DAT1=C	4
+		D1=D1+	4
+		RTN
+
+* Output PC as a 5 nibble integer, always hex
+Segment@PC	LCSTR	'@'
+		DAT1=C	B
+		D1=D1+	2
+SegmentPC	A=R4.F	A
+		D0=A
+		D0=D0+	REG_PC
+		C=DAT0	A
+		GOTO	putnib5
+
+* Output various register contents
+
+SegmentD[A]	P=P+1
+SegmentC[A]	P=P+1
+SegmentB[A]	P=P+1
+SegmentA[A]	GOSUB	+
+		GOTO	putmint5
+
+SegmentD[W]	P=P+1
+SegmentC[W]	P=P+1
+SegmentB[W]	P=P+1
+SegmentA[W]	GOSUB	+
+		GOTO	putmint16
+
++		C=0	A
+		CPEX	0
+		B=C	A
+		BSL	A
+		DADDR	REG_A,C
+		C=C+B	A	
+		D0=C
+		LCSTR	'A:'
+		BSR	A
+		C=C+B	A
+		DAT1=C	A
+		D1=D1+	4
+		RTN
+
+SegmentR4[A]	P=P+1
+SegmentR3[A]	P=P+1
+SegmentR2[A]	P=P+1
+SegmentR1[A]	P=P+1
+SegmentR0[A]	GOSUB	+
+		DAT1=C	6
+		D1=D1+	6
+		GOTO	putmint5
+
+SegmentR4[W]	P=P+1
+SegmentR3[W]	P=P+1
+SegmentR2[W]	P=P+1
+SegmentR1[W]	P=P+1
+SegmentR0[W]	GOSUB	+
+		CSR	W
+		CSR	A
+		DAT1=C	A	
+		D1=D1+	4
+		GOTO	putmint16
+
++		C=0	A
+		CPEX	0
+		B=C	A
+		BSL	A
+		DADDR	REG_R0,C
+		C=C+B	A	
+		D0=C
+		LCSTR	'R0:'
+		BSL	A
+		C=C+B	A
+		RTN
+		
+
+SegmentD0	DADDR	REG_D0,C
+		D0=C
+		LCSTR	'D0:'
+-		DAT1=C	6
+		D1=D1+	6
+		C=DAT0	A
+		GOTO	putnib5		Always hex
+
+SegmentD1	DADDR	REG_D1,C
+		D0=C
+		LCSTR	'D1:'
+		GOTO	-
+
+Segment/D0	LAASC	'/'
+		DAT1=A	B
+		D1=D1+	2
+Segment@D0	B=C	A		nibbles
+		DADDR	REG_D0,C
+		D0=C
+		C=DAT0	A		DB D0
+		A=B	A
+		GOTO	putmem
+
+Segment/D1	LAASC	'/'
+		DAT1=A	B
+		D1=D1+	2
+Segment@D1	B=C	A		nibbles
+		DADDR	REG_D1,C
+		D0=C
+		C=DAT0	A		DB D1
+		A=B	A
+		GOTO	putmem
+ 
+SegmentRSTK8	P=P+1
+SegmentRSTK7	P=P+1
+SegmentRSTK6	P=P+1
+SegmentRSTK5	P=P+1
+SegmentRSTK4	P=P+1
+SegmentRSTK3	P=P+1
+SegmentRSTK2	P=P+1
+SegmentRSTK1	C=0	A
+		CPEX	0
+		A=R4.F	A		->data
+		A=A+C	A
+		C=C+C	A
+		C=C+C	A
+		A=A+C	A		+5*i
+		LC(5)	REG_RSTK
+		A=A+C	A
+		D0=A
+		C=DAT0	A
+		GOTO	putnib5		Always hex
+
+
+* Opcode
+
+SegmentOPC	A=R4.F	A
+		D0=A
+		D0=D0+	REG_PC
+		LC(5)	gISIZE
+		C=C+A	A
+		A=DAT0	A		DB PC
+		D0=C
+		C=DAT0	B
+		?C=0	B
+		RTNYES
+		ACEX	A
+		GOTO	putmemhex
+
+* 7 opcode digits. Currently unused, was planned for instr displays
+*SegmentOPC7	AD1EX
+*		R0=A	A		->output start
+*		D1=A
+*		A=R4.F	A
+*		D0=A
+*		D0=D0+	REG_PC
+*		LC(5)	gISIZE
+*		C=C+A	A
+*		A=DAT0	A		DB PC
+*		D0=C
+*		C=DAT0	B
+*		?C=0	B
+*		GOYES	++		No opcode digits at all
+*		ACEX	A
+*		D0=C
+*		LC(2)	7
+*		?A<=C	B
+*		GOYES	+
+*		A=C	B		max 7
+*+		CD0EX
+*		GOSUB	putmemhex
+*++		A=R0	A		->output start
+*		D1=A
+*		D1=D1+	14
+*		RTN
+
+* Current instruction
+
+SegmentINSTR	A=R4.F	A		->data
+		LC(5)	gINSTR
+		C=C+A	A
+		D0=C
+		LC(5)	22*2
+		GOVLNG	=MOVEDOWN	
+				
+* Disassembly from address R2[A] in 24-character slot
+
+SegmentDIS	CD1EX
+		RSTK=C
+		CD1EX
+		C=R2
+		D0=C
+		ST=1	8
+		GOSUBL	DbgDis		D0 = next PC
+		CD0EX
+		R2=C
+		C=RSTK
+		A=C	A
+		LC(5)	24*2
+		A=A+C	A
+		D1=A
+		RTN
+
+* Disassembly from address R2[A] in inverse 24-character slot
+*SegmentDISINV	CD1EX
+*		RSTK=C
+*		CD1EX
+*		C=R2
+*		D0=C
+*		ST=1	8
+*		GOSUBL	DbgDis		D0 = next PC
+*		CD0EX
+*		R2=C
+*		C=RSTK			start of output
+*		D1=C
+*		LC(2)	24-1		inverse 24 chars
+*-		A=DAT1	B
+*		ABIT=1	7
+*		DAT1=A	B
+*		D1=D1+	2
+*		C=C-1	B
+*		GONC	-
+*		RTN
+
+* Show cycle counters, 10 chars reserved for each
+*	1234567890123456789012
+*	xx/yy ccccc/ttttttttt	Current/Total right adjusted
+SegmentCYCLES	DADDR	gICYCLES,C
+		D0=C
+		AD1EX
+		D1=A
+		GOSBVL	=ASLW5
+		A=DAT0	X
+		R0=A			R0[A] = gICYCLES	R0[A1]=->out
+
+		A=0	W
+		A=R0.F	X
+		?ABIT=0	11		Output maximum cycles
+		GOYES	+
+		A=A+CON	A,10
+		A=A+CON	A,10		+20 for taken branch
++		A=0	XS		Clear flags
+*		LC(2)	9		Output space first if cycles<10
+*		?A>C	B
+*		GOYES	+
+*		D1=D1+	2
+*+
+		GOSBVL	=HXDCW		A[W] = C[W] = decimal cycles
+		SETHEX
+		GOSUBL	DIaddr		Output A[A] stripping zeros
+		A=0	W
+		A=R0.F	X		Show secondary cycles if present
+		?ABIT=0	11
+		GOYES	+		No secondary cycles
+		A=0	XS
+		GOSBVL	=HXDCW		A[W] = C[W] = decimal cycles
+		SETHEX
+		LCASC	'/'		"dd/"
+		DAT1=C	B
+		D1=D1+	2
+		GOSUBL	DIaddr		"dd/ee"
++
+* Output total cycles at the end of the line (reverse order)
+		A=R0	W
+		GOSBVL	=ASRW5
+		LC(5)	2*20
+		A=A+C	A
+		D1=A			->end of cycles output
+		R0=A	A		->tail
+		DADDR	gTOT_CYCLES,C
+		D0=C
+		A=0	W
+		A=DAT0	cyc_size
+		GOSUB	putdecrev
+* If current cycles <> total cycles output current cycles too
+		C=0	W
+		C=DAT0	cyc_size	C[W] = total cycles
+		D0=D0+	(gCUR_CYCLES)-(gTOT_CYCLES)
+		A=0	W
+		A=DAT0	cyc_size	A[W] = current cycles
+		?A=C	W
+		GOYES	+		Same cycles - done
+		LCASC	'/'
+		DAT1=C	B
+		D1=D1-	2
+		GOSUB	putdecrev
++		A=R0	A		->tail
+		D1=A
+		RTN
+
+* Display number in A[W] in reverse order stripping leading zeros
+
+putdecrev	GOSBVL	=HXDCW
+		SETHEX
+-		LCASC	'9'
+		ACEX	P
+		?C<=A	P
+		GOYES	+
+		C=C+CON	B,7
++		DAT1=C	B
+		D1=D1-	2
+		ASR	W
+		?A#0	W
+		GOYES	-
+		RTN
+
+
+**********************************************************************
+*		Utilities
+**********************************************************************
+
+* Test if ascii mode is on
+AsciiMode?	CR4EX.F	A
+		CD0EX
+		RSTK=C
+		C=DAT0	B
+		?CBIT=1	gASCII?
+		GOYES	+
++		C=RSTK
+		CD0EX
+		CR4EX.F	A
+		RTN
+
+** Adjust character in C[B] to make it suitable for printing.
+
+PrintAdjust	D=C	B		D[B] = char
+		LC(2)	' '
+		?D<C	B		< Blank, make it a dot
+		GOYES	+		
+		LC(2)	#7F		<#80 keep it 
+		?D<=C	B
+		GOYES	++
++		LC(2)	'.'		Otherwise make it a dot
+		RTN
+++		C=D	B
+		RTN
+
+**********************************************************************
+
+* Output 16 nibbles from address C[A]
+putmemh16	LA(2)	16
+		GOTO	putmemhex
+
+putmema16	LA(2)	16
+		GOTO	putmemasc
+
+* Output A[B] nibbles from address C[A]
+
+putmem16	LA(2)	16
+putmem		GOSUB	AsciiMode?
+		GOC	putmemasc
+
+* Output A[B] nibbles from address C[A] as hex
+putmemhex	A=A-1	B		Adjust to 0 - n-1 range
+		RTNC			Ignore empty request
+		CD0EX
+		B=C	A		Save original D0
+-		ASL	A
+		A=DAT0	1		nibble
+		D0=D0+	1
+		LCASC	'9'
+		ACEX	P
+		?C<=A	P
+		GOYES	+
+		C=C+CON	B,7
++		DAT1=C	B
+		D1=D1+	2
+		ASR	A
+		A=A-1	B
+		GONC	-
+		C=B	A
+		D0=C
+		RTNCC
+
+* Output A[B] nibbles from address C[A] as ascii
+putmemasc	?A=0	B		Ignore size 0
+		RTNYES
+		D=C	A		D[A] = opcode address
+		CD0EX
+		B=C	A		Save D0 in B
+
+		ASRB.F	B		Make character counter
+		GOTO	+
+-		C=DAT0	B		C[B] = character
+		D0=D0+	2
+
+		GOSUB	PrintAdjust	Adjust char in C[B] for printing
+		DAT1=C	B
+		D1=D1+	2
++		A=A-1	B		One byte less to go
+		GONC	-
+
+* No need for this
+*		B=A	B		A[B] = digit count
+*		SB=0
+*		BSRB.F	B		Turn into character count
+*		LCASC	' '
+*		?SB=0
+*		GOYES	+		Even number of digits
+*-		DAT1=C	B
+*		D1=D1+	2
+*+		B=B-1	B		One less to pad
+*		GONC	-
+* No need for this
+
+* in case we're called after EntryAddr?
+		GOSUBL	RestoreBanks
+
+		C=B	A		Restore D0 from B
+		D0=C
+		RTN
+**********************************************************************
+
+* Output A[B] nibbles from C[W]
+putint		GOSUB	AsciiMode?
+		GOC	putasc
+
+puthex		ACEX	W
+		C=C-1	B		nibbles-1
+		P=C	0
+		C=P	2
+		GONC	+		Get 1st nib to A[S]
+-		ASL	W
++		P=P+1
+		GONC	-
+-		ASLC
+		LCASC	'9'
+		ACEX	P
+		?C<=A	P
+		GOYES	+
+		C=C+CON	B,7
++		DAT1=C	B
+		D1=D1+	2
+		C=C-1	XS
+		GONC	-
+		RTNCC
+
+* ASCII mode: convert number of digits to ASCII characters. Nonprintables
+* become dots. The field is padded with blanks up to the number of digits
+* specified, to maintain the field sizes and screen formats. Any odd-numbered
+* high-endian digit is dropped.
+
+putasc		?A=0	B
+		RTNYES			Zero digit count - ignore
+		B=A	B		B[B] = digit counter
+		GONC	+
+-		CSRC			Rotate right specified number of digits
++		B=B-1	B
+		GONC	-
+* Then we rotate left appending byte by byte
+		ST=0	0		Assume integral bytes
+		?ABIT=0	0
+		GOYES	+		Intergal number of bytes
+		ST=1	0		Mark odd nibble
+		CSLC			Drop high digit
++		ASRB.F	B		Turn A[B] into byte counter
+		B=A	B		B[B] = character counter
+		GOTO	+
+-		CSLC			Bring in high byte to C[B]
+		CSLC
+		GOSUB	PrintAdjust	Adjust char in C[B]
+		DAT1=C	B
+		D1=D1+	2
++		B=B-1	B		One char less to go
+		GONC	-		Loop until no more chars left
+		LCASC	' '		Pad with blanks
+		?ST=0	0
+		GOYES	+		No odd nibble in field, skip blank
+-		DAT1=C	B
+		D1=D1+	2
++		A=A-1	B		One less blank to go
+		GONC	-
+		RTNCC
+
+* Output 16 nibbles from C[W] in ascii or hex
+putmint16	C=DAT0	W
+putint16	LA(2)	16
+		GOTO	putint
+
+* Output 5 nibbles from C[A]	in hex or asc
+putmint5	C=DAT0	A
+putint5		LA(2)	5
+		GOTO	putint
+
+* Output 1-5 nib in hex only
+putnib5		P=P+1
+putint4		P=P+1
+putint3		P=P+1
+putint2		P=P+1
+putint1		ACEX	A
+		C=0	A
+		C+P+1
+		P=	0
+		ACEX	A
+		GOTO	puthex
+
+* Put C[B] as signed integer
+putsigned2	LAASC	' '
+		?C=0	B
+		GOYES	+
+		LAASC	'+'
+		?CBIT=0	7
+		GOYES	+
+		C=-C	B
+		LAASC	'-'
++		DAT1=A	B
+		D1=D1+	2
+		GOTO	putint2
+
+
+**********************************************************************
+*		Special Screens
+**********************************************************************
+
+**********************************************************************
+*		SCREEN 7
+*   +---------------------------------+
+*  1|D=D-1   A            |1:00000  00|	Instruction		BRKPT 1
+*  2| CF                  |2:00000  00|	Opcode			BRKPT 2
+*  3| 7            21/18  |3:00000  00|	Cycles			BRKPT 3
+*  4|@12345 P:0 CH ST:1234|4:00000  00|	PC P CRY HEX/DEC ST	BRKPT 4
+*  5|A:12345 C:12345 MP SR|5:00000  00|	A[A] C[A] HST[3,2]	BRKPT 5
+*  6|B:12345 D:12345 SB XM|6:00000  00|	B[A] D[A] HST[1,0]	BRKPT 6
+*  7|D0:12345/123456789012|7:00000  00|	D0 @D0			BRKPT 7
+*  8|D1:12345/123456789012|8:00000  00|	D1 @D1			BRKPT 8
+*  9|RST:00000:00000:00000   R0:95E35 |	RSTK0 RSTK1 RSTK2	 R0
+* 10|R1:B9632 2:03FEF 3:00000 4:7AB9C |	R1 R2 R3 R4
+*   +---------------------------------+
+**********************************************************************
+
+Screen7
+		GOSUB	showblankup	Clear the borders
+		GOSUB	showblank61
+* Line 1
+		GOSUB	llineblank
+		GOSUB	SegmentINSTR
+		D1=D1-	2
+		GOSUB	LineBRK1
+		GOSUB	showline1
+* Line 2
+		GOSUB	llineblank
+		C=0	A
+		LC(2)	21*2
+		C=C+A	A
+		R2=C
+		D1=D1+	2
+		GOSUB	SegmentOPC
+		C=R2	
+		D1=C	
+		GOSUB	LineBRK2
+ 		GOSUBL	showline2
+
+* Line 3
+		GOSUB	llineblank
+		C=A	A
+		RSTK=C
+		GOSUB	SegmentCYCLES
+		C=RSTK
+		D1=C	A
+		C=R2
+		D1=C
+		GOSUB	LineBRK3
+		GOSUBL	showline3
+* Line 4
+		GOSUB	llineblank	D1 = ->output
+		GOSUB	Segment@PC
+		D1=D1+	2
+		GOSUB	SegmentP
+		D1=D1+	2
+		GOSUB	SegmentCRY
+		GOSUB	SegmentMODE
+		D1=D1+	2
+		GOSUB	SegmentST
+		GOSUB	LineBRK4
+		GOSUBL	showline4
+* Line 5
+		GOSUB	llineblank	D1 = ->output
+		GOSUB	SegmentA[A]
+		D1=D1+	2
+		GOSUB	SegmentC[A]
+		D1=D1+	2
+		GOSUB	SegmentMP
+		D1=D1+	2
+		GOSUB	SegmentSR
+		GOSUB	LineBRK5
++		GOSUBL	showline5
+* Line 6
+		GOSUB	llineblank	D1 = ->output
+		GOSUB	SegmentB[A]
+		D1=D1+	2
+		GOSUB	SegmentD[A]
+		D1=D1+	2
+		GOSUB	SegmentSB
+		D1=D1+	2
+		GOSUB	SegmentXM
+		GOSUB	LineBRK6
+		GOSUBL	showline6
+* Line 7
+		GOSUB	llineblank
+		GOSUB	SegmentD0
+		LC(2)	12
+		GOSUB	Segment/D0
+		C=R2
+		D1=C
+		GOSUB	LineBRK7
+		GOSUBL	showline7
+* Line 8
+		GOSUB	llineblank
+		GOSUB	SegmentD1
+		LC(2)	12
+		GOSUB	Segment/D1
+		C=R2
+		D1=C
+		GOSUB	LineBRK8
+		GOSUBL	showline8
+* Line 9
+		GOSUB	llineblank	D1 = ->output
+		LCSTR	'RST:'
+		DAT1=C	8
+		D1=D1+	8
+		GOSUB	SegmentRSTK1
+		GOSUB	Segment:
+		GOSUB	SegmentRSTK2
+		GOSUB	Segment:
+		GOSUB	SegmentRSTK3
+		D1=D1+	6
+		GOSUB	SegmentR0[A]
+		GOSUBL	showline9
+
+		GOSUB	llineblank
+		GOSUB	SegmentR1[A]
+		GOSUB	SegmentR2[A]
+		GOSUB	BkSpcBlk
+		GOSUB	SegmentR3[A]
+		GOSUB	BkSpcBlk
+		GOSUB	SegmentR4[A]	
+		GOSUB	BkSpcBlk
+ 	 	GOLONG	showline10
+		
+BkSpcBlk	D1=D1-	16
+		LCASC	' '
+		DAT1=C	B
+		D1=D1+	16
+		RTN
+
+LineBRK8	P=P+1
+LineBRK7	P=P+1
+LineBRK6	P=P+1
+LineBRK5	P=P+1
+LineBRK4	P=P+1
+LineBRK3	P=P+1
+LineBRK2	P=P+1
+LineBRK1	C=0	A
+		CPEX	0
+		B=C	A		0-7
+		GOSUBL	SegmentHOR
+		LCSTR	'1:'
+		C=C+B	B		Fix index
+		DAT1=C	A
+		D1=D1+	4
+
+		A=R4.F	A		->data
+		LC(5)	db_bpt
+		A=A+C	A		->breakpoint table
+
+* Skip to correct slot. BPTSIZE = 5+7+2 = 14
+
+		C=B	A
+		CSL	A		16*
+		C=C-B	A
+		C=C-B	A		14*
+		A=A+C	A		->slot
+		D0=A
+		C=DAT0	A
+		GOSUB	putnib5
+
+		D1=D1+	2		One blank
+		D0=D0+	5+7
+		C=0	A
+		C=DAT0	B		C[B] = BPT counter
+		GOSUB	putsigned2
+
+		D0=D0-	5		Show BPT in inverse if current PC
+		C=DAT0	A		BPT address
+		A=R4.F	A
+		D0=A
+		D0=D0+	REG_PC
+		A=DAT0	A		DB PC
+		?A#C	A
+		RTNYES
+		P=	16-11		11 chars to reverse
+-		D1=D1-	2
+		A=DAT1	B
+		ABIT=1	7
+		DAT1=A	B
+		P=P+1
+		GONC	-
+		RTN
+
+llineblank	GOLONG	lineblank
+
+
+**********************************************************************
+*		SCREEN 5 BIG - Memory dump
+**********************************************************************
+
+Screen5Big
+		GOSUB	LineDump1
+		GOSUBL	ShowLine1
+		GOSUB	LineDump2
+		GOSUBL	ShowLine2
+		GOSUB	LineDump3
+		GOSUBL	ShowLine3
+		GOSUB	LineDump4
+		GOSUBL	ShowLine4
+		GOSUB	LineDump5
+		GOSUBL	ShowLine5
+		GOSUB	LineDump6
+		GOSUBL	ShowLine6
+		GOSUB	LineDump7
+		GOSUBL	ShowLine7
+		GOSUB	LineDump8
+		GOSUBL	ShowLine8
+		GOSUB	LineDump9
+		GOSUBL	ShowLine9
+		GOSUB	LineDump10
+		GOLONG	ShowLine10
+
+**********************************************************************
+*		SCREEN 5 - Memory dump
+**********************************************************************
+
+Screen5
+		GOSUBL	showblankup
+		
+		GOSUB	LineDump1
+		GOSUBL	showline1
+		GOSUB	LineDump2
+		GOSUBL	showline2
+		GOSUB	LineDump3
+		GOSUBL	showline3
+		GOSUB	LineDump4
+		GOSUBL	showline4
+		GOSUB	LineDump5
+		GOSUBL	showline5
+		GOSUB	LineDump6
+		GOSUBL	showline6
+		GOSUB	LineDump7
+		GOSUBL	showline7
+		GOSUB	LineDump8
+		GOSUBL	showline8
+		GOSUB	LineDump9
+		GOSUBL	showline9
+		GOSUB	LineDump10
+		GOSUBL	showline10
+		GOSUB	LineDump11
+		GOSUBL	showline11
+		GOSUB	LineDump12
+		GOSUBL	showline12
+		GOSUB	LineDump13
+		GOLONG	showline13
+
+LineDump13	P=P+1
+LineDump12	P=P+1
+LineDump11	P=P+1
+LineDump10	P=P+1
+LineDump9	P=P+1
+LineDump8	P=P+1
+LineDump7	P=P+1
+LineDump6	P=P+1
+LineDump5	P=P+1
+LineDump4	P=P+1
+LineDump3	P=P+1
+LineDump2	P=P+1
+LineDump1	C=0	A
+		CPEX	0
+		B=C	A		0-9
+		R0=C			Save line in R0
+		GOSUB	llineblank	D1 = ->output
+*		D1=D1+	2		* REMOVED 2 for BIG! *
+		A=R4.F	A
+		D0=A			->data
+		C=0	A
+		C=DAT0	B
+		ST=C			Flags
+		D0=D0+	REG_PC
+		C=DAT0	A		DB PC
+		CSR	A		Drop low nibble
+		C=C-CON	A,4		Back up #40 nibbles
+		C=C+B	A		Get current line
+		CSL	A		Full 16 nibbles
+		?ST=0	gDUMP1?
+		GOYES	+
+		C=C+1	A		Shift by one nibble
++		D0=C			Dump address
+		GOSUB	putnib5		Output address
+		GOSUBL	Segment:
+		CD0EX
+		D0=C
+		GOSUB	putmemh16
+		D1=D1+	2+2		* ADDED 2 for BIG! *
+		CD0EX
+		GOSUB	putmema16
+		A=R0			A= line number
+		LC(1)	4
+		?A#C	P		Not line at PC ?
+		RTNYES
+
+		A=R4.F	A
+		D0=A
+		D0=D0+	REG_PC
+		A=DAT0	A		DB PC
+		C=0	A
+		C=A	P
+		?ST=0	gDUMP1?
+		GOYES	Rev2chr
+		C=C-1	A
+
+Rev2chr	
+		B=C	A
+		CSRB.F	A
+		GOSUB	+		Rev char at cur pos in ASCII 
+		C=B	A		Rev char at cur pos in Hex
+		C=C+1	A	
+		CSRB.F	A
+		C=C-CON	A,10
+
++		D1=D1-	16
+Rev1Chr		C=C+C	A	
+		AD1EX
+		A=A+C	A
+		D1=A
+		C=DAT1	B		C[B] = current char
+		CBIT=1	7		Set high bit
+		DAT1=C	B		Write back
+		RTN
+
+**********************************************************************
+*		SCREEN 8 BIG - watchpoints
+*	+----------------------+
+*	|00000:1234567890123456|	1
+*	|00000:1234567890123456|	2
+*	|00000:1234567890123456|	3
+*	|00000:1234567890123456|	4
+*	|80100:1234567890123456|	5
+*	|80319:1234567890123456|	6
+*	| TOP:A960C  STK:B5C7E |	7
+*	| BOT:817CC  RST:A963E |	8
+*	+----------------------+
+**********************************************************************
+Screen8Big	ST=1	0			Flag big screen
+		GOSUB	LineWatch1
+		GOSUBL	ShowLine1
+		GOSUB	LineWatch2
+		GOSUBL	ShowLine2
+		GOSUB	LineWatch3
+		GOSUBL	ShowLine3
+		GOSUB	LineWatch4
+		GOSUBL	ShowLine4
+		GOSUB	LineWatch5
+		GOSUBL	ShowLine5
+		GOSUB	LineWatch6
+		GOSUBL	ShowLine6
+
+		GOSUBL	LineBlank
+		D1=D1+	2
+		LCSTR	'TOP:'
+		DAT1=C	8
+		D1=D1+	8
+		LC(1)	8-1
+		GOSUB	GetWatchCAddr
+		GOSUB	putnib5		Output address
+		D1=D1+	4
+		LCSTR	'STK:'
+		DAT1=C	8
+		D1=D1+	8
+		LC(1)	10-1
+		GOSUB	GetWatchCAddr
+		GOSUB	putnib5
+		GOSUBL	ShowLine7
+
+		GOSUBL	LineBlank
+		D1=D1+	2
+		LCSTR	'BOT:'
+		DAT1=C	8
+		D1=D1+	8
+		LC(1)	7-1
+		GOSUB	GetWatchCAddr
+		GOSUB	putnib5
+		D1=D1+	4
+		LCSTR	'RST:'
+		DAT1=C	8
+		D1=D1+	8
+		LC(1)	9-1
+		GOSUB	GetWatchCAddr
+		GOSUB	putnib5
+		GOSUBL	ShowLine8
+		
+		GOLONG	BlankFinal2
+
+**********************************************************************
+*		SCREEN 8 - watchpoints
+*	+---------------------------------+
+*	|1:00000:1234567890123456 ABCDEFGH|	1
+*	|2:00000:1234567890123456 ABCDEFGH|	2
+*	|3:00000:1234567890123456 ABCDEFGH|	3
+*	|4:00000:1234567890123456 ABCDEFGH|	4
+*	|5:80100:1234567890123456 ABCDEFGH|	5
+*	|6:80319:1234567890123456 ABCDEFGH|	6
+*	|  817FA:1234567890123456 ABCDEFGH|	7
+*	|  96AF5:1234567890123456 ABCDEFGH|	8
+*	|  96B27:1234567890123456 ABCDEFGH|	9
+*	|  AF64D:1234567890123456 ABCDEFGH|	10
+*	+---------------------------------+
+********************************************************************
+
+Screen8		ST=0	0			Flag small screen
+		GOSUBL	showblankup	
+		GOSUB	showblank61
+		GOSUB	LineWatch1
+		GOSUBL	showline1
+		GOSUB	LineWatch2
+		GOSUBL	showline2
+		GOSUB	LineWatch3
+		GOSUBL	showline3
+		GOSUB	LineWatch4
+		GOSUBL	showline4
+		GOSUB	LineWatch5
+		GOSUBL	showline5
+		GOSUB	LineWatch6
+		GOSUBL	showline6
+		GOSUB	LineWatch7
+		GOSUBL	showline7
+		GOSUB	LineWatch8
+		GOSUBL	showline8
+		GOSUB	LineWatch9
+		GOSUBL	showline9
+		GOSUB	LineWatch10
+		GOLONG	showline10
+
+showblank61	GOSUBL	GetViewGrob	D1 = ->row1
+		LC(5)	61*34
+		AD1EX
+		A=A+C	A
+		AD1EX
+		LC(5)	19*34
+		GOVLNG	=WIPEOUT
+
+LineWatch10	P=P+1
+LineWatch9	P=P+1
+LineWatch8	P=P+1
+LineWatch7	P=P+1
+LineWatch6	P=P+1
+LineWatch5	P=P+1
+LineWatch4	P=P+1
+LineWatch3	P=P+1
+LineWatch2	P=P+1
+LineWatch1	C=0	A
+		CPEX	0
+		B=C	A		0-7
+		GOSUB	llineblank	D1 = ->output
+		?ST=1	0
+		GOYES	++		No index if big screen
+
+		LC(2)	6
+ 		?B>=C	B
+		GOYES	+
+		LCSTR	'1:'
+		C=C+B	B		Fix index
+		DAT1=C	A
++		D1=D1+	4
+
+++		GOSUB	GetWatchAddr
+		GOSUB	putnib5		Output address
+		GOSUBL	Segment:
+		CD0EX
+		D0=C
+		GOSUB	putmemh16
+		D1=D1+	2
+		CD0EX
+		GOTO	putmema16
+
+GetWatchCAddr	B=0	A
+		B=C	P
+GetWatchAddr	A=R4.F	A
+		LC(5)	gWATCHTABLE
+		A=A+C	A		->watchtable
+		C=B	A		0-7
+		A=A+C	A
+		C=C+C	A
+		C=C+C	A
+		C=C+A	A		->watch
+		D0=C
+		C=DAT0	A		watch address
+		D0=C
+		RTN
+
+*********************************************************************
+*		SCREEN 4
+*
+*  Han: the [SIN] [COS] and [TAN] keybindings have long since been
+*  replaced by [ARG] [SQRT]; the comments below are partly outdated
+*
+*  This screen requires an extra flag which determines one of following
+*  cases:
+*	[SIN] - RPL streams, display @D0 and corresponding RPL
+*	[COS] - Text, display text dump with pointer character in inverse
+*	[TAN] - Formatted table
+*		Variable in RAM determines type of table:
+*			0n: CON(n) sequence
+*			m0: REL(m) sequence
+*			mn: CON(n) REL(m) sequence
+*	[SQRT] - Toggles display for D0 only, D1 only or both
+*
+*	+---------------------------------+
+*	|D0:409C7/328971832781382181327327|
+*	|40981:GOSBVL =SAVPTR  GOSBVL  =GA|
+*	|409A1:RBAGECOL GOSBVL  =GETPTR  G|
+*	|409C1:OVLNG =Loop ENDCODE  DUP #1|
+*	|409E1:- NDUPN top& SWAP ..       |
+*	|D1:40272/82713271732921ABD7E98DBE|
+*	|
+*	|
+*	|
+*	|
+*	RPL area
+*	+---------------------------------+
+*	|D0:38145 CON(5) =#1-SWAP         |	1
+*	|   3814A CON(5) =INNERCOMP       |	2
+*	|   3814F CON(5) =top&            |	3
+*	|   38154 CON(5) =COLA            |	4
+*	|   38159 CON(5) =DOCODE          |	5
+*	|D1:B8180 CON(5) =#5              |	6
+*	|   B8185 CON(5) =x/              |	7
+*	|   B818A CON(5) =x               |	8
+*	|   B818F CON(5) 0                |	9
+*	|   B8194 CON(5) 0                |	10
+*	+---------------------------------+
+*
+*	Data area
+*	+---------------------------------+
+*	|D0:38145 CON(5) =#1-SWAP         |	1
+*	|   3814A CON(5) =DOHSTR          |	2
+*	|   3814F REL(5) L38154           |	3
+*	|   38154 NIBHEX 1234567890123456 |	4
+*	|   38159 CON(5) =DOCODE          |	5
+*	|D1:B8180 CON(5) =#5              |	6
+*	|   B8185 CON(5) =x/              |	7
+*	|   B818A CON(5) =x               |	8
+*	|   B818F CON(5) 0                |	9
+*	|   B8194 CON(5) 0                |	10
+*	+---------------------------------+
+**********************************************************************
+
+*  R1.A	: next D0/D1 value
+*  R2.S	: sub screen (0:ascci, 1: RPL, 2: Data)
+*   4.0	: R1.A : Value of D0 or D1
+*	  R2.A : Number of current line / D0 or D1 (-1 to +2 or -3 to +5 )
+*   4.2	: R1.A : next adr to use 
+*	  R2.B : RELCON
+*	  R2.XS: if REL and CON, then next display: #0->CON, #F ->REL
+*   4.1 : R1.A : next adr to use 
+*	  D.S  : 1-> stack (D1) , 0 -> RPL stream (D0)
+
+gD0D1?		EQU	4		if set, display both D0 and D1
+gDspBdyASCII	EQU	0		for prologged ob, display body in ascii
+gISPRLG		EQU	0		set if ob is prologged	
+
+=skipCOMP	EQU	#03077
+=skipSIZED	EQU	#0309A
+=skipLAMIDNT	EQU	#030A8
+=skipDOCHAR	EQU	#030B7
+=skipDOBINT	EQU	#0308E
+=skipDOROMP	EQU	#03094
+
+* Han:	skip routine addresses are located just in front of the
+*	prolog; e.g. (=DOCOL)-5 is the addr of the addr of the skip
+*	routine for :: ... ;
+
+* new skips
+=skipDOFPTR	EQU	#027EB
+=skipDOLNGCMP	EQU	#027F4
+=skipDOLNGREL	EQU	#02807
+
+
+Screen4
+		GOSUBL	showblankup	Clear the borders
+		GOSUBL	showblankdn	
+		GOSUBL	GetFlags	Restore flags
+
+* Line 1
+		GOSUB	llineblank
+		DADDR	g4SBSCREEN,A
+		D0=A			
+		C=DAT0	A		C[0]=subscreen, C[1-2]=conrel C[3]=D0D1
+		CSRC			C[S]=subscreen  C[0-1]=conrel C[2]=D0D1
+		R2=C
+		ST=0	gD0D1?		
+		?CBIT=0	9		D1-only screen ?	
+		GOYES	+		
+		GOSUB	SegD1_25	YES: display first D1 line
+		GOTO	++			and continue
++		?CBIT=1	8		NO: D0-only screen ?
+		GOYES	+
+		ST=1	gD0D1?			NO: set gD0D1?  and ...
++		GOSUB	SegD0_25		anycase: display first D0 line
+++		GOSUBL	showline1
+* Line 2
+		GOSUB	NxtLineAsc	Display 5 lines, either D0 or D1
+		GOSUBL	showline2
+		GOSUB	NxtLineAsc
+		GOSUBL	showline3
+		GOSUB	NxtLineAsc
+		GOSUBL	showline4
+		GOSUB	NxtLineAsc
+		GOSUBL	showline5
+		GOSUB	NxtLineAsc	Assume not D0 and D1 ...
+		GOSUBL	showline6
+		GOSUB	NxtLineAsc
+		GOSUBL	showline7
+		GOSUB	NxtLineAsc
+* Line 8
+		?ST=0	gD0D1?		Both D0 and D1 ?		
+		GOYES	+		NO: display line 
+		GOSUB	llineblank	YES: restart with D1
+		C=R2
+	       	GOSUB 	SegD1_25
+         	
++		GOSUBL	showline8
+* Line 9
+		GOSUB	NxtLineAsc
+		GOSUBL	showline9
+		GOSUB	NxtLineAsc
+		GOSUBL	showline10
+		GOSUB	NxtLineAsc
+		GOSUBL	showline11
+		GOSUB	NxtLineAsc
+		GOSUBL	showline12
+		GOSUB	NxtLineAsc
+		GOLONG	showline13
+
+
+********* First line for D0 or Stack
+SegD0_25       	?C=0	S		C[S]: subscreen
+		GOYES	SC4.0_D0	it's screen 4.0, jump
+
+		D=0	S		4.1&4.2: set RPL-stream mode (SC4.1)
+		DADDR	g4D0orSTK,A
+		D0=A
+		A=0	A
+		A=DAT0	P
+		?A=0	P		D0 or stack 1-8 ?
+		GOYES	TrueD0		really D0
+		A=A-1	A		A= stack lvl 0-7
+		B=A	A
+		A=A+A	A
+		A=A+A	A
+		A=A+B	A		A=5*(stk lvl)
+		LC(5)	(REG_D1)-(g4D0orSTK)
+		AD0EX			D0=5*(stk lvl)	, A=@g4D0orSTK
+		A=A+C	A		A=@REG_D1
+		AD0EX			A=5*(stk lvl), D0=@REG_D1
+		C=DAT0	A		C=D1
+		A=A+C	A		A=(start of stack)+5*(stk lvl)
+		LCSTR	'S1:'
+		BSL	A
+		BSL	A
+		C=C+B	A		Fix prompt of stck level
+		GOTO	sc4InitCON		
+		
+TrueD0		DADDR	REG_D0,A	Adr and prompt for true D0
+		LCSTR	'D0:'
+		GOTO	sc4InitCON
+		
+SC4.0_D0	GOSUBL	SegmentD0	Screen 4.0: just display D0 
+		LC(2)	25
+		GOSUBL	Segment/D0	and 25 nib at D0
+		DADDR	REG_D0,A
+		GOTO	++
+
+********* First line for D1 
+SegD1_25       	?C=0	S 		Screen 4.0 ? 
+		GOYES	SC4.0_D1 
+		DADDR	REG_D1,A 
+		LCSTR	'D1:' 
+		D=C	S 		D[S]#0 -> RPL-stack mode (SC4.2)
+sc4InitCON	D0=A			
+		A=DAT0	A
+		R1=A			R1=first adr to display
+		DAT1=C	6		Output prompt (i.e D1: or D0: or Sn:)
+		C=0	A
+		R2=C.F	XS		clear toggle next CON or REL (SC4.2)
+		GOTO	NxtLinCON	display rest of line
+
+SC4.0_D1	GOSUBL	SegmentD1	Screen 4.0: just display D1
+		LC(2)	25		  and 25 nib at D1
+		GOSUBL	Segment/D1
+		DADDR	REG_D1,A
+++		D0=A			here, SC4.0 common for D0 and D1 : 
+		A=DAT0	A
+		R1=A			R1= D0 or D1 
+		A=0	A
+		A=A-1	A		
+		?ST=1	gD0D1?
+		GOYES	+
+       		A=A-1	A
+		A=A-1	A
++		R2=A			R2=-1 if D0 or D1 only, -3 if D0 and D1
+		RTN
+
+
+***** Display a line
+NxtLineAsc
+		GOSUBL	lineblank	D1 = ->output
+		C=R2
+		?C=0	S		Ascii mode ?
+		GOYES	+		Yes
+		GOTO	NxtLinCON	No
+
+***** 4.0 : Ascii mode
++		D1=D1+	2
+		A=R1			A=D0 or D1
+		ASR	A		Drop low nibble
+		C=0	A
+		LC(1)	3
+		GOSBVL	=IntDiv		C=adr / 48
+		A=R2
+		C=C+A	A		C= first adr of current line
+		A=C	A		
+		C=C+C	A
+		C=C+A	A
+		CSL	A		C=((adr/48)-curline)*48
+		A=R1			if adr is odd ...
+		?ABIT=0	0
+		GOYES	+
+		C=C+1	A		 then shift by one nibble
++		D0=C			Dump address
+		GOSUBL	putnib5		Output address
+		GOSUBL	Segment:
+		GOSUB	Put16Asc	Output 24 chars
+		GOSUB	Put16Asc
+		GOSUB	Put16Asc
+
+		C=R2	 
+		A=C	A
+		C=C+1	A
+		R2=C			Update next line
+         	?A#0	A			
+		RTNYES			if curline != line of D0 (or D1) return
+
+		A=R1			Else display cursor
++		C=D0
+		A=A-C	A
+		ABIT=0	0
+		CD1EX
+		A=A+C	A
+				
+		D1=A		
+		C=DAT1	B		C[B] = current char
+		CBIT=1	7		Set high bit
+		DAT1=C	B		Write back
+		RTN			End of Ascii mode ...
+
+Put16Asc	CD0EX
+		D0=C
+		GOSUBL	putmema16
+		D0=D0+	16
+		RTN
+
+
+***** RPL and CON/REL mode : display Addr
+NxtLinCON	D1=D1+	6		Skip prompt (indent)
+		C=R1
+		GOSUBL	putnib5		Output cur address
+		D1=D1+	2
+		C=R2			R2[XS]=CON or REL, R2[B]=ConRel, 
+		D=C	A				R2[S]= subscreen
+		D=0	XS		
+		C=C-1	S		Screen 4.1 or 4.2 ?
+		?C#0	S
+		GOYES	+		4.1
+		GOTO	DumpRPL		4.2
+
+***** 4.2 : CON/REL
++		?C=0	P		C[B]=ConRel
+		GOYES	DispCON		Only CON(C[1])
+		P=C	1
+		?P=	0		
+		GOYES	DispREL		Only REL(C[0])
+		?C=0	XS		CON(C[1]) & REL(C[0])
+		GOYES	DispCON		 but next is CON(C[1])
+		
+DispREL		D=-D-1	XS		D[XS]=#F : i.e we output REL
+		P=	0
+		LCSTR	'REL('
+		GOTO	+
+
+DispCON		P=	0		
+		DSR	B		
+		LCSTR	'CON('
+
+		GOSUBL	AsciiMode?	  if not ascii mode ...
+		GONC	+			then jump	
+		LCSTR	'NIBASC'
+		DAT1=C	12			else output NIBASC
+		D1=D1+	14
+		GONC	++			and skip length arg
+
++		DAT1=C	8		Here :	D[XS]=0 -> CON else REL
+		D1=D1+	8 			C[0-7] : "CON(" or "REL(" 
+		C=D	A			D[0] : number of nib to use
+		GOSUBL	putint1		output D[0]
+		LCASC	')'
+		DAT1=C	B
+		D1=D1+	4		Close the paren and skip a space
+
+++		A=R1			
+		D0=A			D0 = cur adr
+
+		C=D	A
+		C=-C-1	XS
+		R2=C.F	XS		Toggle next CON or REL 
+		C=0	A
+		C=D	P
+		?C#0	P		If CON(0), do as CON(16)
+		GOYES	+
+		CBIT=1	4
++		A=A+C	A
+		R1=A			Update cur adr to next pos
+
+		?D=0	XS		Output CON or REL ? 
+		GOYES	OutputCON
+
+		A=0	A		REL: 
+		P=C	0
+		P=P-1
+		A=DAT0	WP		A[WP]=C[0] nib at cur adr
+		?ST=1	gDUMP1?
+		GOYES	+		
+		C=A	WP		if not gDUMP, then sign extend
+		A=0	W
+		A=C	WP
+		C=C+C	P
+		GONC	+
+		A=-A	WP
+		A=-A	W
++		P=	0
+		LCASC	'L'		  Mark as Label
+		DAT1=C	B
+		D1=D1+	2		
+		CD0EX
+		C=C+A	A		  to cur adr+(value at adr)
+		GOSUBL	putnib5		  Output this adr 
+		D1=D1+	2
+		?ST=0	gDUMP1?
+		RTNYES
+		LCASC	'+'		if no sign extend, ouput '+'
+		DAT1=C	B
+		RTN	
+
+
+OutputCON	A=C	A		  A[A]= number of nibble
+		GOSUBL	AsciiMode?	  if not ascii mode ...
+		GOC	+
+		LCASC	'#'			then ouptut "#"
+		DAT1=C	B
+		D1=D1+	2
+		C=DAT0	W
+		GOLONG	puthex
++		CD0EX			  C[A]= Adr of value to ouput
+		GOLONG	putmem		  output it (ascii or hex) and return
+
+
+***** 4.l : RPL mode (stream-mode fo D0 and stack,  stack-mode for D1)
+DumpRPL	
+		GOSUB	DumpEntry	Anyway, output 5 nibble at cur adr
+		C=R1
+		D0=C			D0= cur adr
+		C=C+CON	A,5
+		R1=C.F	A		Assume next adr = cur adr+5
+		?D#0	S 		Stack-mode ?
+		RTNYES			YES: finished ..
+		?ST=0	gISPRLG		Prologged ob ? (set by DumpEntry)
+		RTNYES			NO : finished
+		
+		D1=D1+	2		skip 1 space and
+		AD1EX
+		R2=A.F	A		save pos in gOUTPUT in R2
+
+		A=DAT0	A		A[A]=prolog of ob
+		D1=A
+		ST=0	gDspBdyASCII	Assume body is not ASCII
+		LC(5)	=DOCSTR		
+		?A#C	A		But if prolog is DOCSTR
+		GOYES	+
+		ST=1	gDspBdyASCII	then mark BODY as ASCII
+
++		D1=D1-	5		
+		A=DAT1	A		A[A]= skip code of OB
+		LC(5)	=skipCOMP	
+		?A=C	A		Is it a composite-prolog ?
+		RTNYES			YES: nothing to do, return
+
+		GOSBVL	=SKIPOB		Skip this ob
+		AD0EX			A=next ob
+		C=R1			C=start of body of current ob (ob+5)
+		D0=C			D0= start of body of cur ob
+		R1=A.F	A		R1=next ob (for next line)
+		A=A-C	A		
+		B=A	A		B= size of body of cur ob
+		A=DAT1	A		A[A]= skip code for ob
+		C=R2		
+		D1=C			Restore Pos in gOUTPUT
+
+		LC(5)	=skipDOBINT	Process the body 
+		?A#C	A
+		GOYES	noDOBINT
+		C=DAT0	A
+		GOLONG	putnib5		5 nib in "human readable" form.End 
+
+noDOBINT	LC(4)	=skipDOROMP
+		?A#C	A
+		GOYES	noDOROMP
+		C=DAT0	A		DOROMP:
+		GOSUBL	putint3		 output 3 nib in human readable form
+		D0=D0+	3
+		C=DAT0	A		
+		D1=D1+	2		 output 1 space
+		GOLONG	putint3		 another 3 nibs and End.
+
+noDOROMP	LC(4)	=skipDOFPTR
+		?A#C	A
+		GOYES	noDOFPTR
+		C=DAT0	A
+		GOSUBL	putint3
+		D0=D0+	3
+		C=DAT0	A
+		D1=D1+	2
+		GOLONG	putint4
+
+noDOFPTR	LC(4)	=skipDOCHAR
+		?A#C	A
+		GOYES	noDOCHAR
+		ST=1	gDspBdyASCII	DOCHAR: just mark body as ASCII
+		GONC	dispBody		and display body
+
+noDOCHAR	LC(4)	=skipLAMIDNT
+		?A#C	A
+		GOYES	notLAMIDNT
+		C=DAT0	A		DOLAM or DOIDNT:
+		GOSUBL	putint2		  output size in human readable form
+		D0=D0+	2		  skip size
+		D1=D1+	2
+		B=B-1	A
+		B=B-1	A		  adjust lenght of body
+		ST=1	gDspBdyASCII	  mark body as ASCII
+		GONC	dispBody 	  and display "true" body
+		
+notLAMIDNT	LC(4)	=skipSIZED
+		?A#C	A
+		GOYES	dispBody
+
+		C=DAT0	A		Any sized ob:
+		GOSUBL	putnib5		  output size (including length field)
+		D0=D0+	5		  skip size
+		D1=D1+	2
+		B=B-CON	A,5		  adjust lenght of body and ...
+		
+dispBody	LC(5)	40		display real body, 
+		?B<=C	A		  but max 40 nib (20 chars in ASCII)
+		GOYES	+		  NOTA: Assume gOUTPUT>80
+		B=C	A
++		A=B	A		A[B]: number of nib to diplay
+		?ST=1	gDspBdyASCII	body in ASCII ?
+		GOYES	+
+		CD0EX			NO: output A[B] nib as stream
+		GOSUBL	putmemhex
+		GOTO	++
++		
+		LCASC	\"\		YES: output delimeter
+		DAT1=C	B
+		D1=D1+	2
+		CD0EX
+		GOSUBL	putmemasc	body in ASCII	
+		LCASC	\"\		End delimeter
+		DAT1=C	B
+
+++		A=R4	
+		LC(5)	(gOUTBUF)+(2*32) Last pos at right of screen
+		A=A+C	A
+		CD1EX
+		?C<=A	A		Is cur pos>last pos?
+		RTNYES			NO: End of RPL display
+		D1=A			Else output ".." at end of line
+		LC(2)	#1F
+		DAT1=C	B
+		RTN			End of RPL display.
+		
+		
+
+DumpEntry	
+*		DADDR	gDTAB,D0	
+		DADDR	gCFGADR,D0
+		A=DAT0	A
+		GOSBVL	=ASLW5
+		D0=D0-	(gCFGADR)-(gDTAB)
+		A=DAT0	A
+		GOSBVL	=ASLW5
+		D0=D0-	(gDTAB)-(gRTAB)
+		A=DAT0	A
+		R3=A			R3: DTAB RTAB CFGADR
+		A=R1
+		D0=A			D0= adr of ob
+		A=DAT0	A
+		D0=A
+		A=DAT0	A		
+		LC(5)	=PRLG
+		ST=1	gISPRLG		Assume prologed
+		?A=C	A		Is it prologed?
+		GOYES	+		Yes - continue
+		ST=0	gISPRLG		No - flag it so
++
+		A=R1
+		D0=A
+		A=DAT0	A		A=first 5 nib of ob
+		?ST#0	gTABS? 		Use Tabs ?
+		GOYES	++		NO
+		GOSUBL	EntryAddr? 	YES: is it an entry?
+		GOC	++ 		NO
+
+		D0=D0+	2
+		C=DAT0	B
+		D=C	B
+		D0=D0-	2
+		LCASC	'^'		do not allow fptr entries
+		?C=D	B
+		GOYES	++
+		LCASC	'~'		do not allow romptr entries
+		?C=D	B
+		GOYES	++		
+
+		A=0	A		
+		A=DAT0	B		A= lenght (in chars) of entry
+		A=A+A	A		count as nib
+		CD0EX
+		C=C+1	A
+		C=C+1	A		skip to name of entry
+		GOLONG	putmemasc	output entry
+
+++		GOSUBL	RestoreBanks
+
+		LCSTR	'PTR '		Here: Not an entry or no tabs
+		DAT1=C	8
+		D1=D1+	2
+		?ST=1	gISPRLG		Is prologed?
+		GOYES	+		Yes - show only 'P'
+		D1=D1+	6		No - show full PTR
++		C=A	A
+		GOLONG	putnib5		output 5 nibs
+
+**********************************************************************
+
+ScreenH		
+	GOSUBL	showblankup	
+	GOSUB	showblank61
+	A=R4.F	A
+	LC(5)	gFONT1
+	A=A+C	A
+	D0=A
+	A=DAT0	A
+	R0=A	A	->FONT1 at "..."
+	GOSUB	+
+* 		 123456789012345678901234567890123		
+	NIBASC	\ARG repeats:    [ENTER]:pc=arg   \
+	NIBASC	\[LT]:pc=pc-1    [EEX]:pc=pc+arg  \
+	NIBASC	\[RT]:pc=pc+1    [.]:mark=pc/arg  \
+	NIBASC	\[UP]:pc=pc-16   [+/-]:swp mark/pc\
+	NIBASC	\[DN]:pc=pc+16                    \
+	NIBASC	\[+]:step    [-]:call             \
+	NIBASC	\[*]:step    [/]:call (w/ display)\
+	NIBASC	\[NXT]:skip                       \
+	NIBASC	\[EVAL]:run   [TAN]:getptrloop    \
+	NIBASC	\[BS]:loop    [1/X][1/X]:warmstart\
+
++	C=RSTK
+	GOSUB	showscreen
+	GOSUB	+
+* 		 123456789012345678901234567890123		
+	NIBASC	\[ARG][VAR][1-6] :set watchpoint  \
+	NIBASC	\[ARG][MODE][1-8]:set breakpoint  \
+	NIBASC	\[ARG][STO][1-8] :set breakcounter\
+	NIBASC	\[SIN]:save regs [COS]:swap regs  \
+	NIBASC	\     :cycles=arg     :total=arg  \
+	NIBASC	\[TOOL][3]:ascii/hex display      \
+	NIBASC	\      [4]:shift dump one nibble  \
+	NIBASC	\      [5]:autodisplay pict       \
+	NIBASC	\      [6]:entry tables on/off    \
+	NIBASC	\      [7]:opcode/cycles display  \
+
++	C=RSTK
+	GOSUB	showscreen
+	GOSUB	+
+* 		 123456789012345678901234567890123		
+	NIBASC	\[']: [Y]:CRY  [S]:SB [X]:XM      \
+	NIBASC	\     [A-D]:A-D       [H]:HEX/DEC \
+	NIBASC	\     [0-4]:R0-R4     [R]:RSTK1   \
+	NIBASC	\     [E-F]:D0-D1     [ENTER]:@PC \
+	NIBASC	\     [G,J]:DAT0,DAT1 [ARG]:@ARG  \
+	NIBASC	\Edit:[0-9A-F]:poke   [ENTER]:done\
+	NIBASC	\     [/]:/16 [TAN]:clr [up]:rot  \
+	NIBASC	\     [*]:*16 [1/X]:rev [dn]:unrot\
+	NIBASC	\     [-]:/2  [EEX]:not           \
+	NIBASC	\     [+]:*2  [+/-]:neg           \
++	C=RSTK
+	GOSUB	showscreen
+	GOLONG	ScreenH	
+
+showscreen	
+	D0=C			->line
+	C=0	W
+	LC(6)	(10-1)-5*34*16		was: (10-1)-4*34*16
+	CSRC
+	D=C	W	
+-	LC(5)	6*34
+	C=C+D	A
+	A=C	A
+	D=C	A
+	GOSUBL	viewline
+	D=D-1	S
+	GONC	-
+	GOSUBL	DbgWaitKey
+	LC(3)	ALPHACODE	
+	?C=A	X
+	RTNYES
+	C=RSTK
+	GOLONG	DbgMain
+
+**********************************************************************
+
+DbgArg2Bin	B=C     A               Save adr
+*		GOSUBL	showblankdn
+		GOSUBL	lineblank
+                C=B     A
+                GOSUBL  putnib5         Output C[A] at DAT1 (use Arg as prompt)
+		LCSTR	':'
+		DAT1=C	B	
+		D1=D1+	4
+                A=B     A               A[A] = adr to edit
+		ASRC	W
+		ASRC	W
+		GOSUBL	Axs2Bin	
+		ASLC	W
+		GOSUBL	Axs2Bin	
+		ASLC	W
+		GOSUBL	Axs2Bin	
+		ASL	A
+		GOSUBL	Axs2Bin	
+		ASL	A
+		GOSUBL	Axs2Bin	
+		GOSUBL	showline13	showline10
+		GOSUBL  DbgWaitKey      else get a key
+ 		GOLONG	DbgMain
+**********************************************************************
+
+
+
+
+
